@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Photographie · Content Credentials</title>
+  <style>
+    :root{color-scheme:light;font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;background:#f5f6f8;color:#18212e}
+    *{box-sizing:border-box}body{margin:0;padding:24px}main{max-width:1100px;margin:auto}h1{font-size:clamp(1.4rem,3vw,2rem);margin:0 0 8px}p{color:#526071;line-height:1.5}
+    .photo{position:relative;display:inline-block;max-width:100%;background:#e8e9eb;border-radius:12px;overflow:hidden;box-shadow:0 12px 35px #18212e20}
+    .photo img{display:block;max-width:100%;max-height:72vh;width:auto;height:auto}
+    .cr{position:absolute;right:12px;bottom:12px;background:#fff;color:#111827;border:1px solid #ccd1d8;border-radius:999px;padding:8px 12px;font-weight:750;cursor:pointer;box-shadow:0 2px 10px #0003}
+    .cr[hidden]{display:none}.status{margin:16px 0;font-weight:600}.ok{color:#167345}.warn{color:#986100}.error{color:#ae2929}
+    details{margin-top:18px;border:1px solid #d6dbe1;border-radius:10px;padding:14px;background:#fff}summary{cursor:pointer;font-weight:650}
+    pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;font-size:12px;background:#f3f5f7;padding:14px;border-radius:8px}
+    dialog{border:0;border-radius:12px;max-width:min(600px,92vw);box-shadow:0 20px 60px #0005;padding:24px}dialog::backdrop{background:#0008}
+    button.close{float:right;border:0;background:#edf0f3;border-radius:6px;padding:7px 12px;cursor:pointer}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Photographie et Content Credentials</h1>
+  <p>Lecture du manifeste C2PA directement depuis le JPEG original.</p>
+  <div class="photo">
+    <img id="photo" src="./D36K4MF-org.jpg" alt="Photographie originale" />
+    <button id="cr" class="cr" hidden type="button" aria-label="Afficher les Content Credentials">CR · Content Credentials</button>
+  </div>
+  <div id="status" class="status" role="status" aria-live="polite">Vérification C2PA en cours…</div>
+  <details><summary>Informations techniques du manifeste</summary><pre id="manifest">Chargement…</pre></details>
+</main>
+<dialog id="credentials">
+  <button class="close" id="close" type="button">Fermer</button>
+  <h2>Content Credentials</h2>
+  <div id="summary"></div>
+  <p><small>La présence d'un manifeste ne garantit pas que le signataire soit reconnu comme fiable.</small></p>
+</dialog>
+<script type="module" src="./C2PA.js"></script>
+</body>
+</html>

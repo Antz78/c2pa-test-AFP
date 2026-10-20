@@ -2,49 +2,42 @@
 <!doctype html>
 <html lang="fr">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Photographie · Content Credentials</title>
 <style>
-:root{color-scheme:light;font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;background:#f5f6f8;color:#18212e}
-*{box-sizing:border-box}
-body{margin:0;padding:24px}
-main{max-width:1100px;margin:auto}
-h1{font-size:clamp(1.4rem,3vw,2rem);margin:0 0 8px}
-p{color:#526071;line-height:1.5}
-.photo{position:relative;display:inline-block;max-width:100%;background:#e8e9eb;border-radius:12px;overflow:hidden;box-shadow:0 12px 35px #18212e20}
+:root{font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;color-scheme:dark;background:#0b1220;color:#e9f1ff}
+*{box-sizing:border-box}body{margin:0;padding:clamp(12px,3vw,32px)}main{max-width:1080px;margin:auto}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:22px}.brand{display:grid;place-items:center;width:42px;height:42px;background:#173a41;color:#7ce7c6;border-radius:13px}
+.top h1{font-size:clamp(18px,3vw,25px);margin:0}.sub{color:#9aaec7;margin:4px 0 0;font-size:13px}
+.photo{position:relative;display:table;max-width:100%;margin:auto;border-radius:15px;overflow:hidden;background:#192438;box-shadow:0 18px 50px #0007}
 .photo img{display:block;max-width:100%;max-height:72vh;width:auto;height:auto}
-.cr{position:absolute;right:12px;bottom:12px;width:36px;height:36px;padding:0;display:flex;align-items:center;justify-content:center;background:#fff;color:#111827;border:1px solid #ccd1d8;border-radius:50%;font-size:13px;font-weight:750;cursor:pointer;box-shadow:0 2px 10px #0003;transition:transform .2s}
-.cr:hover{transform:scale(1.1)}
-.cr:focus-visible{outline:3px solid #2563eb;outline-offset:3px}
-.cr[hidden]{display:none}
-.status{margin:16px 0;font-weight:600}
-.ok{color:#167345}.warn{color:#986100}.error{color:#ae2929}
-details{margin-top:18px;border:1px solid #d6dbe1;border-radius:10px;padding:14px;background:#fff}
-summary{cursor:pointer;font-weight:650}
-pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;font-size:12px;background:#f3f5f7;padding:14px;border-radius:8px}
-dialog{border:0;border-radius:12px;max-width:min(600px,92vw);box-shadow:0 20px 60px #0005;padding:24px}
-dialog::backdrop{background:#0008}
-button.close{float:right;border:0;background:#edf0f3;border-radius:6px;padding:7px 12px;cursor:pointer}
+.cr{position:absolute;right:14px;bottom:14px;width:40px;height:40px;border:1px solid #d6e1ef;border-radius:50%;background:#fff;color:#111827;font-size:13px;font-weight:800;box-shadow:0 3px 14px #0006;cursor:pointer}
+.cr:hover{transform:scale(1.07)}.cr:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #75baff;outline-offset:3px}.cr[hidden]{display:none}
+.panel{background:#131f32;border:1px solid #2b3b53;border-radius:15px;padding:18px;margin-top:18px}
+.panelhead{display:flex;align-items:center;gap:10px;margin-bottom:13px}.panelhead h2{font-size:16px;margin:0}
+.status{font-weight:650;line-height:1.5;padding:13px 15px;background:#1b2b42;border-radius:10px}
+.ok{color:#91f2c5}.warn{color:#f7ce7a}.error{color:#ffa0a0}.muted{color:#9fb1c8}
+.checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-top:14px}
+.check{border:1px solid #2d4059;border-radius:11px;padding:13px;background:#19283d;display:flex;gap:10px;align-items:flex-start}
+.check .symbol{font-size:19px;line-height:1}.check strong{display:block;font-size:14px}.check small{display:block;color:#a7b8cb;margin-top:5px;line-height:1.4}
+.check.good .symbol{color:#69e4aa}.check.caution .symbol{color:#f6c66d}.check.bad .symbol{color:#ff8585}.check.neutral .symbol{color:#9bb5d4}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:14px}
+.metaitem{padding:13px;border:1px solid #2b3b53;border-radius:11px;background:#18263a}.metaitem span{display:block;color:#9fb1c8;font-size:12px;margin-bottom:5px}.metaitem strong{font-size:14px;overflow-wrap:anywhere}
+details{margin-top:18px;border:1px solid #2b3b53;border-radius:12px;padding:14px;background:#131f32}summary{cursor:pointer;font-weight:600}
+pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;max-height:380px;font-size:12px;background:#0b1423;color:#c3d5ea;padding:14px;border-radius:9px}
+dialog{color:#e9f1ff;background:#111e30;border:1px solid #3b516c;border-radius:17px;width:min(560px,calc(100% - 24px));max-height:85vh;overflow:auto;box-shadow:0 25px 80px #000a;padding:22px}
+dialog::backdrop{background:#030912bd}dialog h2{margin:0 0 16px;font-size:21px}
+.close{float:right;border:1px solid #43546a;background:#24354b;color:#fff;border-radius:9px;padding:8px 12px;cursor:pointer}
+.dialoginfo p{border-bottom:1px solid #2b3b53;padding-bottom:10px;line-height:1.5}.dialoginfo strong{color:#a6c6f5}
+.footnote{color:#9fb1c8;font-size:12px;line-height:1.5}
 </style>
 </head>
-<body>
-<main>
-<h1>Photographie et Content Credentials</h1>
-<p>Lecture du manifeste C2PA directement depuis le JPEG original.</p>
-<div class="photo">
-  <img id="photo" src="./D36K4MF-org.jpg" alt="Photographie originale">
-  <button id="cr" class="cr" hidden type="button" aria-label="Afficher les Content Credentials" title="Content Credentials">CR</button>
-</div>
-<div id="status" class="status" role="status" aria-live="polite">Vérification C2PA en cours…</div>
+<body><main>
+<header class="top"><div class="brand" aria-hidden="true">✦</div><div><h1>Content Credentials</h1><p class="sub">Authenticité et provenance de la photographie</p></div></header>
+<div class="photo"><img id="photo" src="./D36K4MF-org.jpg" alt="Photographie originale"><button id="cr" class="cr" hidden type="button" aria-label="Afficher les informations Content Credentials" title="Content Credentials">CR</button></div>
+<section class="panel" aria-label="Résultat de la vérification"><div class="panelhead"><span aria-hidden="true">◈</span><h2>Vérification C2PA</h2></div><div id="status" class="status" role="status" aria-live="polite">Vérification en cours…</div><div id="checks" class="checks"></div><div id="meta" class="meta"></div></section>
 <details><summary>Informations techniques du manifeste</summary><pre id="manifest">Chargement…</pre></details>
 </main>
-<dialog id="credentials">
-  <button class="close" id="close" type="button">Fermer</button>
-  <h2>Content Credentials</h2>
-  <div id="summary"></div>
-  <p><small>La présence d'un manifeste ne garantit pas que le signataire soit reconnu comme fiable.</small></p>
-</dialog>
+<dialog id="credentials"><button class="close" id="close" type="button">Fermer</button><h2>✦ Content Credentials</h2><div id="summary" class="dialoginfo"></div><p class="footnote">Une signature valide ne signifie pas nécessairement que le certificat de son émetteur est reconnu comme fiable.</p></dialog>
 <script type="module" src="./C2PA.js"></script>
-</body>
-</html>
+</body></html>

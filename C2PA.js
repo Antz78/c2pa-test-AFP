@@ -1,38 +1,140 @@
 
-import { createC2pa, Reader } from 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.15.4/+esm';
-const PHOTO_URL='./D36K4MF-org.jpg',WASM_URL='https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.15.4/dist/resources/c2pa_bg.wasm';
-const $=s=>document.querySelector(s),status=$('#status'),output=$('#manifest'),badge=$('#cr'),dialog=$('#credentials'),summary=$('#summary'),checks=$('#checks'),meta=$('#meta');
-$('#close').addEventListener('click',()=>dialog.close());badge.addEventListener('click',()=>dialog.showModal());
+import {createC2pa,Reader} from 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.15.4/+esm';
 
-function setStatus(message,kind=''){status.textContent=message;status.className=`status ${kind}`;}
-function line(label,value){const p=document.createElement('p'),b=document.createElement('strong');b.textContent=label+' : ';p.append(b,document.createTextNode(String(value??'Non renseigné')));summary.append(p);}
-function check(symbol,title,description,kind){const d=document.createElement('div');d.className='check '+kind;const i=document.createElement('span');i.className='symbol';i.textContent=symbol;const wrap=document.createElement('div'),strong=document.createElement('strong'),small=document.createElement('small');strong.textContent=title;small.textContent=description;wrap.append(strong,small);d.append(i,wrap);checks.append(d);}
-function field(label,value){if(value==null||value==='')return;const d=document.createElement('div');d.className='metaitem';const a=document.createElement('span'),b=document.createElement('strong');a.textContent=label;b.textContent=String(value);d.append(a,b);meta.append(d);}
+const PHOTO='./D36K4MF-org.jpg';
+const WASM='https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.15.4/dist/resources/c2pa_bg.wasm';
+const $=s=>document.querySelector(s);
+const badge=$('#cr'),dialog=$('#credentials'),info=$('#information');
+const status=$('#status'),explanation=$('#explanation'),output=$('#manifest');
 
-async function start(){let c2pa,reader;try{
- const response=await fetch(PHOTO_URL,{cache:'no-store'});if(!response.ok)throw Error(`Photo introuvable (HTTP ${response.status})`);
- c2pa=await createC2pa({wasmSrc:WASM_URL});reader=await Reader.fromBlob(c2pa,'image/jpeg',await response.blob());
- if(!reader){setStatus('Aucun manifeste C2PA détecté.','warn');output.textContent='Aucun manifeste trouvé.';return;}
- const store=await reader.manifestStore(),active=await reader.activeManifest();output.textContent=JSON.stringify(store,null,2);
- const id=store?.active_manifest??store?.activeManifest,manifest=store?.manifests?.[id]??active??{},results=store?.validation_results?.activeManifest??store?.validationResults?.activeManifest??{};
- const success=Array.isArray(results.success)?results.success:[],failure=Array.isArray(results.failure)?results.failure:[],statuses=Array.isArray(store?.validation_status)?store.validation_status:[];
- const sc=new Set(success.map(x=>x.code)),fc=new Set([...failure,...statuses].map(x=>x.code));
- const signature=sc.has('claimSignature.validated'),integrity=sc.has('assertion.dataHash.match'),untrusted=fc.has('signingCredential.untrusted');
- const otherFailures=[...new Set([...failure,...statuses].filter(x=>x.code!=='signingCredential.untrusted').map(x=>x.code))];
- const issuer=manifest?.signature_info?.issuer??active?.signature_info?.issuer;
- const assertions=manifest?.assertions??active?.assertions??[];
- const author=assertions.find(x=>x.label==='stds.schema-org.CreativeWork')?.data?.author?.[0]?.name??assertions.find(x=>x.label==='stds.exif')?.data?.['dc:creator'];
- const camera=assertions.find(x=>x.label==='stds.exif')?.data?.['tiff:Model'];
- checks.replaceChildren();meta.replaceChildren();summary.replaceChildren();badge.hidden=false;
- check(signature?'✓':'?',signature?'Signature valide':'Signature non confirmée',signature?'La signature cryptographique a été vérifiée.':'La validation cryptographique n’a pas été confirmée.',signature?'good':'neutral');
- check(integrity?'✓':'?',integrity?'Photo intacte':'Intégrité non confirmée',integrity?'L’empreinte des données JPEG correspond.':'Le contrôle d’intégrité n’a pas été confirmé.',integrity?'good':'neutral');
- check(untrusted?'!':otherFailures.length?'×':'✓',untrusted?'Confiance non établie':otherFailures.length?'Anomalies de validation':'Aucune anomalie signalée',untrusted?'Le certificat du signataire n’est pas reconnu comme fiable par ce vérificateur.':otherFailures.length?otherFailures.join(', '):'Aucune erreur de confiance remontée par ce vérificateur.',untrusted?'caution':otherFailures.length?'bad':'good');
- field('Appareil',camera);field('Photographe',author);field('Émetteur du certificat',issuer);field('Nom original',manifest?.title);field('Générateur C2PA',manifest?.claim_generator);
- line('Photographie',manifest?.title);line('Photographe',author);line('Appareil',camera);line('Émetteur du certificat',issuer);line('Signature',signature?'Valide':'Non confirmée');line('Intégrité JPEG',integrity?'Vérifiée':'Non confirmée');line('Confiance',untrusted?'Certificat non reconnu par ce vérificateur':otherFailures.length?'Anomalies : '+otherFailures.join(', '):'Aucune anomalie signalée');line('État du SDK',store?.validation_state);
- if(otherFailures.length)setStatus('Des anomalies de validation ont été signalées.','error');
- else if(untrusted)setStatus('Signature et intégrité vérifiées ; confiance dans le certificat non établie.','warn');
- else if(signature&&integrity)setStatus('Signature et intégrité vérifiées ; aucune anomalie signalée.','ok');
- else setStatus('Manifeste détecté ; vérification à examiner.','warn');
- }catch(e){console.error('C2PA',e);setStatus('Lecture C2PA impossible : '+e.message,'error');output.textContent=String(e.stack??e);}
- finally{if(reader)try{await reader.free()}catch(e){console.warn(e)}if(c2pa)try{c2pa.dispose()}catch(e){console.warn(e)}}}
-start();
+$('#close').onclick=()=>dialog.close();
+badge.onclick=()=>dialog.showModal();
+dialog.onclick=e=>{if(e.target===dialog)dialog.close()};
+
+function row(icon,title,description,value='',kind=''){
+ const d=document.createElement('div');d.className='info-row';
+ const i=document.createElement('div');i.className='ico '+kind;i.textContent=icon;
+ const t=document.createElement('div');t.className='info-text';
+ const b=document.createElement('strong');b.textContent=title;
+ const s=document.createElement('small');s.textContent=description;
+ t.append(b,s);d.append(i,t);
+ if(value){const v=document.createElement('div');v.className='value';
+ if(['green','orange','red'].includes(kind))v.className+=' pill '+(kind==='green'?'':kind);
+ v.textContent=value;d.append(v)}
+ info.append(d);
+}
+
+function dateFR(value){
+ if(!value)return 'Non renseignée';
+ const d=new Date(value);
+ if(Number.isNaN(d.getTime()))return value;
+ return new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(d);
+}
+
+async function init(){
+ let c2pa,reader;
+ try{
+  const response=await fetch(PHOTO,{cache:'no-store'});
+  if(!response.ok)throw Error('Photo introuvable : HTTP '+response.status);
+  const blob=await response.blob();
+  c2pa=await createC2pa({wasmSrc:WASM});
+  reader=await Reader.fromBlob(c2pa,'image/jpeg',blob);
+  if(!reader){
+   status.textContent='Aucune information C2PA détectée.';
+   return;
+  }
+
+  const store=await reader.manifestStore();
+  const active=await reader.activeManifest();
+  const id=store?.active_manifest??store?.activeManifest;
+  const m=store?.manifests?.[id]??active??{};
+  const assertions=m.assertions??[];
+  const exif=assertions.find(a=>a.label==='stds.exif')?.data??{};
+  const creative=assertions.find(a=>a.label==='stds.schema-org.CreativeWork')?.data??{};
+  const results=store?.validation_results?.activeManifest??{};
+  const success=results.success??[];
+  const failure=results.failure??[];
+  const statuses=store.validation_status??[];
+  const good=new Set(success.map(x=>x.code));
+  const errors=[...new Set([...failure,...statuses].map(x=>x.code))];
+  const other=errors.filter(x=>x!=='signingCredential.untrusted');
+
+  const signed=good.has('claimSignature.validated');
+  const intact=good.has('assertion.dataHash.match');
+  const untrusted=errors.includes('signingCredential.untrusted');
+  const author=creative.author?.[0]?.name??exif['dc:creator'];
+  const camera=exif['tiff:Model'];
+  const maker=exif['tiff:Make'];
+  const taken=exif['exif:DateTimeOriginal'];
+  const issuer=m.signature_info?.issuer;
+  const complete=signed&&intact&&other.length===0;
+
+  info.replaceChildren();
+  badge.hidden=false;
+  output.textContent=JSON.stringify(store,null,2);
+
+  row('📷','Appareil photo',
+      'Modèle déclaré dans les informations de prise de vue.',
+      [maker,camera].filter(Boolean).join(' ')||'Non renseigné');
+
+  row('👤','Photographe',
+      'Nom du photographe déclaré dans le fichier.',
+      author||'Non renseigné');
+
+  row('📅','Date de prise de vue',
+      taken?'Date enregistrée par l’appareil : '+taken:'Date non renseignée.',
+      dateFR(taken));
+
+  row(intact?'✓':'?','Intégrité de la photo',
+      intact?'Le fichier correspond à l’empreinte numérique enregistrée lors de sa signature.':
+      'Le contrôle d’intégrité n’a pas été confirmé.',
+      intact?'Vérifiée':'À vérifier',intact?'green':'orange');
+
+  row(signed?'✓':'?','Signature de provenance',
+      signed?'La signature numérique des informations d’origine est valide.':
+      'La validité de la signature n’a pas été confirmée.',
+      signed?'Valide':'À vérifier',signed?'green':'orange');
+
+  if(untrusted){
+   row('!','Confiance dans le certificat',
+       'Le certificat utilisé pour signer la photo n’est pas reconnu comme fiable par ce vérificateur.',
+       'Non établie','orange');
+  }else if(other.length){
+   row('!','Vérification du certificat',
+       'Une ou plusieurs anomalies ont été signalées.',
+       'Anomalie','red');
+  }else{
+   row('✓','Vérification du certificat',
+       'Aucune anomalie de confiance n’a été signalée par ce vérificateur.',
+       'Sans alerte','green');
+  }
+
+  if(complete&&untrusted){
+   status.textContent='Signature et intégrité vérifiées · Confiance du certificat non établie';
+   explanation.textContent=
+    'Les contrôles montrent que la signature est valide et que les données de la photographie correspondent aux informations signées. En revanche, le certificat du signataire n’est pas reconnu comme fiable par ce vérificateur. Cela ne signifie pas que la photo a été modifiée, mais son origine ne bénéficie pas d’une confiance entièrement établie.';
+  }else if(complete){
+   status.textContent='Signature et intégrité vérifiées · Aucune anomalie signalée';
+   explanation.textContent=
+    'Les contrôles de signature et d’intégrité ont réussi. Ces vérifications concernent les informations numériques et ne prouvent pas à elles seules que la scène photographiée est authentique.';
+  }else{
+   status.textContent='Vérification C2PA : des points restent à examiner';
+   explanation.textContent=
+    'Certains contrôles n’ont pas été confirmés ou ont signalé des anomalies. Consultez les détails techniques avant de tirer une conclusion sur la provenance de cette photographie.';
+  }
+
+  if(issuer)row('🏢','Émetteur déclaré du certificat',
+      'Organisation indiquée dans le certificat de signature.',issuer);
+
+ }catch(e){
+  console.error('C2PA',e);
+  status.textContent='Impossible de vérifier les informations C2PA.';
+  explanation.textContent=e.message;
+  output.textContent=String(e.stack??e);
+ }finally{
+  if(reader)try{await reader.free()}catch(e){console.warn(e)}
+  if(c2pa)try{c2pa.dispose()}catch(e){console.warn(e)}
+ }
+}
+
+init();

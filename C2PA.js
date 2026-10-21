@@ -18,9 +18,11 @@ function row(icon,title,description,value='',kind=''){
  const b=document.createElement('strong');b.textContent=title;
  const s=document.createElement('small');s.textContent=description;
  t.append(b,s);d.append(i,t);
- if(value){const v=document.createElement('div');v.className='value';
- if(['green','orange','red'].includes(kind))v.className+=' pill '+(kind==='green'?'':kind);
- v.textContent=value;d.append(v)}
+ if(value){
+  const v=document.createElement('div');v.className='value';
+  if(['green','orange','red'].includes(kind))v.className+=' pill '+(kind==='green'?'':kind);
+  v.textContent=value;d.append(v);
+ }
  info.append(d);
 }
 
@@ -28,7 +30,9 @@ function dateFR(value){
  if(!value)return 'Non renseignée';
  const d=new Date(value);
  if(Number.isNaN(d.getTime()))return value;
- return new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(d);
+ return new Intl.DateTimeFormat('fr-FR',{
+  day:'numeric',month:'long',year:'numeric',timeZone:'UTC'
+ }).format(d);
 }
 
 async function init(){
@@ -39,6 +43,7 @@ async function init(){
   const blob=await response.blob();
   c2pa=await createC2pa({wasmSrc:WASM});
   reader=await Reader.fromBlob(c2pa,'image/jpeg',blob);
+
   if(!reader){
    status.textContent='Aucune information C2PA détectée.';
    return;

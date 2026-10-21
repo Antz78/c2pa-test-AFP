@@ -28,8 +28,9 @@ function row(icon,title,description,value='',kind=''){
 
 function dateFR(value){
  if(!value)return 'Non renseignée';
- const d=new Date(value);
- if(Number.isNaN(d.getTime()))return value;
+ const match=String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+ if(!match)return value;
+ const d=new Date(Date.UTC(+match[1],+match[2]-1,+match[3]));
  return new Intl.DateTimeFormat('fr-FR',{
   day:'numeric',month:'long',year:'numeric',timeZone:'UTC'
  }).format(d);
@@ -43,11 +44,7 @@ async function init(){
   const blob=await response.blob();
   c2pa=await createC2pa({wasmSrc:WASM});
   reader=await Reader.fromBlob(c2pa,'image/jpeg',blob);
-
-  if(!reader){
-   status.textContent='Aucune information C2PA détectée.';
-   return;
-  }
+  if(!reader)throw Error('Aucun manifeste C2PA détecté dans cette photographie.');
 
   const store=await reader.manifestStore();
   const active=await reader.activeManifest();
@@ -63,7 +60,6 @@ async function init(){
   const good=new Set(success.map(x=>x.code));
   const errors=[...new Set([...failure,...statuses].map(x=>x.code))];
   const other=errors.filter(x=>x!=='signingCredential.untrusted');
-
   const signed=good.has('claimSignature.validated');
   const intact=good.has('assertion.dataHash.match');
   const untrusted=errors.includes('signingCredential.untrusted');
@@ -75,17 +71,12 @@ async function init(){
   const complete=signed&&intact&&other.length===0;
 
   info.replaceChildren();
-  badge.hidden=false;
   output.textContent=JSON.stringify(store,null,2);
 
-  row('📷','Appareil photo',
-      'Modèle déclaré dans les informations de prise de vue.',
+  row('📷','Appareil photo','Modèle déclaré dans les informations de prise de vue.',
       [maker,camera].filter(Boolean).join(' ')||'Non renseigné');
-
-  row('👤','Photographe',
-      'Nom du photographe déclaré dans le fichier.',
+  row('👤','Photographe','Nom du photographe déclaré dans le fichier.',
       author||'Non renseigné');
-
   row('📅','Date de prise de vue',
       taken?'Date enregistrée par l’appareil : '+taken:'Date non renseignée.',
       dateFR(taken));
@@ -105,8 +96,7 @@ async function init(){
        'Le certificat utilisé pour signer la photo n’est pas reconnu comme fiable par ce vérificateur.',
        'Non établie','orange');
   }else if(other.length){
-   row('!','Vérification du certificat',
-       'Une ou plusieurs anomalies ont été signalées.',
+   row('!','Vérification du certificat','Une ou plusieurs anomalies ont été signalées.',
        'Anomalie','red');
   }else{
    row('✓','Vérification du certificat',
@@ -116,16 +106,13 @@ async function init(){
 
   if(complete&&untrusted){
    status.textContent='Signature et intégrité vérifiées · Confiance du certificat non établie';
-   explanation.textContent=
-    'Les contrôles montrent que la signature est valide et que les données de la photographie correspondent aux informations signées. En revanche, le certificat du signataire n’est pas reconnu comme fiable par ce vérificateur. Cela ne signifie pas que la photo a été modifiée, mais son origine ne bénéficie pas d’une confiance entièrement établie.';
+   explanation.textContent='Les contrôles montrent que la signature est valide et que les données de la photographie correspondent aux informations signées. En revanche, le certificat du signataire n’est pas reconnu comme fiable par ce vérificateur. Cela ne signifie pas que la photo a été modifiée, mais son origine ne bénéficie pas d’une confiance entièrement établie.';
   }else if(complete){
    status.textContent='Signature et intégrité vérifiées · Aucune anomalie signalée';
-   explanation.textContent=
-    'Les contrôles de signature et d’intégrité ont réussi. Ces vérifications concernent les informations numériques et ne prouvent pas à elles seules que la scène photographiée est authentique.';
+   explanation.textContent='Les contrôles de signature et d’intégrité ont réussi. Ces vérifications concernent les informations numériques et ne prouvent pas à elles seules que la scène photographiée est authentique.';
   }else{
    status.textContent='Vérification C2PA : des points restent à examiner';
-   explanation.textContent=
-    'Certains contrôles n’ont pas été confirmés ou ont signalé des anomalies. Consultez les détails techniques avant de tirer une conclusion sur la provenance de cette photographie.';
+   explanation.textContent='Certains contrôles n’ont pas été confirmés ou ont signalé des anomalies. Consultez les détails techniques avant de tirer une conclusion sur la provenance de cette photographie.';
   }
 
   if(issuer)row('🏢','Émetteur déclaré du certificat',
@@ -133,8 +120,11 @@ async function init(){
 
  }catch(e){
   console.error('C2PA',e);
-  status.textContent='Impossible de vérifier les informations C2PA.';
-  explanation.textContent=e.message;
+  status.textContent='Erreur C2PA : '+e.message;
+  info.replaceChildren();
+  row('!','Vérification indisponible',
+      'Les informations C2PA n’ont pas pu être lues.','Erreur','red');
+  explanation.textContent='Détail : '+e.message;
   output.textContent=String(e.stack??e);
  }finally{
   if(reader)try{await reader.free()}catch(e){console.warn(e)}

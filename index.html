@@ -293,57 +293,53 @@
 .cr.mode-status,.demo-overlay.mode-status{left:auto!important;right:20px!important;bottom:9px!important;width:18px!important;height:18px!important;min-width:18px!important;padding:0!important;background:transparent!important;border:0!important;border-radius:50%!important;box-shadow:none!important}
 .cr.mode-status .dot,.demo-overlay.mode-status .dot{position:static!important;display:block!important;width:16px!important;height:16px!important;min-width:16px!important;min-height:16px!important;transform:none!important;border:2px solid rgba(255,255,255,.8)!important}
 
-/* Coin soulevé : courbe fine, photographie visible en dessous.
-   SVG sans aplat gris, mouvement discret au survol. */
+/* Coin de page : un repli courbe qui se déploie progressivement, sans translation. */
 .cr.mode-corner,.demo-overlay.mode-corner{
-  right:0!important;bottom:0!important;
-  width:clamp(29px,5cqw,48px)!important;height:clamp(29px,5cqw,48px)!important;
-  padding:0!important;margin:0!important;
-  background:transparent!important;border:0!important;box-shadow:none!important;
-  border-radius:0 0 7px 0!important;overflow:hidden!important;
-  opacity:.5!important;
+  position:absolute!important;right:0!important;bottom:0!important;
+  width:52px!important;height:52px!important;min-width:0!important;
+  margin:0!important;padding:0!important;border:0!important;
+  border-radius:0 0 6px 0!important;background:transparent!important;
+  box-shadow:none!important;overflow:hidden!important;opacity:.66!important;
+  transition:opacity .35s ease!important;
 }
-.demo-overlay.mode-corner{width:34px!important;height:34px!important}
-.cr.mode-corner .page-corner,.demo-overlay.mode-corner .page-corner{
-  position:absolute!important;inset:0!important;width:100%!important;height:100%!important;
-  display:block!important;overflow:visible!important;
-  background:none!important;clip-path:none!important;border:0!important;
-  transform-origin:100% 100%;transform:translate(0,0) rotate(0deg)!important;
-  filter:drop-shadow(-1px -1px 1px rgba(0,0,0,.22));
-  transition:transform .25s ease,filter .25s ease!important;
-}
+.demo-overlay.mode-corner{width:38px!important;height:38px!important}
 .cr.mode-corner:hover,.demo-overlay.mode-corner:hover,
-.cr.mode-corner:focus-visible,.demo-overlay.mode-corner:focus-visible{opacity:.95!important}
-.cr.mode-corner:hover .page-corner,.demo-overlay.mode-corner:hover .page-corner,
-.cr.mode-corner:focus-visible .page-corner,.demo-overlay.mode-corner:focus-visible .page-corner{
-  transform:translate(-2px,-2px) rotate(-4deg)!important;
-  filter:drop-shadow(-2px -2px 3px rgba(0,0,0,.3));
+.cr.mode-corner:focus-visible,.demo-overlay.mode-corner:focus-visible{opacity:1!important}
+.cr.mode-corner .page-corner,.demo-overlay.mode-corner .page-corner{
+  display:block!important;position:absolute!important;inset:0!important;
+  width:100%!important;height:100%!important;overflow:hidden!important;
+  background:none!important;border:0!important;clip-path:none!important;
+  transform:none!important;filter:none!important;
+  pointer-events:none!important;
 }
-@media (prefers-reduced-motion:reduce){.cr,.demo-overlay,.page-corner{transition:none!important}}
-
-/* Modes 7 et 8 : éléments interactifs minimalistes, aucun aplat opaque. */
+/* Angle bleu en forme de L : seulement deux segments, jamais un carré. */
 .cr.mode-glow,.demo-overlay.mode-glow{
-  position:absolute!important;right:11px!important;bottom:9px!important;
-  width:42px!important;height:42px!important;padding:0!important;
+  position:absolute!important;right:15px!important;bottom:12px!important;
+  width:44px!important;height:44px!important;min-width:0!important;
+  margin:0!important;padding:0!important;
   border:0!important;border-radius:0!important;
   background:transparent!important;box-shadow:none!important;
-  opacity:.5!important;overflow:visible!important;
-  transition:opacity .2s ease!important;
+  opacity:.9!important;overflow:visible!important;
+  transition:opacity .35s ease!important;
 }
-.demo-overlay.mode-glow{width:32px!important;height:32px!important;right:8px!important;bottom:8px!important}
-.cr.mode-glow:hover,.demo-overlay.mode-glow:hover,
-.cr.mode-glow:focus-visible,.demo-overlay.mode-glow:focus-visible{opacity:1!important}
+.demo-overlay.mode-glow{right:10px!important;bottom:9px!important;width:34px!important;height:34px!important}
 .cr.mode-glow .provenance-glow-angle,.demo-overlay.mode-glow .provenance-glow-angle{
-  display:block!important;position:absolute!important;right:0!important;bottom:0!important;
-  width:70%!important;height:70%!important;
-  border-right:2px solid #82b4ff!important;border-bottom:2px solid #82b4ff!important;
-  border-radius:0 0 5px 0!important;background:none!important;padding:0!important;
-  box-shadow:none!important;transform:none!important;
-  transition:filter .2s ease,transform .2s ease!important;
+  box-sizing:border-box!important;position:absolute!important;
+  right:0!important;bottom:0!important;display:block!important;
+  width:75%!important;height:75%!important;
+  border:0!important;border-right:3px solid #8fc7ff!important;
+  border-bottom:3px solid #8fc7ff!important;
+  border-radius:0 0 3px 0!important;background:transparent!important;
+  box-shadow:2px 2px 7px rgba(59,143,255,.6)!important;
+  filter:drop-shadow(0 0 3px rgba(96,176,255,.95))!important;
+  transform:none!important;
+  transition:filter .4s ease,box-shadow .4s ease!important;
+  pointer-events:none!important;
 }
 .cr.mode-glow:hover .provenance-glow-angle,.demo-overlay.mode-glow:hover .provenance-glow-angle,
 .cr.mode-glow:focus-visible .provenance-glow-angle,.demo-overlay.mode-glow:focus-visible .provenance-glow-angle{
-  filter:drop-shadow(0 0 5px #6da6ff);transform:translate(-2px,-2px)!important;
+  filter:drop-shadow(0 0 9px #65b3ff)!important;
+  box-shadow:3px 3px 14px rgba(59,143,255,.9)!important;
 }
 .cr.mode-seal,.demo-overlay.mode-seal{
   position:absolute!important;right:11px!important;bottom:9px!important;
@@ -469,6 +465,6 @@
     </section>
   </div>
 </dialog>
-<script type="module" src="./app.js?v=20261105-modes-v9"></script>
+<script type="module" src="./app.js?v=20261105-curl-v10"></script>
 </body>
 </html>

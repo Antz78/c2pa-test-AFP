@@ -198,6 +198,45 @@ function presentationFor(photo) {
     photo.demoStyle = PRESENTATIONS[Math.floor(Math.random()*PRESENTATIONS.length)];
   return selectedMode === 'random' ? photo.demoStyle : selectedMode;
 }
+// Animation du repli par déformation géométrique réelle (pas de translation/saut).
+function installPageCurl(button, svg) {
+  let current=0, targetLift=0, raf=0;
+  const paper=svg.querySelector('.fold-paper');
+  const shadow=svg.querySelector('.fold-shadow');
+  const edge=svg.querySelector('.fold-edge');
+  const rim=svg.querySelector('.fold-rim');
+  const reduceMotion=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  function paint(t) {
+    // La pointe reste attachée au coin bas/droit. La courbe se déroule vers l'intérieur.
+    const reach=14+27*t;
+    const top=72-reach;
+    const begin=72-reach;
+    const cx=72-reach*.52;
+    const cy=72-reach*.52;
+    const curve=`M ${begin.toFixed(2)} 72 C ${(begin+reach*.32).toFixed(2)} ${(72-reach*.08).toFixed(2)} ${(72-reach*.08).toFixed(2)} ${(top+reach*.32).toFixed(2)} 72 ${top.toFixed(2)}`;
+    paper.setAttribute('d',`${curve} L72 72 Z`);
+    edge.setAttribute('d',curve);
+    rim.setAttribute('d',`M ${begin.toFixed(2)} 71.2 C ${(begin+reach*.32).toFixed(2)} ${(71-reach*.08).toFixed(2)} ${(71-reach*.08).toFixed(2)} ${(top+reach*.32).toFixed(2)} 71 ${top.toFixed(2)}`);
+    shadow.setAttribute('d',`M ${(begin-2).toFixed(2)} 72 C ${cx.toFixed(2)} ${(72-reach*.13).toFixed(2)} ${(72-reach*.13).toFixed(2)} ${cy.toFixed(2)} 72 ${(top-2).toFixed(2)} L72 72 Z`);
+    paper.style.opacity=String(.68+.24*t);
+  }
+  paint(0);
+  function frame(){
+    current+=(targetLift-current)*.095;
+    paint(current);
+    if(Math.abs(current-targetLift)>.004) raf=requestAnimationFrame(frame);
+    else {current=targetLift;paint(current);raf=0;}
+  }
+  function setLift(n){
+    targetLift=reduceMotion?0:n;
+    if(reduceMotion){paint(0);return;}
+    if(!raf) raf=requestAnimationFrame(frame);
+  }
+  button.addEventListener('pointerenter',()=>setLift(1));
+  button.addEventListener('pointerleave',()=>setLift(0));
+  button.addEventListener('focus',()=>setLift(1));
+  button.addEventListener('blur',()=>setLift(0));
+}
 function addBadgeContent(target, mode, state) {
   target.replaceChildren();
   target.classList.add('mode-' + mode);
@@ -231,30 +270,27 @@ function addBadgeContent(target, mode, state) {
     svg.innerHTML=`<path d="M12 3a9 9 0 0 0-9 9"/><path d="M21 12a9 9 0 0 0-9-9"/><path d="M5.6 16c.6-2.1.3-3.6.5-5.1a6 6 0 0 1 11.8 1.1"/><path d="M9 20c1.2-2.3 1.5-4.7 1.3-7.5a1.7 1.7 0 1 1 3.4 0c.1 4-.3 6.2-1.4 8.5"/><path d="M15.9 19c.8-2.5 1-4.4.8-6.9"/><path d="M7 19c.4-.9.8-2.1 1-3.2"/><path d="M19 16.5c.2-1.4.3-2.5.2-4"/>`;
     target.append(svg);
   } else if (mode === 'corner') {
-    // Véritable repli courbe : SVG vectoriel, translucide, sans triangle opaque.
+    // Repli organique : on déforme la courbe, sans déplacer le coin entier.
     const ns='http://www.w3.org/2000/svg';
     const svg=document.createElementNS(ns,'svg');
     svg.setAttribute('class','page-corner');
-    svg.setAttribute('viewBox','0 0 64 64');
-    svg.setAttribute('preserveAspectRatio','xMaxYMax meet');
+    svg.setAttribute('viewBox','0 0 72 72');
     svg.setAttribute('aria-hidden','true');
     svg.innerHTML=`
       <defs>
-        <linearGradient id="foldLight" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#fff" stop-opacity=".04"/>
-          <stop offset=".48" stop-color="#fff" stop-opacity=".18"/>
-          <stop offset="1" stop-color="#fff" stop-opacity=".36"/>
-        </linearGradient>
-        <linearGradient id="foldShade" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#050b13" stop-opacity="0"/>
-          <stop offset="1" stop-color="#050b13" stop-opacity=".26"/>
+        <linearGradient id="pageFoldFront" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#fff" stop-opacity=".02"/>
+          <stop offset=".7" stop-color="#f4f7ff" stop-opacity=".16"/>
+          <stop offset="1" stop-color="#fff" stop-opacity=".33"/>
         </linearGradient>
       </defs>
-      <path class="fold-shadow" d="M13 63 C31 60 52 40 63 15 L63 63 Z" fill="url(#foldShade)"/>
-      <path class="fold-paper" d="M20 64 C35 61 55 43 64 20 L64 64 Z" fill="url(#foldLight)"/>
-      <path class="fold-edge" d="M20 63.5 C35 60.5 55 43 63.5 20" fill="none" stroke="rgba(255,255,255,.6)" stroke-width="1.2"/>
+      <path class="fold-shadow" fill="rgba(0,0,0,.17)"/>
+      <path class="fold-paper" fill="url(#pageFoldFront)"/>
+      <path class="fold-edge" fill="none" stroke="rgba(255,255,255,.68)" stroke-width="1.1"/>
+      <path class="fold-rim" fill="none" stroke="rgba(5,12,22,.22)" stroke-width=".7"/>
     `;
     target.append(svg);
+    installPageCurl(target,svg);
   }
   // En mode pastille, le point coloré est l'unique élément.
   if (!['corner','glow','seal'].includes(mode)) {

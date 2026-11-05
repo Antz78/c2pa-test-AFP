@@ -199,43 +199,46 @@ function presentationFor(photo) {
   return selectedMode === 'random' ? photo.demoStyle : selectedMode;
 }
 // Animation du repli par déformation géométrique réelle (pas de translation/saut).
+// Le repli se déploie sans bouger son point d'attache : le coin inférieur droit.
 function installPageCurl(button, svg) {
-  let current=0, targetLift=0, raf=0;
+  let progress=0, target=0, frameId=0;
   const paper=svg.querySelector('.fold-paper');
   const shadow=svg.querySelector('.fold-shadow');
   const edge=svg.querySelector('.fold-edge');
+  const under=svg.querySelector('.fold-under');
   const rim=svg.querySelector('.fold-rim');
-  const reduceMotion=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  function paint(t) {
-    // La pointe reste attachée au coin bas/droit. La courbe se déroule vers l'intérieur.
-    const reach=14+27*t;
-    const top=72-reach;
-    const begin=72-reach;
-    const cx=72-reach*.52;
-    const cy=72-reach*.52;
-    const curve=`M ${begin.toFixed(2)} 72 C ${(begin+reach*.32).toFixed(2)} ${(72-reach*.08).toFixed(2)} ${(72-reach*.08).toFixed(2)} ${(top+reach*.32).toFixed(2)} 72 ${top.toFixed(2)}`;
-    paper.setAttribute('d',`${curve} L72 72 Z`);
-    edge.setAttribute('d',curve);
-    rim.setAttribute('d',`M ${begin.toFixed(2)} 71.2 C ${(begin+reach*.32).toFixed(2)} ${(71-reach*.08).toFixed(2)} ${(71-reach*.08).toFixed(2)} ${(top+reach*.32).toFixed(2)} 71 ${top.toFixed(2)}`);
-    shadow.setAttribute('d',`M ${(begin-2).toFixed(2)} 72 C ${cx.toFixed(2)} ${(72-reach*.13).toFixed(2)} ${(72-reach*.13).toFixed(2)} ${cy.toFixed(2)} 72 ${(top-2).toFixed(2)} L72 72 Z`);
-    paper.style.opacity=String(.68+.24*t);
+  const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  function draw(t) {
+    // La zone révélée devient plus grande, plus profonde et plus sombre.
+    const size=18+45*t;
+    const start=100-size;
+    const c1x=start+size*.42, c1y=100-size*.08;
+    const c2x=100-size*.08, c2y=start+size*.42;
+    const line=`M ${start.toFixed(2)} 100 C ${c1x.toFixed(2)} ${c1y.toFixed(2)} ${c2x.toFixed(2)} ${c2y.toFixed(2)} 100 ${start.toFixed(2)}`;
+    const shape=`${line} L100 100 Z`;
+    under.setAttribute('d',shape);
+    paper.setAttribute('d',shape);
+    edge.setAttribute('d',line);
+    rim.setAttribute('d',`M ${(start+1.3).toFixed(2)} 100 C ${(c1x+1).toFixed(2)} ${(c1y-1).toFixed(2)} ${(c2x-1).toFixed(2)} ${(c2y+1).toFixed(2)} 100 ${(start+1.3).toFixed(2)}`);
+    shadow.setAttribute('d',`M ${(start-3).toFixed(2)} 100 C ${(c1x-3).toFixed(2)} ${(c1y-4).toFixed(2)} ${(c2x-4).toFixed(2)} ${(c2y-3).toFixed(2)} 100 ${(start-3).toFixed(2)} L100 100 Z`);
+    under.style.opacity=String(.75+.25*t);
+    paper.style.opacity=String(.4+.15*t);
   }
-  paint(0);
-  function frame(){
-    current+=(targetLift-current)*.095;
-    paint(current);
-    if(Math.abs(current-targetLift)>.004) raf=requestAnimationFrame(frame);
-    else {current=targetLift;paint(current);raf=0;}
+  draw(0);
+  function animate(){
+    progress+=(target-progress)*.11;
+    draw(progress);
+    if(Math.abs(target-progress)>.003) frameId=requestAnimationFrame(animate);
+    else {progress=target;draw(progress);frameId=0;}
   }
-  function setLift(n){
-    targetLift=reduceMotion?0:n;
-    if(reduceMotion){paint(0);return;}
-    if(!raf) raf=requestAnimationFrame(frame);
+  function lift(value){
+    target=reduced?0:value;
+    if(!frameId) frameId=requestAnimationFrame(animate);
   }
-  button.addEventListener('pointerenter',()=>setLift(1));
-  button.addEventListener('pointerleave',()=>setLift(0));
-  button.addEventListener('focus',()=>setLift(1));
-  button.addEventListener('blur',()=>setLift(0));
+  button.addEventListener('pointerenter',()=>lift(1));
+  button.addEventListener('pointerleave',()=>lift(0));
+  button.addEventListener('focus',()=>lift(1));
+  button.addEventListener('blur',()=>lift(0));
 }
 function addBadgeContent(target, mode, state) {
   target.replaceChildren();
@@ -274,20 +277,25 @@ function addBadgeContent(target, mode, state) {
     const ns='http://www.w3.org/2000/svg';
     const svg=document.createElementNS(ns,'svg');
     svg.setAttribute('class','page-corner');
-    svg.setAttribute('viewBox','0 0 72 72');
+    svg.setAttribute('viewBox','0 0 100 100');
     svg.setAttribute('aria-hidden','true');
     svg.innerHTML=`
       <defs>
         <linearGradient id="pageFoldFront" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#fff" stop-opacity=".02"/>
-          <stop offset=".7" stop-color="#f4f7ff" stop-opacity=".16"/>
-          <stop offset="1" stop-color="#fff" stop-opacity=".33"/>
+          <stop offset="0" stop-color="#e9edf5" stop-opacity=".07"/>
+          <stop offset=".58" stop-color="#e4ebf5" stop-opacity=".28"/>
+          <stop offset="1" stop-color="#ffffff" stop-opacity=".55"/>
+        </linearGradient>
+        <linearGradient id="pageFoldUnder" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#0a101c" stop-opacity=".80"/>
+          <stop offset="1" stop-color="#00030a" stop-opacity=".99"/>
         </linearGradient>
       </defs>
-      <path class="fold-shadow" fill="rgba(0,0,0,.17)"/>
+      <path class="fold-shadow" fill="rgba(0,0,0,.36)"/>
+      <path class="fold-under" fill="url(#pageFoldUnder)"/>
       <path class="fold-paper" fill="url(#pageFoldFront)"/>
-      <path class="fold-edge" fill="none" stroke="rgba(255,255,255,.68)" stroke-width="1.1"/>
-      <path class="fold-rim" fill="none" stroke="rgba(5,12,22,.22)" stroke-width=".7"/>
+      <path class="fold-rim" fill="none" stroke="rgba(0,0,0,.24)" stroke-width=".9"/>
+      <path class="fold-edge" fill="none" stroke="rgba(255,255,255,.76)" stroke-width="1.15"/>
     `;
     target.append(svg);
     installPageCurl(target,svg);

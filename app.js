@@ -181,6 +181,7 @@ async function analyzeAll(limit = 3) {
       p.processing = false;
       renderCard(p);
       updateCount();
+      refreshSidePanel(p);
     }
   });
   await Promise.all(workers);
@@ -188,6 +189,51 @@ async function analyzeAll(limit = 3) {
 
 /* ---------- Rendu ---------- */
 const LABEL = { loading: 'Analyse…', ok: 'Vérifiée', warn: 'À vérifier ⚠', bad: 'Échec ✕', none: 'Sans C2PA', error: 'Erreur de lecture' };
+
+const PRESENTATIONS = ['info','afp','direct','banner','status'];
+const modeSelect = document.querySelector('#presentation-mode');
+let selectedMode = 'random';
+function presentationFor(photo) {
+  if (!photo.demoStyle || !PRESENTATIONS.includes(photo.demoStyle))
+    photo.demoStyle = PRESENTATIONS[Math.floor(Math.random()*PRESENTATIONS.length)];
+  return selectedMode === 'random' ? photo.demoStyle : selectedMode;
+}
+function addBadgeContent(target, mode, state) {
+  target.replaceChildren();
+  target.classList.add('mode-' + mode);
+  if (mode === 'direct') return;
+  if (mode === 'info') {
+    const el=document.createElement('span'); el.className='info-symbol';el.textContent='i';target.append(el);
+  } else if (mode === 'afp') {
+    const logo=document.createElement('img');logo.src='./afp-gelule.png';logo.alt='AFP';logo.className='afp-tab-art';target.append(logo);
+    const label=document.createElement('span');label.className='afp-tab-text';label.textContent='Voir la provenance';target.append(label);
+    const arrow=document.createElement('span');arrow.className='afp-tab-arrow';arrow.textContent='›';target.append(arrow);
+    target.classList.add('afp-tab');
+  } else {
+    const el=document.createElement('span');
+    el.className=mode==='banner'?'banner-label':'status-label';
+    el.textContent=mode==='banner'?'ⓘ  Voir la provenance':(LABEL[state]||'Provenance');
+    target.append(el);
+  }
+  const dot=document.createElement('span');dot.className='dot '+state;dot.setAttribute('aria-hidden','true');target.append(dot);
+}
+function redrawPresentations() {
+  photos.forEach(photo => {
+    const card=grid.querySelector(`[data-idx="${photo.idx}"]`);
+    const overlay=card?.querySelector('.demo-overlay');
+    if(overlay){overlay.className='demo-overlay';addBadgeContent(overlay,presentationFor(photo),photo.state);}
+  });
+  if(currentIdx>=0) openLightbox(currentIdx);
+}
+modeSelect.addEventListener('change',()=>{
+  selectedMode=modeSelect.value;
+  redrawPresentations();
+});
+document.querySelector('#reshuffle').addEventListener('click',()=>{
+  photos.forEach(p=>p.demoStyle=PRESENTATIONS[Math.floor(Math.random()*PRESENTATIONS.length)]);
+  if(selectedMode!=='random'){selectedMode='random';modeSelect.value='random';}
+  redrawPresentations();
+});
 
 function cardEl(photo) {
   const card = document.createElement('figure');
@@ -204,7 +250,12 @@ function cardEl(photo) {
   const name = document.createElement('figcaption');
   name.className = 'name';
   name.textContent = photo.name.split('/').pop();
-  card.append(img, tag, name);
+  const overlay = document.createElement('button');
+  overlay.type='button'; overlay.className='demo-overlay';
+  overlay.setAttribute('aria-label','Voir les informations C2PA');
+  addBadgeContent(overlay,presentationFor(photo),photo.state);
+  overlay.addEventListener('click',event=>{event.stopPropagation();openLightbox(photo.idx);openSidePanel(photo);});
+  card.append(img, tag, name, overlay);
   card.addEventListener('click', () => openLightbox(photo.idx));
   return card;
 }
@@ -217,6 +268,10 @@ function renderCard(photo) {
   tag.textContent = '';
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),
              document.createTextNode(LABEL[photo.state] ?? photo.state));
+  const overlay = card.querySelector('.demo-overlay');
+  if (overlay) { overlay.className='demo-overlay'; addBadgeContent(overlay,presentationFor(photo),photo.state); }
+  const overlayDot = card.querySelector('.demo-overlay .dot');
+  if (overlayDot) overlayDot.className = `dot ${photo.state}`;
   applyFilterToCard(card, photo);
 }
 
@@ -288,6 +343,18 @@ function openLightbox(idx) {
   lbPhoto.src = photo.url;
   lbPhoto.alt = photo.name.split('/').pop();
   crBadge.className = `cr ${photo.state}`;
+  const mode=presentationFor(photo);
+  crBadge.className=`cr ${photo.state}`;
+  addBadgeContent(crBadge,mode,photo.state);
+  lightbox.classList.toggle('direct-layout',mode==='direct');
+  if(mode==='direct'){
+    openSidePanel(photo);
+    sidePanel.classList.add('direct-visible');
+  } else {
+    sidePanel.hidden=true;
+    sidePanel.classList.remove('direct-visible');
+    sidePhoto=null;
+  }
   setStatusLine(photo.state === 'loading' ? 'loading' : photo.state, 'Chargement des informations…');
   lbSummary.replaceChildren();
   lbJson.textContent = 'Chargement…';
@@ -297,6 +364,8 @@ function openLightbox(idx) {
   analyze(photo).then(() => {
     if (currentIdx >= 0 && photos[currentIdx] === photo) {
       crBadge.className = `cr ${photo.state}`;
+      addBadgeContent(crBadge,presentationFor(photo),photo.state);
+      if (!sidePanel.hidden) refreshSidePanel(photo);
       if (credentials.open) fillDetails(photo); // rafraîchir le panneau déjà ouvert
       renderCard(photo);
       updateCount();
@@ -368,10 +437,29 @@ function fillDetails(photo) {
 
 }
 
+const sidePanel = document.querySelector('#side-panel');
+let sidePhoto = null;
+function refreshSidePanel(photo) {
+  if (sidePanel.hidden || sidePhoto !== photo) return;
+  // Le même moteur et les mêmes données que la fiche historique : aucune simulation.
+  fillDetails(photo);
+  const status = document.querySelector('#side-status');
+  status.className = lbStatus.className;
+  status.textContent = lbStatus.textContent;
+  document.querySelector('#side-summary').replaceChildren(...[...lbSummary.childNodes].map(n => n.cloneNode(true)));
+  document.querySelector('#side-json').textContent = lbJson.textContent;
+}
+function openSidePanel(photo) {
+  sidePhoto = photo;
+  sidePanel.hidden = false;
+  refreshSidePanel(photo);
+  // Si l'analyse est encore en cours, le panneau sera rafraîchi à sa fin.
+}
+document.querySelector('#side-close').addEventListener('click', () => { sidePanel.hidden = true; sidePhoto = null; sidePanel.classList.remove('direct-visible'); lightbox.classList.remove('direct-layout'); });
+
 crBadge.addEventListener('click', () => {
   if (currentIdx < 0) return;
-  fillDetails(photos[currentIdx]);
-  credentials.showModal();
+  openSidePanel(photos[currentIdx]);
 });
 document.querySelector('#cr-close').addEventListener('click', () => credentials.close());
 credentials.addEventListener('click', e => { if (e.target === credentials) credentials.close(); });

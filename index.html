@@ -80,7 +80,7 @@
       .lb-stage{padding:56px 8px}}
 
     /* ===== Badge logo AFP sur la photo (50 % de transparence, logo complet) ===== */
-    .cr{position:absolute;right:3px;bottom:2px;padding:0;border:0;background:transparent;cursor:pointer;
+    .cr{position:absolute;right:10px;bottom:2px;padding:0;border:0;background:transparent;cursor:pointer;
       opacity:.5;transition:opacity .15s,transform .15s}
     .cr:hover{opacity:1;transform:translateY(-2px)}
     .cr img{display:block;height:var(--afp-logo-height,33.6px);max-height:none;width:auto;max-width:none;object-fit:contain;border-radius:5px;
@@ -191,6 +191,90 @@
       dialog#credentials .credential-row .field-value{grid-column:2}
       dialog#credentials .validation-item{flex-wrap:wrap}
     }
+
+    /* Démonstrateur : logo AFP ou icône information, alternance par photo */
+    .cr .info-symbol,.demo-overlay .info-symbol{display:grid;place-items:center;width:32px;height:32px;border:1.5px solid rgba(226,235,247,.75);border-radius:50%;background:rgba(16,24,36,.48);color:white;font:700 22px/1 Georgia,serif;box-shadow:0 2px 8px #0006}
+    .cr .info-symbol{width:var(--afp-logo-height,33px);height:var(--afp-logo-height,33px)}
+    .cr .dot{right:-10px}
+    .demo-overlay{position:absolute;right:10px;bottom:8px;z-index:2;border:0;background:transparent;cursor:pointer;opacity:.65;padding:0;display:block;line-height:0}
+    .demo-overlay:hover,.demo-overlay:focus-visible{opacity:1}
+    .demo-overlay img{display:block;height:var(--card-logo-height,28px);width:auto;max-width:none;min-height:0;border-radius:4px;filter:drop-shadow(0 1px 5px #0007)}
+    .demo-overlay .info-symbol{width:var(--card-logo-height,28px);height:var(--card-logo-height,28px);font-size:calc(var(--card-logo-height,28px) * .65)}
+    .demo-overlay .dot{position:absolute;right:-9px;top:-5px;width:9px;height:9px;min-width:9px;min-height:9px;box-sizing:border-box;border-radius:50%;border:2px solid white;background:#8b96a5}
+    .demo-overlay .dot.ok{background:#3fb950}.demo-overlay .dot.warn{background:#d29922}.demo-overlay .dot.bad,.demo-overlay .dot.error{background:#f85149}.demo-overlay .dot.loading{background:#4f8ff7}
+    /* Panneau latéral sombre non modal : les cartes restent accessibles */
+    #side-panel{position:fixed;z-index:45;top:56px;right:0;bottom:0;width:min(510px,100vw);overflow-y:auto;background:#111820;color:#e6edf3;border-left:1px solid #344153;border-radius:20px 0 0 0;box-shadow:-18px 0 45px #0009;padding:22px 22px 32px}
+    #side-panel[hidden]{display:none}
+    #side-panel .side-header{display:flex;align-items:flex-start;gap:14px;margin-bottom:20px}
+    #side-panel .side-header img{width:90px;height:auto;align-self:center}
+    #side-panel h2{font-size:1.22rem;margin:4px 0 0;color:#fff}
+    #side-panel .eyebrow{font-size:.78rem;color:#aab8ca}
+    #side-panel .side-close{margin-left:auto;border:0;border-radius:9px;background:#263241;color:white;padding:7px 11px;cursor:pointer}
+    #side-panel .status{border-radius:11px;padding:14px;margin:0 0 20px;font-size:.9rem;line-height:1.5;background:#273344}
+    #side-panel .status.warn{background:#4a3410;color:#ffcf77}#side-panel .status.ok{background:#163d2b;color:#9be6b1}#side-panel .status.error{background:#4b2325;color:#ffb0b0}
+    #side-panel .credential-section{margin-bottom:20px}#side-panel .credential-section h3{font-size:.94rem;margin:0 0 10px;color:#e6edf3}
+    #side-panel .credential-fields,#side-panel .validation-list{border:1px solid #354252;border-radius:12px;overflow:hidden;background:#1c2733}
+    #side-panel .credential-row{display:grid;grid-template-columns:23px minmax(105px,34%) minmax(0,1fr);gap:10px;align-items:center;padding:12px;border-bottom:1px solid #34404d;font-size:.81rem}
+    #side-panel .credential-row:last-child,#side-panel .validation-item:last-child{border-bottom:0}
+    #side-panel .field-label{font-weight:700;color:#d8e0eb}#side-panel .field-value{overflow-wrap:anywhere;min-width:0;color:#fff}
+    #side-panel .field-value small{display:block;color:#c3ccd9;margin-top:5px}
+    #side-panel .signal{display:grid;place-items:center;width:21px;height:21px;border-radius:50%;color:white;font-weight:800}
+    #side-panel .signal.ok{background:#268c40}#side-panel .signal.warn{background:#df9700}#side-panel .signal.bad{background:#e43d40}#side-panel .signal.neutral{background:#6782a2}
+    #side-panel .validation-item{display:flex;align-items:center;gap:9px;padding:12px;border-bottom:1px solid #34404d;font-size:.8rem;overflow-wrap:anywhere}
+    #side-panel .validation-item>span:nth-child(2){flex:1;min-width:0}
+    #side-panel .validation-pill{border-radius:99px;padding:4px 7px;white-space:nowrap;font-size:.72rem;background:#354455}
+    #side-panel .validation-pill.warn{color:#ffd180}#side-panel .validation-pill.bad{color:#ffb0b0}#side-panel .validation-pill.ok{color:#9be6b1}
+    #side-panel details{border:1px solid #354252;border-radius:10px;padding:13px;margin-top:16px}#side-panel summary{cursor:pointer;font-weight:650}
+    #side-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:280px;overflow:auto}
+    #side-panel .note{font-size:.78rem;color:#aab8ca;line-height:1.6;margin:18px 0}
+    #side-panel .c2pa-explainer{background:#c6d4f2;color:#1a2946;padding:16px;border-radius:13px;font-size:.85rem;line-height:1.55}
+    #side-panel .c2pa-explainer h3{margin:0 0 8px}#side-panel .c2pa-explainer ul{padding-left:20px}
+    @media(max-width:650px){#side-panel{top:0;width:100vw;border-radius:0;padding:20px 16px}#side-panel .credential-row{grid-template-columns:22px minmax(90px,32%) minmax(0,1fr);gap:7px;font-size:.78rem}}
+
+    /* Onglet d'appel à l'action AFP : taille liée à la photo affichée */
+    .cr.afp-tab{opacity:.78;right:12px;bottom:3px;display:flex;align-items:center;gap:clamp(5px,1vw,9px);
+      padding:4px 10px 4px 5px;border-radius:999px;background:rgba(10,19,34,.80);
+      border:1px solid rgba(225,236,255,.36);box-shadow:0 3px 15px #0008;
+      backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);max-width:calc(100% - 20px)}
+    .cr.afp-tab:hover,.cr.afp-tab:focus-visible{opacity:1;transform:translateY(-2px);border-color:#94baff;outline-offset:3px}
+    .cr.afp-tab .afp-tab-art{display:block;width:auto;height:var(--afp-logo-height,33.6px);
+      max-width:min(100px,28vw);object-fit:contain;border-radius:999px;flex-shrink:0}
+    .cr.afp-tab .afp-tab-text{display:block;background:none;border:0;box-shadow:none;padding:0;
+      color:white;font-size:clamp(10px,1.15vw,13px);font-weight:700;white-space:nowrap;letter-spacing:.01em}
+    .cr.afp-tab .afp-tab-arrow{display:inline;color:#9dc4ff;font-size:15px}
+    .cr.afp-tab .dot{right:-10px;top:50%;transform:translateY(-50%)}
+    @media(max-width:550px){.cr.afp-tab{gap:5px;padding:3px 7px 3px 3px;right:12px}
+      .cr.afp-tab .afp-tab-text{font-size:10px}}
+    @media(prefers-reduced-motion:reduce){.cr.afp-tab{transition:none}}
+
+    /* Démonstrateur : sélecteur et présentations indépendantes du moteur C2PA */
+    .mode-label{font-size:.78rem;color:var(--muted);font-weight:700}
+    #presentation-mode,#reshuffle{background:#1c2733;color:#fff;border:1px solid #40516a;border-radius:9px;padding:8px 10px;font:inherit;font-size:.82rem;cursor:pointer}
+    #presentation-mode:focus-visible,#reshuffle:focus-visible{outline:2px solid #78a7ff}
+    .card .demo-overlay{z-index:3}
+    .demo-overlay.mode-direct{display:none!important}
+    .demo-overlay.mode-banner{left:8px!important;right:8px!important;bottom:36px!important;width:auto!important;max-width:none!important;justify-content:center!important;border-radius:9px!important;background:rgba(12,22,37,.83)!important;padding:8px!important}
+    .demo-overlay.mode-banner .banner-label{font-size:11px;color:white;font-weight:700}
+    .demo-overlay.mode-status{background:rgba(24,35,49,.85)!important;border-radius:999px!important;padding:6px 9px!important}
+    .demo-overlay.mode-status .status-label{font-size:11px;color:#fff;font-weight:700}
+    .cr.mode-banner{right:5px!important;left:5px!important;bottom:3px!important;justify-content:center!important;border-radius:10px!important;background:rgba(15,28,46,.87)!important;padding:10px!important;opacity:.9!important}
+    .cr.mode-banner .banner-label{color:#fff;font-size:clamp(11px,2vw,14px);font-weight:700;background:none;border:0;box-shadow:none;padding:0}
+    .cr.mode-status{background:rgba(15,28,46,.88)!important;border-radius:999px!important;padding:8px 13px!important;opacity:.9!important}
+    .cr.mode-status .status-label{color:#fff;font-weight:700;background:none;border:0;box-shadow:none;padding:0;font-size:12px}
+    .cr.mode-direct{display:none!important}
+    #side-panel.direct-visible{z-index:46;top:0;bottom:0}
+    #lightbox.direct-layout .lb-stage{right:min(510px,42vw)}
+    #lightbox.direct-layout .lb-top{right:min(510px,42vw)}
+    #lightbox.direct-layout .nav.next{right:calc(min(510px,42vw) + 12px)}
+    @media(max-width:800px){
+      #lightbox.direct-layout{overflow-y:auto;background:#05080c}
+      #lightbox.direct-layout .lb-stage{position:relative;inset:auto;padding:66px 10px 12px;min-height:0;height:auto}
+      #lightbox.direct-layout .lb-frame img{max-height:55vh}
+      #lightbox.direct-layout .lb-top{right:0}
+      #lightbox.direct-layout .nav{top:32%;z-index:35}
+      #lightbox.direct-layout .nav.next{right:8px}
+      #side-panel.direct-visible{position:relative;top:auto;right:auto;bottom:auto;width:100%;max-width:none;max-height:none;border-radius:14px 14px 0 0;box-shadow:none;margin-top:12px}
+    }
   </style>
 </head>
 <body>
@@ -204,6 +288,16 @@
     <button class="chip" data-filter="bad" aria-pressed="false">✕ Échecs</button>
     <button class="chip" data-filter="none" aria-pressed="false">Sans C2PA</button>
   </div>
+  <label class="mode-label" for="presentation-mode">Présentation :</label>
+  <select id="presentation-mode" aria-label="Choisir la présentation C2PA">
+    <option value="random">🎲 Aléatoire</option>
+    <option value="info">ⓘ Icône info</option>
+    <option value="afp">AFP · Onglet</option>
+    <option value="direct">Panneau visible</option>
+    <option value="banner">Bandeau</option>
+    <option value="status">Pastille de confiance</option>
+  </select>
+  <button id="reshuffle" type="button" title="Redistribuer les présentations">↻ Redistribuer</button>
   <span id="count"></span>
 </header>
 <main>
@@ -224,6 +318,7 @@
 
 <div id="dropzone" hidden><div class="drop-inner">Relâchez pour importer vos photos</div></div>
 
+
 <!-- Vue plein écran -->
 <dialog id="lightbox">
   <div class="lb-top">
@@ -241,6 +336,16 @@
   </div>
   <button class="nav prev" id="lb-prev" type="button" aria-label="Photo précédente">‹</button>
   <button class="nav next" id="lb-next" type="button" aria-label="Photo suivante">›</button>
+<!-- Démonstration : panneau de provenance latéral, sans bloquer la galerie -->
+<aside id="side-panel" aria-label="Content Credentials de la photographie" hidden>
+  <div class="side-header"><img src="./logo-afp.png" alt="AFP"><div><div class="eyebrow">Provenance numérique</div><h2>Content Credentials</h2></div><button class="side-close" id="side-close" type="button" aria-label="Fermer le panneau">✕</button></div>
+  <p id="side-status" class="status loading" role="status"></p>
+  <div id="side-summary"></div>
+  <details><summary>Informations techniques du manifeste</summary><pre id="side-json"></pre></details>
+  <p class="note">Vert : information présente ou contrôle réussi. Orange : confiance à vérifier. Rouge : échec de contrôle. Une information renseignée ne garantit pas qu'elle soit vraie.</p>
+  <section class="c2pa-explainer"><h3>ⓘ Qu’est-ce que le C2PA ?</h3><p>Le C2PA (Coalition for Content Provenance and Authenticity) est un standard ouvert permettant d’associer des Content Credentials à un fichier : origine déclarée, historique et modifications enregistrées.</p><ul><li>Il contribue à la transparence sur la provenance.</li><li>Il peut signaler des modifications ou des étapes impliquant l’IA si elles ont été enregistrées.</li><li>Il ne prouve pas la véracité de la scène ni la fiabilité de la source.</li></ul><p>Un certificat non reconnu comme fiable ne signifie pas automatiquement que l’image a été falsifiée.</p></section>
+</aside>
+
 </dialog>
 
 <!-- Fiche Content Credentials -->
@@ -267,6 +372,6 @@
     </section>
   </div>
 </dialog>
-<script type="module" src="./app.js?v=20261105-filtres-v3"></script>
+<script type="module" src="./app.js?v=20261105-afp-tab-v2"></script>
 </body>
 </html>

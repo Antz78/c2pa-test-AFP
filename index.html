@@ -89,7 +89,7 @@
     .cr span{display:inline-flex;align-items:center;background:#fff;color:#111827;border:1px solid #ccd1d8;
       border-radius:999px;padding:8px 12px;font-weight:750;font-size:.75rem;box-shadow:0 2px 10px #0003}
     /* Pastille d'état : mini-badge de notification, ronde et nette */
-    .cr .dot{position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;
+    .cr .dot{position:absolute;top:-4px;right:-4px;width:12px;height:12px;min-width:12px;min-height:12px;aspect-ratio:1/1;box-sizing:border-box;flex:none;padding:0;display:block;border-radius:50%;
       border:2px solid #fff;background:#8b96a5;box-shadow:0 1px 4px #0009}
     .cr.ok .dot{background:var(--ok)} .cr.warn .dot{background:var(--warn)}
     .cr.error .dot{background:var(--error)} .cr.none .dot{background:#6e7a89}
@@ -140,6 +140,27 @@
     dialog#credentials .note{border-top:1px solid #e8edf2;padding-top:15px}
     dialog#credentials button.close{float:none}
     @media(max-width:480px){dialog#credentials .credential-row{grid-template-columns:1fr;gap:2px}dialog#credentials .credential-body{padding:18px}dialog#credentials .credential-head{padding:18px}}
+
+    /* Statuts accessibles : vert = information présente, orange = à vérifier, rouge = échec */
+    dialog#credentials .credential-row{grid-template-columns:22px 33% minmax(0,1fr);align-items:start;gap:10px;padding:12px 13px}
+    dialog#credentials .signal{display:inline-grid;place-items:center;flex:none;width:20px;height:20px;min-width:20px;min-height:20px;aspect-ratio:1;border-radius:50%;color:white;font-size:13px;font-weight:800;line-height:1}
+    dialog#credentials .signal.ok{background:#268c40}dialog#credentials .signal.warn{background:#ee9b00}
+    dialog#credentials .signal.bad{background:#e43d40}dialog#credentials .signal.neutral{background:#6b85a9}
+    dialog#credentials dd small{display:block;color:#6c7788;margin-top:5px;font-size:.76rem}
+    dialog#credentials .validation-list{padding:0;overflow:hidden;border:1px solid #e0e6ef;background:white}
+    dialog#credentials .validation-item{display:flex;align-items:center;gap:10px;padding:11px 12px;border-bottom:1px solid #e5eaf0;font-size:.78rem}
+    dialog#credentials .validation-item:last-child{border-bottom:0}
+    dialog#credentials .validation-item>span:nth-child(2){flex:1;overflow-wrap:anywhere}
+    dialog#credentials .validation-pill{border-radius:999px;padding:4px 9px;font-weight:700;white-space:nowrap}
+    dialog#credentials .validation-pill.ok{background:#e2f5e8;color:#176e36}
+    dialog#credentials .validation-pill.warn{background:#fff1cf;color:#935a00}
+    dialog#credentials .validation-pill.bad{background:#ffe3e3;color:#a21e22}
+    dialog#credentials .validation-pill.neutral{background:#edf2f8;color:#52677f}
+    dialog#credentials .c2pa-explainer{margin-top:22px;padding:18px;border-radius:14px;background:#edf3ff;color:#1c3158}
+    dialog#credentials .c2pa-explainer h3{margin:0 0 10px;font-size:1.05rem}
+    dialog#credentials .c2pa-explainer p{font-size:.85rem;line-height:1.6;margin:8px 0}
+    dialog#credentials .c2pa-explainer ul{padding-left:19px;font-size:.82rem;line-height:1.6;margin:10px 0 0}
+    @media(max-width:480px){dialog#credentials .credential-row{grid-template-columns:22px minmax(0,1fr);gap:4px 9px}dialog#credentials .credential-row dd{grid-column:2}}
   </style>
 </head>
 <body>
@@ -202,7 +223,17 @@
     <p id="lb-status" class="status loading" role="status">Vérification C2PA en cours…</p>
     <div id="lb-summary"></div>
     <details><summary>Informations techniques du manifeste</summary><pre id="lb-json">Chargement…</pre></details>
-    <p class="note">Un manifeste présent ou une signature cryptographiquement valide ne garantit pas que le signataire soit reconnu comme fiable. Consultez les résultats de validation.</p>
+    <p class="note">Les indicateurs verts signalent des informations présentes ou des contrôles réussis ; orange signifie « à vérifier » ; rouge indique un échec de contrôle. Une information renseignée ne prouve pas à elle seule qu’elle est vraie.</p>
+    <section class="c2pa-explainer" aria-labelledby="c2pa-explain-title">
+      <h3 id="c2pa-explain-title">Qu’est-ce que le C2PA ?</h3>
+      <p>Le C2PA (Coalition for Content Provenance and Authenticity) est un standard ouvert qui permet d’associer à un fichier des <strong>Content Credentials</strong> : des informations sur sa provenance et, lorsqu’elles sont renseignées, sur les étapes de sa création ou de ses modifications.</p>
+      <ul>
+        <li>Il aide à retracer l’origine déclarée et l’historique d’un contenu.</li>
+        <li>Il peut signaler certaines modifications ou utilisations d’outils d’IA, si elles ont été enregistrées.</li>
+        <li>Il ne garantit pas qu’une scène est vraie, ni qu’une source est digne de confiance.</li>
+      </ul>
+      <p><strong>À retenir :</strong> « certificat non fiable » ne signifie pas automatiquement « image falsifiée ». Cela signifie que la confiance cryptographique n’a pas pu être établie par le système de vérification utilisé.</p>
+    </section>
   </div>
 </dialog>
 <script type="module" src="./app.js"></script>

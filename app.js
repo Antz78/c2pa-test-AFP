@@ -241,17 +241,29 @@ function readable(value) {
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }
-function field(label, value) {
+function field(label, value, level = 'ok', help = '') {
   const row = document.createElement('div'); row.className = 'credential-row';
+  const marker = document.createElement('span'); marker.className = `signal ${level}`;
+  marker.textContent = level === 'ok' ? '✓' : level === 'warn' ? '!' : level === 'bad' ? '×' : 'i';
+  marker.setAttribute('aria-label', level === 'ok' ? 'Information présente' : level === 'warn' ? 'À vérifier' : level === 'bad' ? 'Problème détecté' : 'Information indisponible');
   const name = document.createElement('dt'); name.textContent = label;
   const detail = document.createElement('dd'); detail.textContent = readable(value);
-  row.append(name, detail); return row;
+  if (help) { const note = document.createElement('small'); note.textContent = help; detail.append(note); }
+  row.append(marker, name, detail); return row;
 }
 function section(title, rows) {
   const block = document.createElement('section'); block.className = 'credential-section';
   const heading = document.createElement('h3'); heading.textContent = title;
   const dl = document.createElement('dl'); dl.className = 'credential-fields';
   dl.append(...rows); block.append(heading, dl); return block;
+}
+function present(value) { return value === null || value === undefined || value === '' ? 'neutral' : 'ok'; }
+function validationLevel(v) {
+  const code = String(typeof v === 'string' ? v : v?.code ?? v?.status ?? '').toLowerCase();
+  if (/mismatch|invalid|tamper|failure|error|hash|revoked|expired/.test(code)) return 'bad';
+  if (/untrusted|unknown|unsupported|warning|not.?trusted/.test(code)) return 'warn';
+  if (/success|valid|trusted|match/.test(code)) return 'ok';
+  return 'neutral';
 }
 function signatureOf(a) {
   const sig = firstValue(a.signature_info, a.signatureInfo, a.signature);
@@ -303,33 +315,41 @@ function fillDetails(photo) {
     return;
   }
   const entries = photo.validation ?? [];
-  const failures = entries.filter(i => /failure|mismatch|untrusted/.test(String(i?.code ?? '')));
-  if (failures.length) {
-    setStatusLine('warn', 'Manifeste présent, mais des problèmes de validation sont signalés.');
-  } else {
-    setStatusLine('ok', 'Manifeste C2PA trouvé. Vérifiez la confiance du signataire dans les détails.');
-  }
+  const levels = entries.map(validationLevel);
+  if (levels.includes('bad')) setStatusLine('error', 'Manifeste présent, mais une ou plusieurs vérifications ont échoué.');
+  else if (levels.includes('warn')) setStatusLine('warn', 'Manifeste présent, mais la confiance du signataire nécessite une vérification.');
+  else setStatusLine('ok', 'Manifeste C2PA présent. Sa présence ne prouve pas à elle seule l’authenticité de la scène photographiée.');
   const a = photo.active ?? {};
   const sig = signatureOf(a);
   const generator = firstValue(a.claim_generator, a.claimGenerator, a.claim_generator_info?.[0]?.name, a.claimGeneratorInfo?.[0]?.name);
   const signer = firstValue(sig.name, sig.issuer, sig.organization, a.signer);
   const date = firstValue(a.created_at, a.createdAt, sig.time, sig.timestamp);
-  const validationSection = document.createElement('section');
-  validationSection.className = 'credential-section';
+  const manifest = firstValue(photo.store?.active_manifest, photo.store?.activeManifest);
+  const signerLevel = levels.includes('bad') ? 'bad' : levels.includes('warn') ? 'warn' : present(signer);
+  const validationSection = document.createElement('section'); validationSection.className = 'credential-section';
   const vh = document.createElement('h3'); vh.textContent = 'Vérification et confiance';
-  const vl = document.createElement('ul'); vl.className = 'validation-list';
-  if (entries.length) entries.forEach(v => { const li = document.createElement('li'); li.textContent = validationText(v); vl.append(li); });
-  else { const li = document.createElement('li'); li.textContent = 'Aucun message de validation retourné — cela ne prouve pas que le signataire est fiable.'; vl.append(li); }
+  const vl = document.createElement('div'); vl.className = 'validation-list';
+  if (entries.length) entries.forEach(v => {
+    const line = document.createElement('div'); line.className = 'validation-item';
+    const level = validationLevel(v);
+    const marker = document.createElement('span'); marker.className = `signal ${level}`;
+    marker.textContent = level === 'ok' ? '✓' : level === 'warn' ? '!' : level === 'bad' ? '×' : 'i';
+    const code = document.createElement('span'); code.textContent = validationText(v);
+    const label = document.createElement('span'); label.className = `validation-pill ${level}`;
+    label.textContent = level === 'ok' ? 'Validé' : level === 'warn' ? 'À vérifier' : level === 'bad' ? 'Échec' : 'Indéterminé';
+    line.append(marker, code, label); vl.append(line);
+  });
+  else { const line = document.createElement('p'); line.textContent = 'Aucun résultat de validation détaillé retourné. La confiance du signataire n’est pas établie par cette absence.'; vl.append(line); }
   validationSection.append(vh, vl);
   lbSummary.replaceChildren(
     section('Informations sur le contenu', [
-      field('Titre', firstValue(a.title, photo.name.split('/').pop())),
-      field('Générateur', generator),
-      field('Date de création', date),
+      field('Titre', a.title, present(a.title)),
+      field('Générateur', generator, present(generator)),
+      field('Date de création', date, present(date)),
     ]),
     section('Signature et provenance', [
-      field('Signataire', signer),
-      field('Manifeste actif', firstValue(photo.store?.active_manifest, photo.store?.activeManifest)),
+      field('Signataire déclaré', signer, signerLevel, signerLevel === 'warn' ? 'Le certificat du signataire n’est pas reconnu comme fiable.' : signerLevel === 'bad' ? 'Un problème de validation est signalé.' : ''),
+      field('Manifeste actif', manifest, present(manifest)),
     ]),
     validationSection
   );

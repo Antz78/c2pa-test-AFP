@@ -45,34 +45,74 @@
     #dropzone[hidden]{display:none}
     .drop-inner{border:2px dashed var(--accent);border-radius:18px;padding:48px 64px;text-align:center;
       font-size:1.05rem;font-weight:700;color:var(--accent);pointer-events:none}
-    /* Lightbox */
+
+    /* ===== Vue plein écran (lightbox) ===== */
     dialog#lightbox{border:0;padding:0;background:transparent;max-width:none;max-height:none;
-      width:100vw;height:100vh;margin:0}
-    dialog#lightbox::backdrop{background:#000000d9;backdrop-filter:blur(6px)}
-    .lb{display:grid;grid-template-columns:1fr minmax(320px,430px);width:100%;height:100%}
-    .lb-img{position:relative;display:flex;align-items:center;justify-content:center;padding:18px;min-width:0}
-    .lb-img img{max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 20px 80px #000c;object-fit:contain}
-    .nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;
-      border:1px solid var(--border);background:#161b22cc;color:var(--text);font-size:1.2rem;cursor:pointer}
-    .nav.prev{left:10px}.nav.next{right:10px}
-    .lb-side{background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-    .lb-head{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--border)}
-    .lb-head h2{font-size:.95rem;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .close-x{border:0;background:var(--panel2);color:var(--text);width:32px;height:32px;border-radius:8px;font-size:1rem;cursor:pointer}
-    .lb-body{padding:18px;overflow:auto;flex:1}
-    .field{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #212a36;font-size:.84rem}
-    .field strong{color:var(--muted);font-weight:600;flex-shrink:0}
-    .field span{text-align:right;overflow-wrap:anywhere}
-    .status-line{display:flex;align-items:center;gap:8px;font-weight:650;font-size:.85rem;padding:10px 12px;border-radius:10px;margin-bottom:14px}
+      width:100vw;height:100vh;margin:0;overflow:visible}
+    dialog#lightbox::backdrop{background:#000000e6;backdrop-filter:blur(6px)}
+    .lb-stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:64px 72px}
+    .lb-frame{position:relative;margin:0;display:flex;max-width:100%;max-height:100%}
+    .lb-frame img{display:block;max-width:100%;max-height:calc(100vh - 128px);width:auto;height:auto;
+      border-radius:8px;box-shadow:0 20px 80px #000d;object-fit:contain}
+    /* Barre de titre en haut de l'écran (fixe) */
+    .lb-top{position:fixed;top:0;left:0;right:0;z-index:31;display:flex;align-items:center;gap:12px;
+      padding:12px 18px;background:linear-gradient(#000000a8,transparent)}
+    .lb-top h2{flex:1;font-size:.95rem;font-weight:650;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      text-shadow:0 1px 4px #000}
+    .close-x{border:0;background:#161b22cc;border:1px solid var(--border);color:var(--text);
+      width:36px;height:36px;border-radius:10px;font-size:1rem;cursor:pointer;backdrop-filter:blur(4px)}
+    .close-x:hover{background:var(--panel2)}
+    /* Flèches de navigation : POSITION FIXE dans le viewport, indépendante de l'image */
+    .nav{position:fixed;top:50%;transform:translateY(-50%);z-index:31;width:46px;height:46px;border-radius:50%;
+      border:1px solid #ffffff2e;background:#161b22cc;color:var(--text);font-size:1.35rem;line-height:1;
+      cursor:pointer;backdrop-filter:blur(6px);transition:background .15s,border-color .15s;
+      display:flex;align-items:center;justify-content:center;padding-bottom:3px}
+    .nav:hover{background:var(--accent);border-color:var(--accent)}
+    .nav.prev{left:16px}.nav.next{right:16px}
+    @media (max-width:700px){.nav.prev{left:8px}.nav.next{right:8px}.nav{width:40px;height:40px;font-size:1.15rem}
+      .lb-stage{padding:56px 8px}}
+
+    /* ===== Badge logo AFP sur la photo (50 % de transparence) ===== */
+    .cr{position:absolute;right:14px;bottom:14px;width:52px;height:52px;padding:0;cursor:pointer;
+      border-radius:12px;border:1px solid #ffffff30;background:#00000055;overflow:visible;
+      opacity:.5;transition:opacity .15s,transform .15s;backdrop-filter:blur(3px)}
+    .cr:hover{opacity:1;transform:scale(1.07)}
+    .cr img{width:100%;height:100%;object-fit:cover;border-radius:11px;display:block}
+    /* Pastille d'état en haut à droite du badge */
+    .cr .dot{position:absolute;top:-5px;right:-5px;width:14px;height:14px;border-radius:50%;
+      border:2px solid #0d1117;background:#8b96a5;flex-shrink:0}
+    .cr.ok .dot{background:var(--ok)} .cr.warn .dot{background:var(--warn)}
+    .cr.error .dot{background:var(--error)} .cr.none .dot{background:#6e7a89}
+    .cr.loading .dot{background:var(--accent);animation:pulse 1s infinite}
+    @keyframes pulse{50%{opacity:.3}}
+
+    /* ===== Panneau Content Credentials (superposé, design) ===== */
+    dialog#credentials{border:1px solid var(--border);border-radius:20px;padding:0;
+      width:min(600px,94vw);max-height:88vh;background:var(--panel);color:var(--text);
+      box-shadow:0 30px 90px #000e;margin:auto}
+    dialog#credentials::backdrop{background:#000000a0;backdrop-filter:blur(3px)}
+    .cr-head{display:flex;align-items:center;gap:14px;padding:20px 22px 16px;
+      background:linear-gradient(180deg,#1d2735,var(--panel));border-radius:20px 20px 0 0}
+    .cr-head .cr-logo{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      font-size:.82rem;font-weight:800;background:linear-gradient(135deg,#4f8ff7,#7b5cff);color:#fff;flex-shrink:0}
+    .cr-head h2{margin:0;font-size:1.05rem;flex:1}
+    .cr-head .cr-sub{margin:2px 0 0;font-size:.75rem;color:var(--muted);font-weight:400}
+    .cr-body{padding:0 22px 22px;overflow:auto;max-height:calc(88vh - 92px)}
+    .status-line{display:flex;align-items:center;gap:9px;font-weight:650;font-size:.85rem;
+      padding:11px 14px;border-radius:12px;margin:14px 0 6px}
+    .status-line .dot{width:9px;height:9px;flex-shrink:0}
     .status-line.ok{background:#12351d;color:var(--ok)} .status-line.warn{background:#3a2c0a;color:var(--warn)}
     .status-line.none{background:#212a36;color:var(--muted)} .status-line.error{background:#3d1512;color:var(--error)}
-    details{margin-top:14px;border:1px solid var(--border);border-radius:10px;background:var(--panel2)}
-    details summary{cursor:pointer;font-weight:650;padding:11px 14px;font-size:.85rem}
-    pre{margin:0;padding:14px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;max-height:380px;
+    .status-line.loading{background:#1d2735;color:var(--accent)}
+    .field{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid #212a36;font-size:.85rem}
+    .field:last-child{border-bottom:0}
+    .field strong{color:var(--muted);font-weight:600;flex-shrink:0}
+    .field span{text-align:right;overflow-wrap:anywhere}
+    details{margin-top:12px;border:1px solid var(--border);border-radius:12px;background:var(--panel2)}
+    details summary{cursor:pointer;font-weight:650;padding:12px 14px;font-size:.83rem}
+    pre{margin:0;padding:14px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;
       font-size:11.5px;line-height:1.5;color:#b6c2d0}
-    .note{color:var(--muted);font-size:.74rem;margin-top:12px;line-height:1.5}
-    @media (max-width:860px){.lb{grid-template-columns:1fr;grid-template-rows:1fr auto}
-      .lb-side{border-left:0;border-top:1px solid var(--border);max-height:52vh}}
+    .note{color:var(--muted);font-size:.74rem;margin-top:14px;line-height:1.55}
   </style>
 </head>
 <body>
@@ -100,29 +140,43 @@
 
 <div id="dropzone" hidden><div class="drop-inner">Relâchez pour importer vos photos</div></div>
 
+<!-- Vue plein écran -->
 <dialog id="lightbox">
-  <div class="lb">
-    <div class="lb-img">
+  <div class="lb-top">
+    <h2 id="lb-title"></h2>
+    <button class="close-x" id="lb-close" type="button" aria-label="Fermer">✕</button>
+  </div>
+  <div class="lb-stage">
+    <figure class="lb-frame">
       <img id="lb-photo" alt="">
-      <button class="nav prev" id="lb-prev" type="button" aria-label="Précédente">‹</button>
-      <button class="nav next" id="lb-next" type="button" aria-label="Suivante">›</button>
-    </div>
-    <div class="lb-side">
-      <div class="lb-head">
-        <h2 id="lb-title"></h2>
-        <button class="close-x" id="lb-close" type="button" aria-label="Fermer">✕</button>
-      </div>
-      <div class="lb-body">
-        <div id="lb-status" class="status-line none">Analyse…</div>
-        <div id="lb-summary"></div>
-        <details><summary>Manifeste complet (JSON)</summary><pre id="lb-json"></pre></details>
-        <p class="note">La présence d'un manifeste ne garantit pas que le signataire soit reconnu comme fiable :
-        vérifiez les résultats de validation et l'identité du signataire.</p>
-      </div>
-    </div>
+      <button id="cr-badge" class="cr loading" type="button" aria-label="Afficher les Content Credentials">
+        <img src="./logo-afp.png" alt="AFP · Content Credentials" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'CR'}))">
+        <span class="dot"></span>
+      </button>
+    </figure>
+  </div>
+  <button class="nav prev" id="lb-prev" type="button" aria-label="Photo précédente">‹</button>
+  <button class="nav next" id="lb-next" type="button" aria-label="Photo suivante">›</button>
+</dialog>
+
+<!-- Panneau Content Credentials -->
+<dialog id="credentials">
+  <div class="cr-head">
+    <span class="cr-logo">CR</span>
+    <h2>Content Credentials
+      <p class="cr-sub">Données de provenance signées (C2PA)</p>
+    </h2>
+    <button class="close-x" id="cr-close" type="button" aria-label="Fermer">✕</button>
+  </div>
+  <div class="cr-body">
+    <div id="lb-status" class="status-line loading"><span class="dot"></span><span>Analyse en cours…</span></div>
+    <div id="lb-summary"></div>
+    <details><summary>Manifeste complet (JSON)</summary><pre id="lb-json"></pre></details>
+    <p class="note">La présence d'un manifeste ne garantit pas que le signataire soit reconnu comme fiable :
+    vérifiez les résultats de validation et l'identité du signataire.</p>
   </div>
 </dialog>
 <script type="module" src="./app.js"></script>
-<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" nonce="z4X4eros1U2XE3cK1yYzfA==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" nonce="sknmjIdMK7ELUg0wRbah/g==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>

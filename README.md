@@ -42,8 +42,11 @@ des certificats sans publier les images.
 - Grille dynamique type masonry, chargement différé (lazy).
 - Badge par photo : ✓ Signée · ⚠ Validée avec problèmes · Sans CR · Erreur.
 - Filtres et recherche par nom de fichier.
-- Lightbox : photo en grand + Content Credentials (titre, générateur, signataire,
-  date, résultats de validation) + manifeste JSON complet.
+- Lightbox plein écran : photo agrandie, flèches de navigation fixes (indépendantes
+  de l'image), et **badge logo AFP** en bas à droite de la photo (50 % de
+  transparence, 100 % au survol) qui ouvre le panneau Content Credentials
+  (titre, générateur, signataire, date, résultats de validation + manifeste
+  JSON complet).
 - Navigation clavier : ← → pour changer de photo, Échap pour fermer.
 - Analyse parallèle limitée à 3 photos simultanées.
 

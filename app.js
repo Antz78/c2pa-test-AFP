@@ -13,6 +13,8 @@ const emptyBox = document.querySelector('#empty');
 const countEl = document.querySelector('#count');
 const search = document.querySelector('#search');
 const lightbox = document.querySelector('#lightbox');
+const credentials = document.querySelector('#credentials');
+const crBadge = document.querySelector('#cr-badge');
 const lbPhoto = document.querySelector('#lb-photo');
 const lbTitle = document.querySelector('#lb-title');
 const lbStatus = document.querySelector('#lb-status');
@@ -65,7 +67,7 @@ function collectFromDataTransfer(items) {
 function addFiles(files) {
   const imgs = [...files].filter(f => IMAGE_RE.test(f.name));
   if (!imgs.length) return false;
-  imgs.forEach((f, i) => {
+  imgs.forEach(f => {
     photos.push({
       url: URL.createObjectURL(f),
       blob: f,
@@ -184,7 +186,15 @@ function rebuildGrid() {
   updateCount();
 }
 
-/* ---------- Lightbox ---------- */
+/* ---------- Lightbox plein écran ---------- */
+function setStatusLine(cls, text) {
+  lbStatus.className = `status-line ${cls}`;
+  lbStatus.replaceChildren(
+    Object.assign(document.createElement('span'), { className: 'dot' }),
+    Object.assign(document.createElement('span'), { textContent: text }),
+  );
+}
+
 function field(label, value) {
   const div = document.createElement('div');
   div.className = 'field';
@@ -199,25 +209,39 @@ function openLightbox(idx) {
   lbTitle.textContent = photo.name.split('/').pop();
   lbPhoto.src = photo.url;
   lbPhoto.alt = photo.name.split('/').pop();
-  lbStatus.className = 'status-line none';
-  lbStatus.textContent = 'Analyse…';
+  crBadge.className = `cr ${photo.state}`;
+  setStatusLine('loading', 'Analyse en cours…');
   lbSummary.replaceChildren();
   lbJson.textContent = 'Chargement…';
-  analyze(photo).then(() => fillDetails(photo)).then(() => { renderCard(photo); updateCount(); });
+  // Si le panneau était ouvert sur la photo précédente, on le ferme.
+  if (credentials.open) credentials.close();
+  analyze(photo).then(() => {
+    if (currentIdx >= 0 && photos[currentIdx] === photo) {
+      crBadge.className = `cr ${photo.state}`;
+      if (credentials.open) fillDetails(photo); // rafraîchir le panneau déjà ouvert
+      renderCard(photo);
+      updateCount();
+    }
+  });
   lightbox.showModal();
 }
 
+/* ---------- Panneau Content Credentials (bouton logo AFP) ---------- */
 function fillDetails(photo) {
-  if (currentIdx < 0 || photos[currentIdx] !== photo) return;
+  if (photo.state === 'loading') {
+    setStatusLine('loading', 'Analyse en cours…');
+    lbSummary.replaceChildren();
+    lbJson.textContent = 'Chargement…';
+    return;
+  }
   if (photo.state === 'error') {
-    lbStatus.className = 'status-line error';
-    lbStatus.textContent = `Impossible de lire le manifeste : ${photo.error}`;
+    setStatusLine('error', `Impossible de lire le manifeste : ${photo.error}`);
+    lbSummary.replaceChildren();
     lbJson.textContent = photo.error;
     return;
   }
   if (photo.state === 'none') {
-    lbStatus.className = 'status-line none';
-    lbStatus.textContent = 'Aucun manifeste C2PA intégré détecté.';
+    setStatusLine('none', 'Aucun manifeste C2PA intégré détecté.');
     lbSummary.replaceChildren();
     lbJson.textContent = 'Aucun manifeste trouvé.';
     return;
@@ -225,11 +249,9 @@ function fillDetails(photo) {
   const entries = photo.validation ?? [];
   const failures = entries.filter(i => /failure|mismatch|untrusted/.test(String(i?.code ?? '')));
   if (failures.length) {
-    lbStatus.className = 'status-line warn';
-    lbStatus.textContent = 'Manifeste présent, mais des problèmes de validation sont signalés.';
+    setStatusLine('warn', 'Manifeste présent, mais des problèmes de validation sont signalés.');
   } else {
-    lbStatus.className = 'status-line ok';
-    lbStatus.textContent = 'Manifeste C2PA trouvé. Vérifiez la confiance du signataire dans les détails.';
+    setStatusLine('ok', 'Manifeste C2PA trouvé. Vérifiez la confiance du signataire dans les détails.');
   }
   const a = photo.active ?? {};
   lbSummary.replaceChildren(
@@ -243,7 +265,17 @@ function fillDetails(photo) {
   lbJson.textContent = JSON.stringify(photo.store, null, 2);
 }
 
+crBadge.addEventListener('click', () => {
+  if (currentIdx < 0) return;
+  fillDetails(photos[currentIdx]);
+  credentials.showModal();
+});
+document.querySelector('#cr-close').addEventListener('click', () => credentials.close());
+credentials.addEventListener('click', e => { if (e.target === credentials) credentials.close(); });
+
+/* ---------- Navigation ---------- */
 function step(dir) {
+  if (credentials.open) return; // navigation désactivée pendant la lecture des détails
   const visible = photos.map((p, i) => i)
     .filter(i => currentFilter === 'all' || photos[i].state === currentFilter ||
       (currentFilter === 'none' && ['none', 'error'].includes(photos[i].state)));
@@ -255,10 +287,9 @@ function step(dir) {
 document.querySelector('#lb-close').addEventListener('click', () => lightbox.close());
 document.querySelector('#lb-prev').addEventListener('click', () => step(-1));
 document.querySelector('#lb-next').addEventListener('click', () => step(1));
-lightbox.addEventListener('click', e => { if (e.target === lightbox) lightbox.close(); });
-lightbox.addEventListener('close', () => { currentIdx = -1; });
+lightbox.addEventListener('close', () => { currentIdx = -1; if (credentials.open) credentials.close(); });
 window.addEventListener('keydown', e => {
-  if (!lightbox.open) return;
+  if (!lightbox.open || credentials.open) return;
   if (e.key === 'ArrowLeft') step(-1);
   if (e.key === 'ArrowRight') step(1);
 });

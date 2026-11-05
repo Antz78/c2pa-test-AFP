@@ -1,3 +1,4 @@
+console.info('[C2PA AFP] Version filtres v3 chargée — badges À vérifier');
 // Galerie C2PA — 100 % statique, fonctionne sur GitHub Pages.
 // Deux modes :
 //  A) ./photos.json existe (généré par GitHub Action à chaque push) → galerie automatique.

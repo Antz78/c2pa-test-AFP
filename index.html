@@ -37,9 +37,16 @@
     .tag.none{background:#262d38;color:var(--muted)} .tag.error{background:#3d1512;color:var(--error)}
     .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
     .tag.loading{background:#1d2735;color:var(--accent)}
-    .empty{padding:60px 20px;text-align:center;color:var(--muted);line-height:1.7}
+    .empty{padding:56px 20px;text-align:center;color:var(--muted);line-height:1.7}
     .empty code{background:var(--panel);padding:2px 8px;border-radius:6px}
     .empty strong{color:var(--text);font-size:1.05rem}
+    .pickers{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:18px 0 6px}
+    .pick{padding:11px 20px;border-radius:12px;border:1px solid var(--accent);background:var(--accent);
+      color:#fff;font-size:.9rem;font-weight:700;cursor:pointer;transition:.15s}
+    .pick.secondary{background:transparent;color:var(--accent)}
+    .pick:hover{filter:brightness(1.15)}
+    .empty .diag{margin:10px auto 0;max-width:640px;font-size:.85rem}
+    .empty .hint{margin-top:16px;font-size:.78rem;color:#6e7a89}
     #dropzone{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;
       background:#0d1117e8;backdrop-filter:blur(4px)}
     #dropzone[hidden]{display:none}
@@ -130,11 +137,16 @@
 <main>
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty">
-    <strong>Glissez votre dossier PHOTOS/ (ou vos photos) sur cette page</strong><br><br>
-    La galerie analyse alors chaque photo et lit son manifeste C2PA localement
-    (aucune photo n'est envoyée sur un serveur).<br><br>
-    Sur GitHub Pages avec le workflow fourni, la galerie se remplit automatiquement
-    à chaque push de photos dans <code>PHOTOS/</code>.
+    <strong id="empty-title">Glissez votre dossier PHOTOS/ (ou vos photos) sur cette page</strong>
+    <p class="diag" id="empty-msg"></p>
+    <div class="pickers">
+      <button class="pick" id="pick-photos" type="button">🖼️ Choisir des photos</button>
+      <button class="pick secondary" id="pick-folder" type="button">📁 Choisir un dossier</button>
+    </div>
+    <input type="file" id="file-photos" accept="image/jpeg,image/png,image/webp,image/tiff" multiple hidden>
+    <input type="file" id="file-folder" webkitdirectory hidden>
+    <p class="hint">Sur GitHub Pages, la galerie lit automatiquement le dossier <code>PHOTOS/</code> du repo
+    (via <code>photos.json</code> généré par le workflow, ou en repli via l'API GitHub).</p>
   </div>
 </main>
 
@@ -177,6 +189,6 @@
   </div>
 </dialog>
 <script type="module" src="./app.js"></script>
-<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" nonce="sknmjIdMK7ELUg0wRbah/g==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" nonce="+glEknTuUWXxpLib56I4Xg==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>

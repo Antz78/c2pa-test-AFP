@@ -28,13 +28,46 @@ let currentIdx = -1;
 let c2pa = null;
 
 /* ---------- Mode A : index photos.json (généré par CI) ---------- */
-async function loadJsonIndex() {
+/* Renvoie { state: 'ok' | 'missing' | 'empty', urls: string[] } */
+async function probeIndex() {
   try {
     const r = await fetch('./photos.json', { cache: 'no-store' });
-    if (!r.ok) return [];
+    if (!r.ok) return { state: 'missing', urls: [] };
     const data = await r.json();
     const list = Array.isArray(data) ? data : data.photos;
-    return (list ?? []).map(p => p.url ?? p).filter(u => IMAGE_RE.test(u));
+    const urls = (list ?? []).map(p => p.url ?? p).filter(u => IMAGE_RE.test(u));
+    return { state: urls.length ? 'ok' : 'empty', urls };
+  } catch (_) {
+    return { state: 'missing', urls: [] }; // file:// : fetch bloqué par le navigateur
+  }
+}
+
+/* ---------- Mode A2 : lecture directe du dossier PHOTOS/ via l'API GitHub ----------
+   Un navigateur ne peut pas lister un dossier distant, mais l'API GitHub, elle, le peut.
+   Auto-détection du repo depuis l'URL github.io ; sinon, renseignez GITHUB_REPO. */
+const GITHUB_REPO = ''; // ex. 'antonin/c2pa-galerie' — laissez vide pour la détection auto
+function detectRepo() {
+  if (GITHUB_REPO) return GITHUB_REPO;
+  const host = location.hostname;
+  if (host.endsWith('.github.io')) {
+    const owner = host.slice(0, -'.github.io'.length);
+    const parts = location.pathname.split('/').filter(Boolean);
+    // Site utilisateur (owner.github.io) → repo = owner.github.io ; site projet → 1er segment
+    return parts.length ? `${owner}/${parts[0]}` : `${owner}.github.io`;
+  }
+  return null; // domaine personnalisé : renseignez GITHUB_REPO
+}
+async function githubApiList() {
+  const repo = detectRepo();
+  if (!repo) return [];
+  try {
+    const r = await fetch(`https://api.github.com/repos/${repo}/contents/PHOTOS`, { cache: 'no-store' });
+    if (!r.ok) return [];
+    const items = await r.json();
+    if (!Array.isArray(items)) return [];
+    return items
+      .filter(i => i.type === 'file' && IMAGE_RE.test(i.name))
+      .map(i => `./PHOTOS/${i.name}`);
   } catch (_) { return []; }
 }
 
@@ -332,12 +365,53 @@ document.addEventListener('drop', async e => {
   if (ok) emptyBox.hidden = true;
 });
 
-/* ---------- Démarrage : mode A, sinon message d'accueil ---------- */
+/* ---------- Démarrage : mode A (photos.json), sinon diagnostic + import manuel ---------- */
+const emptyTitle = document.querySelector('#empty-title');
+const emptyMsg = document.querySelector('#empty-msg');
+const filePhotos = document.querySelector('#file-photos');
+const fileFolder = document.querySelector('#file-folder');
+
+function setEmpty(title, msg) {
+  emptyTitle.textContent = title;
+  emptyMsg.textContent = msg;
+}
+
+document.querySelector('#pick-photos').addEventListener('click', () => filePhotos.click());
+document.querySelector('#pick-folder').addEventListener('click', () => fileFolder.click());
+filePhotos.addEventListener('change', () => { if (addFiles(filePhotos.files)) emptyBox.hidden = true; filePhotos.value = ''; });
+fileFolder.addEventListener('change', () => { if (addFiles(fileFolder.files)) emptyBox.hidden = true; fileFolder.value = ''; });
+
 async function start() {
-  const urls = [...new Set(await loadJsonIndex())].sort();
-  if (!urls.length) return; // on garde l'écran d'accueil (glisser-déposer)
+  const { state, urls } = await probeIndex();
+  if (state !== 'ok') {
+    // Repli : lecture directe du dossier PHOTOS/ du repo via l'API GitHub
+    const apiUrls = await githubApiList();
+    if (apiUrls.length) {
+      emptyBox.hidden = true;
+      [...new Set(apiUrls)].sort().forEach(url =>
+        photos.push({ url, name: decodeURIComponent(url), idx: photos.length, state: 'loading' }));
+      rebuildGrid();
+      analyzeAll();
+      return;
+    }
+  }
+  if (state === 'missing') {
+    setEmpty('Aucun index photo trouvé',
+      'Le fichier photos.json est introuvable ou inaccessible. Si vous avez ouvert index.html en local '
+      + '(double-clic), les photos listées par GitHub ne sont pas visibles : utilisez les boutons ci-dessous '
+      + 'ou glissez vos photos sur la page. Sur GitHub Pages, vérifiez que photos.json est bien présent à la racine du site.');
+    return;
+  }
+  if (state === 'empty') {
+    setEmpty('L\'index photos.json est vide',
+      'Aucune photo n\'est indexée. Sur GitHub Pages : vérifiez que vos photos sont bien dans PHOTOS/ à la racine '
+      + 'du repo, et que gallery.yml se trouve dans .github/workflows/ à la racine (pas dans PHOTOS/ !) — c\'est ce '
+      + 'workflow qui régénère l\'index à chaque push. En attendant, vous pouvez importer des photos ci-dessous.');
+    return;
+  }
   emptyBox.hidden = true;
-  urls.forEach(url => photos.push({ url, name: decodeURIComponent(url), idx: photos.length, state: 'loading' }));
+  [...new Set(urls)].sort().forEach(url =>
+    photos.push({ url, name: decodeURIComponent(url), idx: photos.length, state: 'loading' }));
   rebuildGrid();
   analyzeAll();
 }

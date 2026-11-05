@@ -50,6 +50,36 @@ des certificats sans publier les images.
 - Navigation clavier : ← → pour changer de photo, Échap pour fermer.
 - Analyse parallèle limitée à 3 photos simultanées.
 
+## Comment la galerie « lit » le dossier PHOTOS/
+
+Un navigateur ne peut pas lister le contenu d'un dossier distant : il ne sait demander
+que des fichiers précis. La galerie utilise donc trois mécanismes en cascade :
+
+1. **`photos.json`** (recommandé) — généré à chaque push par le workflow GitHub Action
+   à partir du contenu réel de `PHOTOS/`. C'est le plus rapide et le plus fiable.
+2. **API GitHub** (repli automatique) — si `photos.json` est absent ou vide, la galerie
+   interroge directement `api.github.com` pour lister le contenu du dossier `PHOTOS/`
+   du repo. Fonctionne sans workflow, sur tout repo public hébergé en `*.github.io`
+   (détection automatique du repo depuis l'URL ; pour un domaine personnalisé,
+   renseignez `GITHUB_REPO` en tête de `app.js`). Limite : 60 requêtes/heure par visiteur.
+3. **Import local** — boutons « Choisir des photos » / « Choisir un dossier » ou
+   glisser-déposer sur la page (utile en local, hors GitHub).
+
+## Dépannage : la galerie est vide
+
+La galerie affiche elle-même le diagnostic (index introuvable / index vide) :
+
+| Message | Cause | Solution |
+|---|---|---|
+| « Index photos.json introuvable » | Page ouverte en local (double-clic sur `index.html`) ou fichier absent du repo | En local, utilisez les boutons ou le glisser-déposer ; en ligne, vérifiez que `photos.json` est à la racine |
+| « L'index photos.json est vide » | `photos.json` ne contient aucune photo | Vérifiez que vos photos sont dans `PHOTOS/` **à la racine du repo**, et que `gallery.yml` est dans `.github/workflows/` **à la racine** (pas dans `PHOTOS/`) — c'est ce workflow qui régénère l'index à chaque push |
+
+⚠️ **Ne remplacez pas `photos.json` de votre repo par une version vide téléchargée** :
+ce fichier est généré automatiquement par le workflow à chaque déploiement.
+
+En local ou sans push, les boutons « Choisir des photos » / « Choisir un dossier »
+(ou le glisser-déposer) analysent les photos directement dans le navigateur.
+
 ## Notes
 
 - Le manifeste C2PA est lu dans le fichier original via WebAssembly

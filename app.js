@@ -190,7 +190,7 @@ async function analyzeAll(limit = 3) {
 /* ---------- Rendu ---------- */
 const LABEL = { loading: 'Analyse…', ok: 'Vérifiée', warn: 'À vérifier ⚠', bad: 'Échec ✕', none: 'Sans C2PA', error: 'Erreur de lecture' };
 
-const PRESENTATIONS = ['info','afp','direct','banner','status','corner'];
+const PRESENTATIONS = ['info','afp','direct','banner','status','corner','glow','seal'];
 const modeSelect = document.querySelector('#presentation-mode');
 let selectedMode = 'random';
 function presentationFor(photo) {
@@ -212,16 +212,56 @@ function addBadgeContent(target, mode, state) {
   } else if (mode === 'banner') {
     const el=document.createElement('span'); el.className='banner-label';
     el.textContent='Voir la provenance'; target.append(el);
+  } else if (mode === 'glow') {
+    const angle=document.createElement('span');
+    angle.className='provenance-glow-angle';
+    angle.setAttribute('aria-hidden','true');
+    target.append(angle);
+  } else if (mode === 'seal') {
+    const ns='http://www.w3.org/2000/svg';
+    const svg=document.createElementNS(ns,'svg');
+    svg.setAttribute('class','provenance-fingerprint');
+    svg.setAttribute('viewBox','0 0 24 24');
+    svg.setAttribute('fill','none');
+    svg.setAttribute('stroke','currentColor');
+    svg.setAttribute('stroke-width','1.35');
+    svg.setAttribute('stroke-linecap','round');
+    svg.setAttribute('stroke-linejoin','round');
+    svg.setAttribute('aria-hidden','true');
+    svg.innerHTML=`<path d="M12 3a9 9 0 0 0-9 9"/><path d="M21 12a9 9 0 0 0-9-9"/><path d="M5.6 16c.6-2.1.3-3.6.5-5.1a6 6 0 0 1 11.8 1.1"/><path d="M9 20c1.2-2.3 1.5-4.7 1.3-7.5a1.7 1.7 0 1 1 3.4 0c.1 4-.3 6.2-1.4 8.5"/><path d="M15.9 19c.8-2.5 1-4.4.8-6.9"/><path d="M7 19c.4-.9.8-2.1 1-3.2"/><path d="M19 16.5c.2-1.4.3-2.5.2-4"/>`;
+    target.append(svg);
   } else if (mode === 'corner') {
-    const el=document.createElement('span'); el.className='page-corner';
-    el.setAttribute('aria-hidden','true'); target.append(el);
+    // Véritable repli courbe : SVG vectoriel, translucide, sans triangle opaque.
+    const ns='http://www.w3.org/2000/svg';
+    const svg=document.createElementNS(ns,'svg');
+    svg.setAttribute('class','page-corner');
+    svg.setAttribute('viewBox','0 0 64 64');
+    svg.setAttribute('preserveAspectRatio','xMaxYMax meet');
+    svg.setAttribute('aria-hidden','true');
+    svg.innerHTML=`
+      <defs>
+        <linearGradient id="foldLight" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#fff" stop-opacity=".04"/>
+          <stop offset=".48" stop-color="#fff" stop-opacity=".18"/>
+          <stop offset="1" stop-color="#fff" stop-opacity=".36"/>
+        </linearGradient>
+        <linearGradient id="foldShade" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#050b13" stop-opacity="0"/>
+          <stop offset="1" stop-color="#050b13" stop-opacity=".26"/>
+        </linearGradient>
+      </defs>
+      <path class="fold-shadow" d="M13 63 C31 60 52 40 63 15 L63 63 Z" fill="url(#foldShade)"/>
+      <path class="fold-paper" d="M20 64 C35 61 55 43 64 20 L64 64 Z" fill="url(#foldLight)"/>
+      <path class="fold-edge" d="M20 63.5 C35 60.5 55 43 63.5 20" fill="none" stroke="rgba(255,255,255,.6)" stroke-width="1.2"/>
+    `;
+    target.append(svg);
   }
   // En mode pastille, le point coloré est l'unique élément.
-  if (mode !== 'corner') {
+  if (!['corner','glow','seal'].includes(mode)) {
     const dot=document.createElement('span'); dot.className='dot '+state;
     dot.setAttribute('aria-hidden','true'); target.append(dot);
   }
-  target.setAttribute('aria-label', mode === 'corner' ? 'Soulever le coin pour voir la provenance C2PA' : 'Voir la provenance C2PA');
+  target.setAttribute('aria-label', mode === 'corner' ? 'Soulever le coin pour voir la provenance C2PA' : mode === 'glow' ? 'Ouvrir la provenance C2PA depuis le coin lumineux' : mode === 'seal' ? 'Ouvrir la provenance C2PA depuis le sceau' : 'Voir la provenance C2PA');
 }
 function redrawPresentations() {
   photos.forEach(photo => {

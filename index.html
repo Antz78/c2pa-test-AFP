@@ -292,11 +292,83 @@
 .cr.mode-banner .banner-label,.demo-overlay.mode-banner .banner-label{font:600 clamp(10px,1.6vw,13px)/1.2 system-ui,sans-serif!important;color:#fff!important;white-space:nowrap!important;background:rgba(15,24,37,.25)!important;border:0!important;border-radius:5px!important;padding:3px 5px!important;box-shadow:none!important}
 .cr.mode-status,.demo-overlay.mode-status{left:auto!important;right:20px!important;bottom:9px!important;width:18px!important;height:18px!important;min-width:18px!important;padding:0!important;background:transparent!important;border:0!important;border-radius:50%!important;box-shadow:none!important}
 .cr.mode-status .dot,.demo-overlay.mode-status .dot{position:static!important;display:block!important;width:16px!important;height:16px!important;min-width:16px!important;min-height:16px!important;transform:none!important;border:2px solid rgba(255,255,255,.8)!important}
-.cr.mode-corner,.demo-overlay.mode-corner{right:0!important;bottom:0!important;padding:0!important;width:clamp(28px,5cqw,52px)!important;height:clamp(28px,5cqw,52px)!important;background:transparent!important;border:0!important;box-shadow:none!important;overflow:hidden!important;border-radius:0 0 7px 0!important}
-.demo-overlay.mode-corner{width:32px!important;height:32px!important}
-.cr.mode-corner .page-corner,.demo-overlay.mode-corner .page-corner{position:absolute!important;right:0!important;bottom:0!important;width:100%!important;height:100%!important;display:block!important;padding:0!important;margin:0!important;border:0!important;border-radius:0!important;background:linear-gradient(135deg,transparent 49%,rgba(230,239,250,.12) 50%,rgba(230,239,250,.26) 77%,rgba(255,255,255,.38) 100%)!important;clip-path:polygon(100% 0,100% 100%,0 100%)!important;box-shadow:none!important;transition:filter .2s ease,transform .2s ease!important;transform-origin:100% 100%}
-.cr.mode-corner:hover .page-corner,.demo-overlay.mode-corner:hover .page-corner,.cr.mode-corner:focus-visible .page-corner,.demo-overlay.mode-corner:focus-visible .page-corner{filter:brightness(1.7)!important;transform:scale(1.07)!important}
+
+/* Coin soulevé : courbe fine, photographie visible en dessous.
+   SVG sans aplat gris, mouvement discret au survol. */
+.cr.mode-corner,.demo-overlay.mode-corner{
+  right:0!important;bottom:0!important;
+  width:clamp(29px,5cqw,48px)!important;height:clamp(29px,5cqw,48px)!important;
+  padding:0!important;margin:0!important;
+  background:transparent!important;border:0!important;box-shadow:none!important;
+  border-radius:0 0 7px 0!important;overflow:hidden!important;
+  opacity:.5!important;
+}
+.demo-overlay.mode-corner{width:34px!important;height:34px!important}
+.cr.mode-corner .page-corner,.demo-overlay.mode-corner .page-corner{
+  position:absolute!important;inset:0!important;width:100%!important;height:100%!important;
+  display:block!important;overflow:visible!important;
+  background:none!important;clip-path:none!important;border:0!important;
+  transform-origin:100% 100%;transform:translate(0,0) rotate(0deg)!important;
+  filter:drop-shadow(-1px -1px 1px rgba(0,0,0,.22));
+  transition:transform .25s ease,filter .25s ease!important;
+}
+.cr.mode-corner:hover,.demo-overlay.mode-corner:hover,
+.cr.mode-corner:focus-visible,.demo-overlay.mode-corner:focus-visible{opacity:.95!important}
+.cr.mode-corner:hover .page-corner,.demo-overlay.mode-corner:hover .page-corner,
+.cr.mode-corner:focus-visible .page-corner,.demo-overlay.mode-corner:focus-visible .page-corner{
+  transform:translate(-2px,-2px) rotate(-4deg)!important;
+  filter:drop-shadow(-2px -2px 3px rgba(0,0,0,.3));
+}
 @media (prefers-reduced-motion:reduce){.cr,.demo-overlay,.page-corner{transition:none!important}}
+
+/* Modes 7 et 8 : éléments interactifs minimalistes, aucun aplat opaque. */
+.cr.mode-glow,.demo-overlay.mode-glow{
+  position:absolute!important;right:11px!important;bottom:9px!important;
+  width:42px!important;height:42px!important;padding:0!important;
+  border:0!important;border-radius:0!important;
+  background:transparent!important;box-shadow:none!important;
+  opacity:.5!important;overflow:visible!important;
+  transition:opacity .2s ease!important;
+}
+.demo-overlay.mode-glow{width:32px!important;height:32px!important;right:8px!important;bottom:8px!important}
+.cr.mode-glow:hover,.demo-overlay.mode-glow:hover,
+.cr.mode-glow:focus-visible,.demo-overlay.mode-glow:focus-visible{opacity:1!important}
+.cr.mode-glow .provenance-glow-angle,.demo-overlay.mode-glow .provenance-glow-angle{
+  display:block!important;position:absolute!important;right:0!important;bottom:0!important;
+  width:70%!important;height:70%!important;
+  border-right:2px solid #82b4ff!important;border-bottom:2px solid #82b4ff!important;
+  border-radius:0 0 5px 0!important;background:none!important;padding:0!important;
+  box-shadow:none!important;transform:none!important;
+  transition:filter .2s ease,transform .2s ease!important;
+}
+.cr.mode-glow:hover .provenance-glow-angle,.demo-overlay.mode-glow:hover .provenance-glow-angle,
+.cr.mode-glow:focus-visible .provenance-glow-angle,.demo-overlay.mode-glow:focus-visible .provenance-glow-angle{
+  filter:drop-shadow(0 0 5px #6da6ff);transform:translate(-2px,-2px)!important;
+}
+.cr.mode-seal,.demo-overlay.mode-seal{
+  position:absolute!important;right:11px!important;bottom:9px!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  width:37px!important;height:37px!important;padding:0!important;
+  border:1px solid rgba(235,243,255,.75)!important;border-radius:50%!important;
+  background:rgba(20,31,46,.12)!important;color:#f4f8ff!important;
+  box-shadow:none!important;opacity:.5!important;
+  transition:opacity .2s ease,background .2s ease,box-shadow .2s ease!important;
+}
+.demo-overlay.mode-seal{width:30px!important;height:30px!important;right:8px!important;bottom:8px!important}
+.cr.mode-seal:hover,.demo-overlay.mode-seal:hover,
+.cr.mode-seal:focus-visible,.demo-overlay.mode-seal:focus-visible{
+  opacity:1!important;background:rgba(20,31,46,.25)!important;
+  box-shadow:0 0 12px rgba(180,210,255,.4)!important;
+}
+.cr.mode-seal .provenance-fingerprint,.demo-overlay.mode-seal .provenance-fingerprint{
+  display:block!important;position:static!important;width:61%!important;height:61%!important;
+  fill:none!important;stroke:currentColor!important;overflow:visible!important;
+  padding:0!important;background:none!important;border:0!important;
+}
+@media (prefers-reduced-motion:reduce){
+ .cr.mode-glow,.demo-overlay.mode-glow,.cr.mode-seal,.demo-overlay.mode-seal,
+ .provenance-glow-angle{transition:none!important}
+}
   </style>
 </head>
 <body>
@@ -319,6 +391,8 @@
     <option value="banner">Bandeau</option>
     <option value="status">Pastille de confiance</option>
     <option value="corner">Coin de page transparent</option>
+    <option value="glow">Bordure lumineuse</option>
+    <option value="seal">Sceau de provenance</option>
   </select>
   <button id="reshuffle" type="button" title="Redistribuer les présentations">↻ Redistribuer</button>
   <span id="count"></span>
@@ -395,6 +469,6 @@
     </section>
   </div>
 </dialog>
-<script type="module" src="./app.js?v=20261105-corner-v7"></script>
+<script type="module" src="./app.js?v=20261105-modes-v9"></script>
 </body>
 </html>

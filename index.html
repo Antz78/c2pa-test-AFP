@@ -477,6 +477,26 @@
   #lightbox.caption-layout .lb-stage{padding:56px 12px!important}
   #lightbox.caption-layout .lb-photo-column .lb-frame img{max-height:calc(100dvh - 190px)}
 }
+
+/* V17 : bouclier retardé, mêmes dimensions que le bouclier classique. */
+.cr.mode-shield-delayed,.demo-overlay.mode-shield-delayed{
+ right:20px!important;bottom:10px!important;width:36px!important;height:36px!important;
+ min-width:0!important;padding:3px!important;display:grid!important;place-items:center!important;
+ background:transparent!important;border:0!important;box-shadow:none!important;
+ color:var(--shield-color,#9ca3af)!important;
+ transition:opacity .4s ease,filter .3s ease!important;
+}
+.cr.mode-shield-delayed .provenance-shield,.demo-overlay.mode-shield-delayed .provenance-shield{color:inherit!important}
+.cr.mode-shield-delayed.ok,.demo-overlay.mode-shield-delayed.ok{--shield-color:#35c979}
+.cr.mode-shield-delayed.warn,.demo-overlay.mode-shield-delayed.warn{--shield-color:#f6a928}
+.cr.mode-shield-delayed.bad,.demo-overlay.mode-shield-delayed.bad,
+.cr.mode-shield-delayed.error,.demo-overlay.mode-shield-delayed.error{--shield-color:#f16b6b}
+.cr.mode-shield-delayed.loading,.demo-overlay.mode-shield-delayed.loading,
+.cr.mode-shield-delayed.none,.demo-overlay.mode-shield-delayed.none{--shield-color:#9ca3af}
+.cr.mode-shield-delayed:not(.delayed-visible){opacity:0!important;visibility:hidden!important;pointer-events:none!important}
+.cr.mode-shield-delayed.delayed-visible{opacity:.5!important;visibility:visible!important;pointer-events:auto!important}
+.cr.mode-shield-delayed.delayed-visible:hover,.cr.mode-shield-delayed.delayed-visible:focus-visible{opacity:1!important;filter:drop-shadow(0 0 4px currentColor)!important}
+.demo-overlay.mode-shield-delayed{width:27px!important;height:27px!important;right:12px!important;bottom:7px!important;opacity:0!important;visibility:hidden!important}
 </style>
 </head>
 <body>
@@ -503,6 +523,7 @@
     <option value="seal">Sceau de provenance</option>
     <option value="drawer">Volet à tirer depuis le bas</option>
     <option value="shield">Petit bouclier coché</option>
+    <option value="shield-delayed">Bouclier coloré après 2 secondes</option>
     <option value="delayed">Pastille retardée (1,5 s)</option>
     <option value="tap">Révélation au tap / glissement</option>
     <option value="caption">Légende liée sous la photo</option>
@@ -602,6 +623,6 @@
     </section>
   </div>
 </dialog>
-<script type="module" src="./app.js?v=20261105-modes-v16"></script>
+<script type="module" src="./app.js?v=20261105-shield-delay-v18"></script>
 </body>
 </html>

@@ -291,7 +291,7 @@ function addBadgeContent(target, mode, state) {
     badge.textContent='◈  Provenance';target.append(badge);
     target.classList.add('delayed-pending');
   } else if (mode === 'tap') {
-    const handle=document.createElement('span');handle.className='tap-handle';target.append(handle);
+    // Aucun indicateur visible au repos ; la photo elle-même est interactive.
   } else if (mode === 'caption') {
     const label=document.createElement('span');label.className='caption-marker';
     label.textContent='Source sous la photo ↓';target.append(label);
@@ -338,17 +338,21 @@ function sourceLabel(photo) {
 }
 function updateCaption(card,photo) {
   const el=card.querySelector('.caption-source');if(!el)return;
-  el.hidden=presentationFor(photo)!=='caption';
+  el.hidden=true;
   el.textContent='Source : '+sourceLabel(photo)+'  ›';
 }
 let delayedTimer=0;
+let delayedRevealReady=false;
 function scheduleDelayedBadge(mode) {
   clearTimeout(delayedTimer);
+  delayedRevealReady=false;
   crBadge.classList.remove('delayed-visible');
   if(mode==='delayed') delayedTimer=setTimeout(()=>{
-    if(lightbox.open && currentIdx>=0 && presentationFor(photos[currentIdx])==='delayed')
+    if(lightbox.open && currentIdx>=0 && presentationFor(photos[currentIdx])==='delayed') {
+      delayedRevealReady=true;
       crBadge.classList.add('delayed-visible');
-  },1500);
+    }
+  },2000);
 }
 function redrawPresentations() {
   photos.forEach(photo => {
@@ -388,7 +392,7 @@ function cardEl(photo) {
   overlay.type='button'; overlay.className='demo-overlay';
   overlay.setAttribute('aria-label','Voir les informations C2PA');
   addBadgeContent(overlay,presentationFor(photo),photo.state);
-  overlay.addEventListener('click',event=>{event.stopPropagation();openLightbox(photo.idx); if(['drawer','tap'].includes(presentationFor(photo))) openBottomSheet(photo); else openSidePanel(photo);});
+  overlay.addEventListener('click',event=>{event.stopPropagation();openLightbox(photo.idx); if(presentationFor(photo)==='drawer') openBottomSheet(photo); else if(presentationFor(photo)==='tap') toggleTapReveal(photo); else openSidePanel(photo);});
   card.append(img, tag, name, overlay);
   const source=document.createElement('button');source.type='button';
   source.className='caption-source';source.hidden=true;
@@ -484,7 +488,12 @@ function openLightbox(idx) {
   lbPhoto.alt = photo.name.split('/').pop();
   crBadge.className = `cr ${photo.state}`;
   const mode=presentationFor(photo);
+  const captionBtn=document.querySelector('#lb-caption-source');
+  lightbox.classList.toggle('caption-layout',mode==='caption');
+  captionBtn.hidden=mode!=='caption';
+  captionBtn.textContent='Source : '+sourceLabel(photo)+'  ›';
   closeBottomSheet();
+  hideTapReveal();
   crBadge.className=`cr ${photo.state}`;
   addBadgeContent(crBadge,mode,photo.state);
   scheduleDelayedBadge(mode);
@@ -503,15 +512,20 @@ function openLightbox(idx) {
   // Si le panneau était ouvert sur la photo précédente, on le ferme.
   if (credentials.open) credentials.close();
   if (!lightbox.open) lightbox.showModal();
+  requestAnimationFrame(syncLargeCaptionWidth);
   analyze(photo).then(() => {
     if (currentIdx >= 0 && photos[currentIdx] === photo) {
       crBadge.className = `cr ${photo.state}`;
       addBadgeContent(crBadge,presentationFor(photo),photo.state);
-      if(presentationFor(photo)==='delayed') crBadge.classList.add('delayed-visible');
+      if(presentationFor(photo)==='delayed' && delayedRevealReady) crBadge.classList.add('delayed-visible');
       if (!bottomSheet.hidden && bottomPhoto === photo) refreshBottomSheet(photo);
       if (!sidePanel.hidden) refreshSidePanel(photo);
       if (credentials.open) fillDetails(photo); // rafraîchir le panneau déjà ouvert
       renderCard(photo);
+      if (presentationFor(photo)==='caption') {
+        document.querySelector('#lb-caption-source').textContent='Source : '+sourceLabel(photo)+'  ›';
+        syncLargeCaptionWidth();
+      }
       updateCount();
     }
   });
@@ -604,7 +618,7 @@ document.querySelector('#side-close').addEventListener('click', () => { sidePane
 
 crBadge.addEventListener('click', () => {
   if (currentIdx < 0) return;
-  if(['drawer','tap'].includes(presentationFor(photos[currentIdx]))) openBottomSheet(photos[currentIdx]);
+  if(presentationFor(photos[currentIdx])==='drawer') openBottomSheet(photos[currentIdx]); else if(presentationFor(photos[currentIdx])==='tap') toggleTapReveal(photos[currentIdx]);
   else openSidePanel(photos[currentIdx]);
 });
 document.querySelector('#cr-close').addEventListener('click', () => credentials.close());
@@ -773,11 +787,33 @@ lbPhoto.addEventListener('pointerup',e=>{
   const dy=e.clientY-tapStart.y,dx=e.clientX-tapStart.x;
   tapStart=null;
   if(presentationFor(photos[currentIdx])!=='tap')return;
-  if(dy < -35 && Math.abs(dy)>Math.abs(dx)*1.2)openBottomSheet(photos[currentIdx]);
-  else if(Math.abs(dy)<12 && Math.abs(dx)<12)openBottomSheet(photos[currentIdx]);
+  if(dy < -35 && Math.abs(dy)>Math.abs(dx)*1.2)toggleTapReveal(photos[currentIdx]);
+  else if(Math.abs(dy)<12 && Math.abs(dx)<12)toggleTapReveal(photos[currentIdx]);
 });
 
 
+
+
+function syncLargeCaptionWidth() {
+  const el=document.querySelector('#lb-caption-source');
+  if(!el||el.hidden)return;
+  const width=lbPhoto.getBoundingClientRect().width;
+  if(width>0)el.style.removeProperty('--caption-width');
+}
+lbPhoto.addEventListener('load',syncLargeCaptionWidth);
+window.addEventListener('resize',syncLargeCaptionWidth);
 document.querySelector('#lb-caption-source').addEventListener('click',()=>{
   if(currentIdx>=0)openSidePanel(photos[currentIdx]);
 });
+
+/* Mode révélation : un bandeau SUR la photo, pas un volet sortant du bas. */
+const tapReveal=document.querySelector('#tap-reveal');
+function hideTapReveal(){tapReveal.hidden=true;}
+function toggleTapReveal(photo){
+  if(!tapReveal.hidden){hideTapReveal();return;}
+  const summary=document.querySelector('#tap-reveal-summary');
+  summary.textContent='Source : '+sourceLabel(photo)+' · '+(LABEL[photo.state]||'Provenance à examiner');
+  tapReveal.hidden=false;
+}
+document.querySelector('#tap-reveal-close').addEventListener('click',e=>{e.stopPropagation();hideTapReveal();});
+document.querySelector('#tap-reveal-more').addEventListener('click',e=>{e.stopPropagation();if(currentIdx>=0)openSidePanel(photos[currentIdx]);});

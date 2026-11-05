@@ -246,15 +246,15 @@ function field(label, value, level = 'ok', help = '') {
   const marker = document.createElement('span'); marker.className = `signal ${level}`;
   marker.textContent = level === 'ok' ? '✓' : level === 'warn' ? '!' : level === 'bad' ? '×' : 'i';
   marker.setAttribute('aria-label', level === 'ok' ? 'Information présente' : level === 'warn' ? 'À vérifier' : level === 'bad' ? 'Problème détecté' : 'Information indisponible');
-  const name = document.createElement('dt'); name.textContent = label;
-  const detail = document.createElement('dd'); detail.textContent = readable(value);
+  const name = document.createElement('div'); name.className = 'field-label'; name.textContent = label;
+  const detail = document.createElement('div'); detail.className = 'field-value'; detail.textContent = readable(value);
   if (help) { const note = document.createElement('small'); note.textContent = help; detail.append(note); }
   row.append(marker, name, detail); return row;
 }
 function section(title, rows) {
   const block = document.createElement('section'); block.className = 'credential-section';
   const heading = document.createElement('h3'); heading.textContent = title;
-  const dl = document.createElement('dl'); dl.className = 'credential-fields';
+  const dl = document.createElement('div'); dl.className = 'credential-fields';
   dl.append(...rows); block.append(heading, dl); return block;
 }
 function present(value) { return value === null || value === undefined || value === '' ? 'neutral' : 'ok'; }

@@ -161,6 +161,36 @@
     dialog#credentials .c2pa-explainer p{font-size:.85rem;line-height:1.6;margin:8px 0}
     dialog#credentials .c2pa-explainer ul{padding-left:19px;font-size:.82rem;line-height:1.6;margin:10px 0 0}
     @media(max-width:480px){dialog#credentials .credential-row{grid-template-columns:22px minmax(0,1fr);gap:4px 9px}dialog#credentials .credential-row dd{grid-column:2}}
+
+    /* v2: mise en page isolée et robuste, sans marges natives de dt/dd */
+    dialog#credentials {width:min(680px,calc(100vw - 32px));max-width:calc(100vw - 32px);max-height:calc(100dvh - 36px);font-size:15px}
+    dialog#credentials .credential-head{padding:24px 30px 20px}
+    dialog#credentials .credential-head h2{font-size:1.45rem}
+    dialog#credentials .credential-body{padding:24px 30px 30px}
+    dialog#credentials .credential-section{margin-bottom:26px}
+    dialog#credentials .credential-section h3{font-size:1rem;margin-bottom:12px}
+    dialog#credentials .credential-fields{display:block;margin:0;padding:0;border:1px solid #dce4ee;border-radius:12px;overflow:hidden;background:#fff}
+    dialog#credentials .credential-row{display:grid;grid-template-columns:24px minmax(130px, 34%) minmax(0,1fr);align-items:center;column-gap:14px;row-gap:4px;padding:15px 16px;min-width:0;border-bottom:1px solid #e6ecf3;font-size:.88rem}
+    dialog#credentials .credential-row:last-child{border-bottom:0}
+    dialog#credentials .credential-row .field-label{font-weight:700;color:#35455f;min-width:0;overflow-wrap:break-word}
+    dialog#credentials .credential-row .field-value{min-width:0;margin:0;color:#172235;overflow-wrap:anywhere;line-height:1.5}
+    dialog#credentials .signal{display:grid;place-items:center;width:22px;height:22px;min-width:22px;min-height:22px;border-radius:50%;font-size:14px;line-height:1;box-sizing:border-box;color:#fff;font-weight:800}
+    dialog#credentials .signal.ok{background:#248a43}dialog#credentials .signal.warn{background:#ef9d0a}dialog#credentials .signal.bad{background:#dc3545}dialog#credentials .signal.neutral{background:#6684a5}
+    dialog#credentials .validation-list{display:block;margin:0;padding:0;border:1px solid #dce4ee;border-radius:12px;background:#fff;overflow:hidden}
+    dialog#credentials .validation-item{display:flex;align-items:center;gap:12px;padding:14px 16px;min-width:0;font-size:.85rem}
+    dialog#credentials .validation-item>span:nth-child(2){flex:1;min-width:0;overflow-wrap:anywhere}
+    dialog#credentials .validation-pill{flex:none}
+    dialog#credentials .c2pa-explainer{padding:22px;background:#eaf1ff;border-radius:14px}
+    dialog#credentials .c2pa-explainer h3{font-size:1.08rem}
+    dialog#credentials .c2pa-explainer p,dialog#credentials .c2pa-explainer ul{font-size:.9rem}
+    @media(max-width:560px){
+      dialog#credentials .credential-head{padding:20px}
+      dialog#credentials .credential-body{padding:20px}
+      dialog#credentials .credential-row{grid-template-columns:22px minmax(0,1fr);gap:3px 12px;padding:13px}
+      dialog#credentials .credential-row .field-label{grid-column:2}
+      dialog#credentials .credential-row .field-value{grid-column:2}
+      dialog#credentials .validation-item{flex-wrap:wrap}
+    }
   </style>
 </head>
 <body>
@@ -236,6 +266,6 @@
     </section>
   </div>
 </dialog>
-<script type="module" src="./app.js"></script>
+<script type="module" src="./app.js?v=2"></script>
 </body>
 </html>

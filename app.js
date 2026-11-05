@@ -190,7 +190,7 @@ async function analyzeAll(limit = 3) {
 /* ---------- Rendu ---------- */
 const LABEL = { loading: 'Analyse…', ok: 'Vérifiée', warn: 'À vérifier ⚠', bad: 'Échec ✕', none: 'Sans C2PA', error: 'Erreur de lecture' };
 
-const PRESENTATIONS = ['info','afp','direct','banner','status','corner','glow','seal'];
+const PRESENTATIONS = ['info','afp','direct','banner','status','corner','glow','seal','drawer','shield','delayed','tap','caption'];
 const modeSelect = document.querySelector('#presentation-mode');
 let selectedMode = 'random';
 function presentationFor(photo) {
@@ -255,9 +255,12 @@ function addBadgeContent(target, mode, state) {
     const el=document.createElement('span'); el.className='banner-label';
     el.textContent='Voir la provenance'; target.append(el);
   } else if (mode === 'glow') {
-    const angle=document.createElement('span');
-    angle.className='provenance-glow-angle';
+    const ns='http://www.w3.org/2000/svg';
+    const angle=document.createElementNS(ns,'svg');
+    angle.setAttribute('class','provenance-glow-angle');
+    angle.setAttribute('viewBox','0 0 48 48');
     angle.setAttribute('aria-hidden','true');
+    angle.innerHTML='<path d="M 6 43 H 35 Q 43 43 43 35 V 6" fill="none" stroke="#A7D8FF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />';
     target.append(angle);
   } else if (mode === 'seal') {
     const ns='http://www.w3.org/2000/svg';
@@ -272,6 +275,26 @@ function addBadgeContent(target, mode, state) {
     svg.setAttribute('aria-hidden','true');
     svg.innerHTML=`<path d="M12 3a9 9 0 0 0-9 9"/><path d="M21 12a9 9 0 0 0-9-9"/><path d="M5.6 16c.6-2.1.3-3.6.5-5.1a6 6 0 0 1 11.8 1.1"/><path d="M9 20c1.2-2.3 1.5-4.7 1.3-7.5a1.7 1.7 0 1 1 3.4 0c.1 4-.3 6.2-1.4 8.5"/><path d="M15.9 19c.8-2.5 1-4.4.8-6.9"/><path d="M7 19c.4-.9.8-2.1 1-3.2"/><path d="M19 16.5c.2-1.4.3-2.5.2-4"/>`;
     target.append(svg);
+  } else if (mode === 'drawer') {
+    const handle=document.createElement('span'); handle.className='provenance-drawer-handle';
+    target.append(handle);
+  } else if (mode === 'shield') {
+    const ns='http://www.w3.org/2000/svg';
+    const svg=document.createElementNS(ns,'svg');
+    svg.setAttribute('class','provenance-shield');
+    svg.setAttribute('viewBox','0 0 24 24');
+    svg.setAttribute('aria-hidden','true');
+    svg.innerHTML='<path d="M12 2.5 20 6v5.5c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10V6z" fill="rgba(15,24,38,.32)" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m8.3 12 2.6 2.7 4.9-5.4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>';
+    target.append(svg);
+  } else if (mode === 'delayed') {
+    const badge=document.createElement('span');badge.className='delayed-badge';
+    badge.textContent='◈  Provenance';target.append(badge);
+    target.classList.add('delayed-pending');
+  } else if (mode === 'tap') {
+    const handle=document.createElement('span');handle.className='tap-handle';target.append(handle);
+  } else if (mode === 'caption') {
+    const label=document.createElement('span');label.className='caption-marker';
+    label.textContent='Source sous la photo ↓';target.append(label);
   } else if (mode === 'corner') {
     // Repli organique : on déforme la courbe, sans déplacer le coin entier.
     const ns='http://www.w3.org/2000/svg';
@@ -301,17 +324,38 @@ function addBadgeContent(target, mode, state) {
     installPageCurl(target,svg);
   }
   // En mode pastille, le point coloré est l'unique élément.
-  if (!['corner','glow','seal'].includes(mode)) {
+  if (!['corner','glow','seal','drawer','shield','delayed','tap','caption'].includes(mode)) {
     const dot=document.createElement('span'); dot.className='dot '+state;
     dot.setAttribute('aria-hidden','true'); target.append(dot);
   }
   target.setAttribute('aria-label', mode === 'corner' ? 'Soulever le coin pour voir la provenance C2PA' : mode === 'glow' ? 'Ouvrir la provenance C2PA depuis le coin lumineux' : mode === 'seal' ? 'Ouvrir la provenance C2PA depuis le sceau' : 'Voir la provenance C2PA');
+}
+function sourceLabel(photo) {
+  const a=photo.active||{};
+  const sig=a.signature_info||a.signatureInfo||{};
+  const signer=sig.issuer||sig.signer||sig.organization||a.claim_generator||a.claimGenerator;
+  return signer ? String(signer).slice(0,90) : 'Source non renseignée';
+}
+function updateCaption(card,photo) {
+  const el=card.querySelector('.caption-source');if(!el)return;
+  el.hidden=presentationFor(photo)!=='caption';
+  el.textContent='Source : '+sourceLabel(photo)+'  ›';
+}
+let delayedTimer=0;
+function scheduleDelayedBadge(mode) {
+  clearTimeout(delayedTimer);
+  crBadge.classList.remove('delayed-visible');
+  if(mode==='delayed') delayedTimer=setTimeout(()=>{
+    if(lightbox.open && currentIdx>=0 && presentationFor(photos[currentIdx])==='delayed')
+      crBadge.classList.add('delayed-visible');
+  },1500);
 }
 function redrawPresentations() {
   photos.forEach(photo => {
     const card=grid.querySelector(`[data-idx="${photo.idx}"]`);
     const overlay=card?.querySelector('.demo-overlay');
     if(overlay){overlay.className='demo-overlay';addBadgeContent(overlay,presentationFor(photo),photo.state);}
+    if(card) updateCaption(card,photo);
   });
   if(currentIdx>=0) openLightbox(currentIdx);
 }
@@ -344,8 +388,13 @@ function cardEl(photo) {
   overlay.type='button'; overlay.className='demo-overlay';
   overlay.setAttribute('aria-label','Voir les informations C2PA');
   addBadgeContent(overlay,presentationFor(photo),photo.state);
-  overlay.addEventListener('click',event=>{event.stopPropagation();openLightbox(photo.idx);openSidePanel(photo);});
+  overlay.addEventListener('click',event=>{event.stopPropagation();openLightbox(photo.idx); if(['drawer','tap'].includes(presentationFor(photo))) openBottomSheet(photo); else openSidePanel(photo);});
   card.append(img, tag, name, overlay);
+  const source=document.createElement('button');source.type='button';
+  source.className='caption-source';source.hidden=true;
+  source.addEventListener('click',e=>{e.stopPropagation();openLightbox(photo.idx);openSidePanel(photo);});
+  card.append(source);
+  updateCaption(card,photo);
   card.addEventListener('click', () => openLightbox(photo.idx));
   return card;
 }
@@ -360,6 +409,7 @@ function renderCard(photo) {
              document.createTextNode(LABEL[photo.state] ?? photo.state));
   const overlay = card.querySelector('.demo-overlay');
   if (overlay) { overlay.className='demo-overlay'; addBadgeContent(overlay,presentationFor(photo),photo.state); }
+  updateCaption(card,photo);
   const overlayDot = card.querySelector('.demo-overlay .dot');
   if (overlayDot) overlayDot.className = `dot ${photo.state}`;
   applyFilterToCard(card, photo);
@@ -434,8 +484,10 @@ function openLightbox(idx) {
   lbPhoto.alt = photo.name.split('/').pop();
   crBadge.className = `cr ${photo.state}`;
   const mode=presentationFor(photo);
+  closeBottomSheet();
   crBadge.className=`cr ${photo.state}`;
   addBadgeContent(crBadge,mode,photo.state);
+  scheduleDelayedBadge(mode);
   lightbox.classList.toggle('direct-layout',mode==='direct');
   if(mode==='direct'){
     openSidePanel(photo);
@@ -455,6 +507,8 @@ function openLightbox(idx) {
     if (currentIdx >= 0 && photos[currentIdx] === photo) {
       crBadge.className = `cr ${photo.state}`;
       addBadgeContent(crBadge,presentationFor(photo),photo.state);
+      if(presentationFor(photo)==='delayed') crBadge.classList.add('delayed-visible');
+      if (!bottomSheet.hidden && bottomPhoto === photo) refreshBottomSheet(photo);
       if (!sidePanel.hidden) refreshSidePanel(photo);
       if (credentials.open) fillDetails(photo); // rafraîchir le panneau déjà ouvert
       renderCard(photo);
@@ -538,6 +592,7 @@ function refreshSidePanel(photo) {
   status.textContent = lbStatus.textContent;
   document.querySelector('#side-summary').replaceChildren(...[...lbSummary.childNodes].map(n => n.cloneNode(true)));
   document.querySelector('#side-json').textContent = lbJson.textContent;
+  if (!bottomSheet.hidden && bottomPhoto === photo) refreshBottomSheet(photo);
 }
 function openSidePanel(photo) {
   sidePhoto = photo;
@@ -549,7 +604,8 @@ document.querySelector('#side-close').addEventListener('click', () => { sidePane
 
 crBadge.addEventListener('click', () => {
   if (currentIdx < 0) return;
-  openSidePanel(photos[currentIdx]);
+  if(['drawer','tap'].includes(presentationFor(photos[currentIdx]))) openBottomSheet(photos[currentIdx]);
+  else openSidePanel(photos[currentIdx]);
 });
 document.querySelector('#cr-close').addEventListener('click', () => credentials.close());
 credentials.addEventListener('click', e => { if (e.target === credentials) credentials.close(); });
@@ -662,3 +718,66 @@ async function start() {
   analyzeAll();
 }
 start();
+
+/* Mode 9 : volet inférieur tactile et souris, données C2PA identiques au panneau. */
+const bottomSheet=document.querySelector('#bottom-sheet');
+const bottomHandle=document.querySelector('#bottom-sheet-handle');
+let bottomPhoto=null;
+function refreshBottomSheet(photo){
+  if(bottomSheet.hidden || bottomPhoto!==photo) return;
+  fillDetails(photo);
+  const s=document.querySelector('#bottom-status');
+  s.className=lbStatus.className; s.textContent=lbStatus.textContent;
+  document.querySelector('#bottom-summary').replaceChildren(...[...lbSummary.childNodes].map(n=>n.cloneNode(true)));
+  document.querySelector('#bottom-json').textContent=lbJson.textContent;
+}
+function openBottomSheet(photo){
+  bottomPhoto=photo;bottomSheet.hidden=false;
+  bottomSheet.classList.add('is-open');
+  bottomSheet.style.removeProperty('--drag-y');
+  refreshBottomSheet(photo);
+}
+function closeBottomSheet(){
+  bottomSheet.classList.remove('is-open');
+  bottomSheet.style.removeProperty('--drag-y');
+  bottomSheet.hidden=true;bottomPhoto=null;
+}
+document.querySelector('#bottom-close').addEventListener('click',closeBottomSheet);
+let dragStart=null;
+bottomHandle.addEventListener('pointerdown',e=>{
+  if(e.button!==0 && e.pointerType==='mouse') return;
+  dragStart={y:e.clientY,id:e.pointerId};
+  bottomHandle.setPointerCapture(e.pointerId);
+});
+bottomHandle.addEventListener('pointermove',e=>{
+  if(!dragStart || e.pointerId!==dragStart.id) return;
+  bottomSheet.style.setProperty('--drag-y',Math.max(0,e.clientY-dragStart.y)+'px');
+});
+bottomHandle.addEventListener('pointerup',e=>{
+  if(!dragStart || e.pointerId!==dragStart.id) return;
+  const distance=e.clientY-dragStart.y;dragStart=null;
+  if(distance>85) closeBottomSheet();
+  else bottomSheet.style.removeProperty('--drag-y');
+});
+bottomHandle.addEventListener('pointercancel',()=>{dragStart=null;bottomSheet.style.removeProperty('--drag-y');});
+
+
+// Mode « révélation au tap » : tap ou glissement vers le haut sur la photo.
+let tapStart=null;
+lbPhoto.addEventListener('pointerdown',e=>{
+  if(currentIdx<0||presentationFor(photos[currentIdx])!=='tap')return;
+  tapStart={x:e.clientX,y:e.clientY};
+});
+lbPhoto.addEventListener('pointerup',e=>{
+  if(!tapStart||currentIdx<0)return;
+  const dy=e.clientY-tapStart.y,dx=e.clientX-tapStart.x;
+  tapStart=null;
+  if(presentationFor(photos[currentIdx])!=='tap')return;
+  if(dy < -35 && Math.abs(dy)>Math.abs(dx)*1.2)openBottomSheet(photos[currentIdx]);
+  else if(Math.abs(dy)<12 && Math.abs(dx)<12)openBottomSheet(photos[currentIdx]);
+});
+
+
+document.querySelector('#lb-caption-source').addEventListener('click',()=>{
+  if(currentIdx>=0)openSidePanel(photos[currentIdx]);
+});

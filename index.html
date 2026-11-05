@@ -323,23 +323,20 @@
   transition:opacity .35s ease!important;
 }
 .demo-overlay.mode-glow{right:10px!important;bottom:9px!important;width:34px!important;height:34px!important}
+/* SVG : le halo suit exclusivement les deux segments du L. */
 .cr.mode-glow .provenance-glow-angle,.demo-overlay.mode-glow .provenance-glow-angle{
-  box-sizing:border-box!important;position:absolute!important;
-  right:0!important;bottom:0!important;display:block!important;
-  width:75%!important;height:75%!important;
-  border:0!important;border-right:3px solid #8fc7ff!important;
-  border-bottom:3px solid #8fc7ff!important;
-  border-radius:0 0 3px 0!important;background:transparent!important;
-  box-shadow:2px 2px 7px rgba(59,143,255,.6)!important;
-  filter:drop-shadow(0 0 3px rgba(96,176,255,.95))!important;
-  transform:none!important;
-  transition:filter .4s ease,box-shadow .4s ease!important;
-  pointer-events:none!important;
+  position:absolute!important;right:0!important;bottom:0!important;
+  display:block!important;width:100%!important;height:100%!important;
+  overflow:visible!important;box-sizing:border-box!important;
+  border:0!important;border-radius:0!important;background:none!important;
+  box-shadow:none!important;outline:0!important;
+  filter:drop-shadow(0 0 3px rgba(94,172,255,.95)) drop-shadow(0 0 6px rgba(58,143,255,.6))!important;
+  transform:none!important;pointer-events:none!important;
+  transition:filter .3s ease!important;
 }
 .cr.mode-glow:hover .provenance-glow-angle,.demo-overlay.mode-glow:hover .provenance-glow-angle,
 .cr.mode-glow:focus-visible .provenance-glow-angle,.demo-overlay.mode-glow:focus-visible .provenance-glow-angle{
-  filter:drop-shadow(0 0 9px #65b3ff)!important;
-  box-shadow:3px 3px 14px rgba(59,143,255,.9)!important;
+  filter:drop-shadow(0 0 6px #80c7ff) drop-shadow(0 0 12px #397dff)!important;
 }
 .cr.mode-seal,.demo-overlay.mode-seal{
   position:absolute!important;right:11px!important;bottom:9px!important;
@@ -365,6 +362,60 @@
  .cr.mode-glow,.demo-overlay.mode-glow,.cr.mode-seal,.demo-overlay.mode-seal,
  .provenance-glow-angle{transition:none!important}
 }
+
+/* Modes 9 et 10 : poignée minimaliste et bouclier, sans statut trompeur. */
+.cr.mode-drawer,.demo-overlay.mode-drawer{left:50%!important;right:auto!important;bottom:8px!important;transform:translateX(-50%)!important;width:94px!important;height:32px!important;min-width:0!important;background:transparent!important;border:0!important;box-shadow:none!important;display:grid!important;place-items:end center!important;padding:0 0 5px!important;opacity:.65!important;transition:opacity .25s!important}
+.demo-overlay.mode-drawer{width:60px!important;height:22px!important;bottom:5px!important}
+.cr.mode-drawer:hover,.demo-overlay.mode-drawer:hover,.cr.mode-drawer:focus-visible,.demo-overlay.mode-drawer:focus-visible{opacity:1!important}
+.provenance-drawer-handle{display:block;width:58px;height:5px;border-radius:99px;background:#d6d9dc;box-shadow:0 1px 4px #0008;pointer-events:none}
+.demo-overlay .provenance-drawer-handle{width:34px;height:4px}
+.cr.mode-shield,.demo-overlay.mode-shield{right:20px!important;bottom:10px!important;width:36px!important;height:36px!important;min-width:0!important;padding:3px!important;display:grid!important;place-items:center!important;background:transparent!important;border:0!important;box-shadow:none!important;opacity:.5!important;transition:opacity .25s,filter .25s!important}
+.demo-overlay.mode-shield{width:27px!important;height:27px!important;right:12px!important;bottom:7px!important}
+.cr.mode-shield:hover,.demo-overlay.mode-shield:hover,.cr.mode-shield:focus-visible,.demo-overlay.mode-shield:focus-visible{opacity:1!important;filter:drop-shadow(0 0 5px #fff8)!important}
+.provenance-shield{width:100%;height:100%;display:block;color:#fff;pointer-events:none}
+/* Un bouclier coché est un élément graphique, pas une affirmation de validation. */
+.bottom-sheet{position:absolute;z-index:49;left:50%;bottom:0;transform:translate(-50%,var(--drag-y,0px));width:min(640px,calc(100% - 24px));max-height:min(65vh,600px);background:#f8fafc;color:#1b293b;border-radius:22px 22px 0 0;box-shadow:0 -12px 40px #0009;display:flex;flex-direction:column;overflow:hidden;animation:sheet-rise .35s ease both}
+.bottom-sheet[hidden]{display:none!important}
+@keyframes sheet-rise{from{opacity:.6;translate:0 55px}to{opacity:1;translate:0 0}}
+.bottom-sheet-grip{height:33px;flex-shrink:0;display:grid;place-items:center;cursor:grab;touch-action:none;user-select:none}
+.bottom-sheet-grip:active{cursor:grabbing}
+.bottom-sheet-grip span{width:48px;height:5px;background:#aeb6c0;border-radius:99px}
+.bottom-sheet-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 22px 14px}
+.bottom-sheet-heading .eyebrow{font-size:11px;color:#607188;letter-spacing:.07em;text-transform:uppercase}
+.bottom-sheet-heading h2{font-size:20px;margin:3px 0 0}
+#bottom-close{border:0;background:#e7edf3;border-radius:8px;padding:7px 10px;cursor:pointer}
+.bottom-sheet-scroll{overflow:auto;padding:0 22px 22px;overscroll-behavior:contain}
+.bottom-sheet .status{padding:12px;border-radius:10px;background:#eef2f6;font-size:13px}
+.bottom-sheet .status.warn{background:#fff3dd;color:#7d4a00}.bottom-sheet .status.ok{background:#e6f5eb;color:#17592f}.bottom-sheet .status.error{background:#ffe7e7;color:#922}
+.bottom-sheet .credential-section{margin:12px 0}.bottom-sheet .credential-section h3{font-size:14px;margin:0 0 8px}
+.bottom-sheet .credential-fields,.bottom-sheet .validation-list{border:1px solid #d7dfe8;border-radius:10px;overflow:hidden}
+.bottom-sheet .credential-row{display:grid;grid-template-columns:23px minmax(90px,34%) minmax(0,1fr);gap:7px;padding:10px;border-bottom:1px solid #e2e7ef;font-size:12px;overflow-wrap:anywhere}
+.bottom-sheet .credential-row:last-child{border-bottom:0}.bottom-sheet .field-label{font-weight:700;color:#46556b}.bottom-sheet .field-value{min-width:0;overflow-wrap:anywhere}
+.bottom-sheet .signal{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;color:white;font-weight:800}.bottom-sheet .signal.ok{background:#268c40}.bottom-sheet .signal.warn{background:#df9700}.bottom-sheet .signal.bad{background:#e43d40}.bottom-sheet .signal.neutral{background:#6782a2}
+.bottom-sheet .validation-item{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid #e2e7ef;font-size:12px;overflow-wrap:anywhere}.bottom-sheet .validation-item:last-child{border-bottom:0}
+.bottom-sheet .validation-pill{border-radius:99px;background:#e6eaf0;padding:4px 7px;font-size:11px}
+.bottom-sheet details{margin:12px 0;padding:10px;border:1px solid #d7dfe8;border-radius:10px}.bottom-sheet pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:180px;overflow:auto}
+.bottom-sheet-note{font-size:12px;color:#65748a;line-height:1.5}
+@media(max-width:650px){.bottom-sheet{width:100%;max-height:75dvh;border-radius:20px 20px 0 0}.bottom-sheet-heading{padding:0 15px 12px}.bottom-sheet-scroll{padding:0 15px 20px}}
+@media(prefers-reduced-motion:reduce){.bottom-sheet{animation:none}}
+
+/* Modes 11–13 */
+.cr.mode-delayed,.demo-overlay.mode-delayed{right:20px!important;bottom:12px!important;background:transparent!important;box-shadow:none!important;border:0!important;padding:0!important;opacity:.75!important}
+.cr.mode-delayed .delayed-badge,.demo-overlay.mode-delayed .delayed-badge{display:inline-flex;align-items:center;background:rgba(247,250,253,.94);color:#273344;border-radius:7px;padding:5px 9px;font-size:12px;font-weight:700;box-shadow:0 1px 8px #0004}
+.cr.mode-delayed{opacity:0!important;visibility:hidden!important;transform:translateY(7px)!important;transition:opacity .45s ease,transform .45s ease,visibility .45s!important}
+.cr.mode-delayed.delayed-visible{opacity:.78!important;visibility:visible!important;transform:translateY(0)!important}
+.cr.mode-delayed.delayed-visible:hover{opacity:1!important}
+.cr.mode-tap,.demo-overlay.mode-tap{left:50%!important;right:auto!important;bottom:6px!important;transform:translateX(-50%)!important;background:transparent!important;box-shadow:none!important;border:0!important;padding:8px!important;opacity:.55!important}
+.cr.mode-tap:hover,.demo-overlay.mode-tap:hover{opacity:1!important}
+.tap-handle{display:none;width:48px;height:5px;background:#c8cdd3;border-radius:99px;box-shadow:0 1px 4px #0007}
+.cr.mode-caption,.demo-overlay.mode-caption{display:none!important}
+.caption-source{display:block;margin:0;padding:8px 12px;width:100%;border:0;border-top:1px solid #334154;background:#19212d;color:#cbd5e1;font-size:11px;text-align:left;cursor:pointer;overflow-wrap:anywhere}
+.caption-source[hidden]{display:none!important}
+.caption-source:hover{color:white;text-decoration:underline}
+.lb-caption-source{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:20;max-width:calc(100% - 24px);border:1px solid #435067;background:#19212d;color:#f1f5f9;padding:9px 14px;border-radius:8px;cursor:pointer;font-size:12px}
+.lb-caption-source[hidden]{display:none!important}
+#lightbox.caption-layout .lb-stage{padding-bottom:100px}
+@media(max-width:650px){.cr.mode-delayed .delayed-badge{font-size:11px}.lb-caption-source{bottom:40px;width:max-content}}
   </style>
 </head>
 <body>
@@ -389,6 +440,11 @@
     <option value="corner">Coin de page transparent</option>
     <option value="glow">Bordure lumineuse</option>
     <option value="seal">Sceau de provenance</option>
+    <option value="drawer">Volet à tirer depuis le bas</option>
+    <option value="shield">Petit bouclier coché</option>
+    <option value="delayed">Pastille retardée (1,5 s)</option>
+    <option value="tap">Révélation au tap / glissement</option>
+    <option value="caption">Légende liée sous la photo</option>
   </select>
   <button id="reshuffle" type="button" title="Redistribuer les présentations">↻ Redistribuer</button>
   <span id="count"></span>
@@ -429,6 +485,17 @@
   </div>
   <button class="nav prev" id="lb-prev" type="button" aria-label="Photo précédente">‹</button>
   <button class="nav next" id="lb-next" type="button" aria-label="Photo suivante">›</button>
+<!-- Mode 9 : volet d'informations à tirer depuis le bas -->
+<section id="bottom-sheet" class="bottom-sheet" aria-label="Volet des informations C2PA" hidden>
+  <div class="bottom-sheet-grip" id="bottom-sheet-handle" role="button" tabindex="0" aria-label="Tirer le volet de provenance vers le bas pour le fermer"><span></span></div>
+  <div class="bottom-sheet-heading"><div><div class="eyebrow">Provenance numérique</div><h2>Content Credentials</h2></div><button type="button" id="bottom-close" aria-label="Fermer le volet">✕</button></div>
+  <div class="bottom-sheet-scroll">
+    <p id="bottom-status" class="status loading" role="status">Analyse en cours…</p>
+    <div id="bottom-summary"></div>
+    <details><summary>Informations techniques du manifeste</summary><pre id="bottom-json"></pre></details>
+    <p class="bottom-sheet-note">Les Content Credentials décrivent une provenance déclarée et les contrôles effectués. Ils ne garantissent pas la véracité de la scène.</p>
+  </div>
+</section>
 <!-- Démonstration : panneau de provenance latéral, sans bloquer la galerie -->
 <aside id="side-panel" aria-label="Content Credentials de la photographie" hidden>
   <div class="side-header"><img src="./logo-afp.png" alt="AFP"><div><div class="eyebrow">Provenance numérique</div><h2>Content Credentials</h2></div><button class="side-close" id="side-close" type="button" aria-label="Fermer le panneau">✕</button></div>
@@ -465,6 +532,6 @@
     </section>
   </div>
 </dialog>
-<script type="module" src="./app.js?v=20261105-curl-v11"></script>
+<script type="module" src="./app.js?v=20261105-modes-v14"></script>
 </body>
 </html>

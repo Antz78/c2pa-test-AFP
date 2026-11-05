@@ -26,6 +26,7 @@ const photos = [];            // { url, name, blob?, state, store?, active?, val
 let currentFilter = 'all';
 let currentIdx = -1;
 let c2pa = null;
+let c2paPromise = null;
 
 /* ---------- Mode A : index photos.json (généré par CI) ---------- */
 /* Renvoie { state: 'ok' | 'missing' | 'empty', urls: string[] } */
@@ -121,8 +122,8 @@ function addFiles(files) {
 
 /* ---------- Analyse C2PA ---------- */
 async function ensureC2pa() {
-  if (!c2pa) c2pa = await createC2pa({ wasmSrc: WASM_URL });
-  return c2pa;
+  if (!c2paPromise) c2paPromise = createC2pa({ wasmSrc: WASM_URL }).catch(e => { c2paPromise = null; throw e; });
+  return c2paPromise;
 }
 
 async function getBlob(photo) {
@@ -157,11 +158,14 @@ async function analyze(photo) {
 
 /* Analyse parallèle limitée */
 async function analyzeAll(limit = 3) {
-  const queue = () => photos.filter(p => p.state === 'loading');
+  const queue = () => photos.filter(p => p.state === 'loading' && !p.processing);
   const workers = Array.from({ length: limit }, async () => {
     while (queue().length) {
       const p = queue().shift();
+      if (!p || p.processing) continue;
+      p.processing = true;
       await analyze(p);
+      p.processing = false;
       renderCard(p);
       updateCount();
     }
@@ -204,9 +208,9 @@ function renderCard(photo) {
 }
 
 function applyFilterToCard(card, photo) {
-  const visible = currentFilter === 'all' ||
+  const visible = (!search.value.trim() || photo.name.toLowerCase().includes(search.value.trim().toLowerCase())) && (currentFilter === 'all' ||
     (currentFilter === 'none' && ['none', 'error'].includes(photo.state)) ||
-    photo.state === currentFilter;
+    photo.state === currentFilter);
   card.style.display = visible ? '' : 'none';
 }
 
@@ -230,14 +234,30 @@ function setStatusLine(cls, text) {
   lbStatus.textContent = text;
 }
 
-/* Ligne « Libellé : valeur » comme dans le design d'origine */
-function field(label, value) {
-  const p = document.createElement('p');
-  const b = document.createElement('strong');
-  b.textContent = `${label} : `;
-  p.append(b, document.createTextNode(String(value ?? 'Non renseigné')));
-  return p;
+/* Métadonnées présentées sans inventer de valeurs absentes. */
+function firstValue(...values) { return values.find(v => v !== undefined && v !== null && v !== '') ?? null; }
+function readable(value) {
+  if (value == null) return 'Non renseigné';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
 }
+function field(label, value) {
+  const row = document.createElement('div'); row.className = 'credential-row';
+  const name = document.createElement('dt'); name.textContent = label;
+  const detail = document.createElement('dd'); detail.textContent = readable(value);
+  row.append(name, detail); return row;
+}
+function section(title, rows) {
+  const block = document.createElement('section'); block.className = 'credential-section';
+  const heading = document.createElement('h3'); heading.textContent = title;
+  const dl = document.createElement('dl'); dl.className = 'credential-fields';
+  dl.append(...rows); block.append(heading, dl); return block;
+}
+function signatureOf(a) {
+  const sig = firstValue(a.signature_info, a.signatureInfo, a.signature);
+  return Array.isArray(sig) ? sig[0] ?? {} : sig ?? {};
+}
+function validationText(v) { return typeof v === 'string' ? v : firstValue(v?.code, v?.status, JSON.stringify(v)); }
 
 function openLightbox(idx) {
   currentIdx = idx;
@@ -246,11 +266,12 @@ function openLightbox(idx) {
   lbPhoto.src = photo.url;
   lbPhoto.alt = photo.name.split('/').pop();
   crBadge.className = `cr ${photo.state}`;
-  setStatusLine('loading', 'Vérification C2PA en cours…');
+  setStatusLine(photo.state === 'loading' ? 'loading' : photo.state, 'Chargement des informations…');
   lbSummary.replaceChildren();
   lbJson.textContent = 'Chargement…';
   // Si le panneau était ouvert sur la photo précédente, on le ferme.
   if (credentials.open) credentials.close();
+  if (!lightbox.open) lightbox.showModal();
   analyze(photo).then(() => {
     if (currentIdx >= 0 && photos[currentIdx] === photo) {
       crBadge.className = `cr ${photo.state}`;
@@ -259,7 +280,6 @@ function openLightbox(idx) {
       updateCount();
     }
   });
-  lightbox.showModal();
 }
 
 /* ---------- Panneau Content Credentials (bouton logo AFP) ---------- */
@@ -290,15 +310,31 @@ function fillDetails(photo) {
     setStatusLine('ok', 'Manifeste C2PA trouvé. Vérifiez la confiance du signataire dans les détails.');
   }
   const a = photo.active ?? {};
+  const sig = signatureOf(a);
+  const generator = firstValue(a.claim_generator, a.claimGenerator, a.claim_generator_info?.[0]?.name, a.claimGeneratorInfo?.[0]?.name);
+  const signer = firstValue(sig.name, sig.issuer, sig.organization, a.signer);
+  const date = firstValue(a.created_at, a.createdAt, sig.time, sig.timestamp);
+  const validationSection = document.createElement('section');
+  validationSection.className = 'credential-section';
+  const vh = document.createElement('h3'); vh.textContent = 'Vérification et confiance';
+  const vl = document.createElement('ul'); vl.className = 'validation-list';
+  if (entries.length) entries.forEach(v => { const li = document.createElement('li'); li.textContent = validationText(v); vl.append(li); });
+  else { const li = document.createElement('li'); li.textContent = 'Aucun message de validation retourné — cela ne prouve pas que le signataire est fiable.'; vl.append(li); }
+  validationSection.append(vh, vl);
   lbSummary.replaceChildren(
-    field('Titre', a.title),
-    field('Générateur', a.claim_generator ?? a.claimGenerator),
-    field('Signataire', a.signature_info?.[0]?.name ?? a.signatureInfo?.[0]?.name),
-    field('Date de création', a.created_at ?? a.createdAt),
-    field('Manifeste actif', photo.store?.active_manifest ?? photo.store?.activeManifest),
-    field('Résultats de validation', entries.length ? `${entries.length} message(s)` : 'Aucun message de validation retourné'),
+    section('Informations sur le contenu', [
+      field('Titre', firstValue(a.title, photo.name.split('/').pop())),
+      field('Générateur', generator),
+      field('Date de création', date),
+    ]),
+    section('Signature et provenance', [
+      field('Signataire', signer),
+      field('Manifeste actif', firstValue(photo.store?.active_manifest, photo.store?.activeManifest)),
+    ]),
+    validationSection
   );
   lbJson.textContent = JSON.stringify(photo.store, null, 2);
+
 }
 
 crBadge.addEventListener('click', () => {
@@ -316,7 +352,8 @@ function step(dir) {
     .filter(i => currentFilter === 'all' || photos[i].state === currentFilter ||
       (currentFilter === 'none' && ['none', 'error'].includes(photos[i].state)));
   if (!visible.length) return;
-  const next = visible[(visible.indexOf(currentIdx) + dir + visible.length) % visible.length];
+  const pos = visible.indexOf(currentIdx);
+  const next = visible[(pos + dir + visible.length) % visible.length];
   openLightbox(next);
 }
 

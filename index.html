@@ -88,15 +88,15 @@
     /* Repli si le logo manque : badge « CR » du design d'origine */
     .cr span{display:inline-flex;align-items:center;background:#fff;color:#111827;border:1px solid #ccd1d8;
       border-radius:999px;padding:8px 12px;font-weight:750;font-size:.75rem;box-shadow:0 2px 10px #0003}
-    /* Pastille d'état en haut à droite du badge */
-    .cr .dot{position:absolute;top:-5px;right:-5px;width:14px;height:14px;border-radius:50%;
-      border:2px solid #0d1117;background:#8b96a5;flex-shrink:0}
+    /* Pastille d'état : mini-badge de notification, ronde et nette */
+    .cr .dot{position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;
+      border:2px solid #fff;background:#8b96a5;box-shadow:0 1px 4px #0009}
     .cr.ok .dot{background:var(--ok)} .cr.warn .dot{background:var(--warn)}
     .cr.error .dot{background:var(--error)} .cr.none .dot{background:#6e7a89}
     .cr.loading .dot{background:var(--accent);animation:pulse 1s infinite}
     @keyframes pulse{50%{opacity:.3}}
 
-    /* ===== Fiche Content Credentials : reprise du design d'origine (clair) ===== */
+    /* ===== Fiche Content Credentials ===== */
     dialog#credentials{border:0;border-radius:12px;max-width:min(600px,92vw);width:min(600px,92vw);
       max-height:88vh;padding:24px;margin:auto;background:#fff;color:#18212e;
       font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
@@ -118,6 +118,28 @@
       max-height:420px;font-size:12px;background:#f3f5f7;padding:14px;border-radius:8px;color:#18212e}
     dialog#credentials small{color:#526071}
     dialog#credentials .note{margin-top:14px;font-size:.8rem;line-height:1.5;color:#526071}
+    dialog#credentials{width:min(560px,94vw);max-width:94vw;padding:0;border-radius:18px;overflow:auto;line-height:1.5}
+    dialog#credentials .credential-head{padding:22px 26px 18px;border-bottom:1px solid #e8edf2;background:#fff}
+    dialog#credentials .credential-head h2{margin:0;font-size:1.2rem;letter-spacing:-.02em}
+    dialog#credentials .credential-head .eyebrow{font-size:.72rem;text-transform:uppercase;letter-spacing:.12em;color:#64748b;font-weight:750;margin-bottom:4px}
+    dialog#credentials .credential-body{padding:20px 26px 24px}
+    dialog#credentials .status{padding:12px 14px;border-radius:10px;background:#f1f5f9;font-size:.87rem;font-weight:600;margin:0 0 20px}
+    dialog#credentials .status.warn{background:#fff7e5;color:#855500}
+    dialog#credentials .status.ok{background:#e9f7ef;color:#12683b}
+    dialog#credentials .status.error{background:#fff0ee;color:#a52925}
+    dialog#credentials .credential-section{margin:0 0 21px}
+    dialog#credentials .credential-section h3{font-size:.88rem;margin:0 0 11px;color:#172235}
+    dialog#credentials .credential-fields{margin:0;border:1px solid #e7ebf0;border-radius:11px;overflow:hidden}
+    dialog#credentials .credential-row{display:grid;grid-template-columns:38% 1fr;gap:12px;padding:10px 13px;border-bottom:1px solid #edf0f4;font-size:.82rem}
+    dialog#credentials .credential-row:last-child{border-bottom:0}
+    dialog#credentials dt{font-weight:650;color:#566478}
+    dialog#credentials dd{margin:0;overflow-wrap:anywhere;color:#18212e}
+    dialog#credentials .validation-list{margin:0;padding:12px 14px 12px 30px;background:#f6f8fa;border-radius:10px;font-size:.79rem;overflow-wrap:anywhere}
+    dialog#credentials .validation-list li+li{margin-top:6px}
+    dialog#credentials details{margin-top:8px}
+    dialog#credentials .note{border-top:1px solid #e8edf2;padding-top:15px}
+    dialog#credentials button.close{float:none}
+    @media(max-width:480px){dialog#credentials .credential-row{grid-template-columns:1fr;gap:2px}dialog#credentials .credential-body{padding:18px}dialog#credentials .credential-head{padding:18px}}
   </style>
 </head>
 <body>
@@ -169,17 +191,20 @@
   <button class="nav next" id="lb-next" type="button" aria-label="Photo suivante">›</button>
 </dialog>
 
-<!-- Fiche Content Credentials (design d'origine) -->
-<dialog id="credentials">
-  <button class="close" id="cr-close" type="button">Fermer</button>
-  <h2>Content Credentials</h2>
-  <p id="lb-status" class="status loading" role="status">Vérification C2PA en cours…</p>
-  <div id="lb-summary"></div>
-  <details><summary>Informations techniques du manifeste</summary><pre id="lb-json">Chargement…</pre></details>
-  <p class="note">La présence d'un manifeste ne garantit pas que le signataire soit reconnu comme fiable.
-  Vérifiez les résultats de validation et l'identité du signataire.</p>
+<!-- Fiche Content Credentials -->
+<dialog id="credentials" aria-labelledby="credentials-title">
+  <div class="credential-head">
+    <button class="close" id="cr-close" type="button">Fermer</button>
+    <div class="eyebrow">Provenance numérique</div>
+    <h2 id="credentials-title">Content Credentials</h2>
+  </div>
+  <div class="credential-body">
+    <p id="lb-status" class="status loading" role="status">Vérification C2PA en cours…</p>
+    <div id="lb-summary"></div>
+    <details><summary>Informations techniques du manifeste</summary><pre id="lb-json">Chargement…</pre></details>
+    <p class="note">Un manifeste présent ou une signature cryptographiquement valide ne garantit pas que le signataire soit reconnu comme fiable. Consultez les résultats de validation.</p>
+  </div>
 </dialog>
 <script type="module" src="./app.js"></script>
-<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" nonce="lv2AQRdMG37j7wQvRHW70Q==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>

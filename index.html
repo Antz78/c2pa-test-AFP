@@ -548,6 +548,20 @@
 .cr.mode-corner .fold-shadow,.demo-overlay.mode-corner .fold-shadow{fill:var(--curl-shadow,rgba(0,0,0,.7))!important}
 .cr.mode-corner .page-corner,.demo-overlay.mode-corner .page-corner{filter:none!important;transform:none!important}
 @media(prefers-reduced-motion:reduce){#lightbox #cr-badge.cr.mode-corner{transition:none!important}}
+/* V22 — repli WebGL : le badge couvre le coin bas-droit de la photo. */
+#lightbox #cr-badge.cr.mode-corner{
+  width:48%!important;height:48%!important;min-width:150px;min-height:110px;
+  right:0!important;bottom:0!important;margin:0!important;padding:0!important;
+  border:0!important;border-radius:0!important;background:transparent!important;
+  box-shadow:none!important;opacity:1!important;visibility:visible!important;
+  overflow:visible!important;transition:none!important;
+}
+#lightbox #cr-badge.cr.mode-corner.curl-ready,
+#lightbox #cr-badge.cr.mode-corner:hover{opacity:1!important;visibility:visible!important}
+#lightbox #cr-badge.cr.mode-corner canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:pointer}
+@media (max-width:700px){
+  #lightbox #cr-badge.cr.mode-corner{width:60%!important;height:55%!important}
+}
 </style>
 </head>
 <body>
@@ -674,6 +688,7 @@
     </section>
   </div>
 </dialog>
-<script type="module" src="./app.js?v=20261105-v21-curl"></script>
+<script type="module" src="./app.js?v=20261105-v22-curl-webgl"></script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" nonce="/rpw5pAHCgV9mSFDu6BJrw==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>

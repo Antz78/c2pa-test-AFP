@@ -5,6 +5,7 @@ console.info('[C2PA AFP] Version filtres v3 chargée — badges À vérifier');
 //  B) Sinon, glissez le dossier PHOTOS/ (ou des photos) directement sur la page.
 // Version SDK fixée pour éviter les changements silencieux du CDN.
 import { createC2pa, Reader } from 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.15.4/+esm';
+import { mountCurl } from './curl.js';
 
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.15.4/dist/resources/c2pa_bg.wasm';
 const IMAGE_RE = /\.(jpe?g|png|webp|tiff?)$/i;
@@ -322,30 +323,37 @@ function addBadgeContent(target, mode, state) {
     const label=document.createElement('span');label.className='caption-marker';
     label.textContent='Source sous la photo ↓';target.append(label);
   } else if (mode === 'corner') {
-    // Repli organique : on déforme la courbe, sans déplacer le coin entier.
-    const ns='http://www.w3.org/2000/svg';
-    const svg=document.createElementNS(ns,'svg');
-    svg.setAttribute('class','page-corner');
-    svg.setAttribute('viewBox','0 0 100 100');
-    svg.setAttribute('aria-hidden','true');
-    svg.innerHTML=`
-      <defs>
-        <linearGradient id="curlBack" x1=".1" y1=".1" x2="1" y2="1">
-          <stop offset="0" stop-color="#f8f9fc" stop-opacity=".12"/>
-          <stop offset=".45" stop-color="#e1e4ea" stop-opacity=".78"/>
-          <stop offset=".8" stop-color="#f8f9fc" stop-opacity=".94"/>
-          <stop offset="1" stop-color="#929ba9" stop-opacity=".60"/>
-        </linearGradient>
-      </defs>
-      <path class="fold-shadow"/>
-      <path class="fold-under"/>
-      <path class="fold-paper" fill="url(#curlBack)"/>
-      <path class="fold-edge" fill="none" stroke="rgba(255,255,255,.75)" stroke-width=".85"/>
-      <path class="fold-highlight" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="2"/>
-    `;
-    target.append(svg);
-    setCurlTheme(target);
-    installPageCurl(target,svg);
+    if (target.id === 'cr-badge') {
+      // Grande photo : repli WebGL (canvas géré par curl.js).
+      // Le clic continue de passer par l'écouteur existant de #cr-badge → openSidePanel.
+      const ctl = mountCurl(target);
+      // addBadgeContent vide le bouton : on réattache le canvas du repli s'il a été détaché.
+      if (ctl && ctl.canvas && ctl.canvas.parentElement !== target) target.append(ctl.canvas);
+    } else {
+      // Miniatures : repli SVG léger d'origine.
+      const ns='http://www.w3.org/2000/svg';
+      const svg=document.createElementNS(ns,'svg');
+      svg.setAttribute('class','page-corner');
+      svg.setAttribute('viewBox','0 0 100 100');
+      svg.setAttribute('aria-hidden','true');
+      svg.innerHTML=`
+        <defs>
+          <linearGradient id="curlBack" x1=".1" y1=".1" x2="1" y2="1">
+            <stop offset="0" stop-color="#f8f9fc" stop-opacity=".12"/>
+            <stop offset=".45" stop-color="#e1e4ea" stop-opacity=".78"/>
+            <stop offset=".8" stop-color="#f8f9fc" stop-opacity=".94"/>
+            <stop offset="1" stop-color="#929ba9" stop-opacity=".60"/>
+          </linearGradient>
+        </defs>
+        <path class="fold-shadow"/>
+        <path class="fold-under"/>
+        <path class="fold-paper" fill="url(#curlBack)"/>
+        <path class="fold-edge" fill="none" stroke="rgba(255,255,255,.75)" stroke-width=".85"/>
+        <path class="fold-highlight" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="2"/>
+      `;
+      target.append(svg);
+      installPageCurl(target,svg);
+    }
   }
   // En mode pastille, le point coloré est l'unique élément.
   if (!['corner','glow','seal','drawer','shield','shield-delayed','delayed','tap','caption'].includes(mode)) {
@@ -359,6 +367,28 @@ function sourceLabel(photo) {
   const sig=a.signature_info||a.signatureInfo||{};
   const signer=sig.issuer||sig.signer||sig.organization||a.claim_generator||a.claimGenerator;
   return signer ? String(signer).slice(0,90) : 'Source non renseignée';
+}
+/* Carte révélée sous le coin enroulé (repli WebGL) : vraies données de la photo. */
+function makeProvenanceCard(photo) {
+  const w = lbPhoto.naturalWidth || 1024, h = lbPhoto.naturalHeight || 768;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  x.fillStyle = '#101826'; x.fillRect(0, 0, w, h);
+  const g = x.createRadialGradient(w * .86, h * .88, w * .04, w * .86, h * .88, w * .7);
+  g.addColorStop(0, '#1b2a44'); g.addColorStop(1, '#101826');
+  x.fillStyle = g; x.fillRect(0, 0, w, h);
+  const s = w / 1024;
+  x.fillStyle = '#8fa3c8'; x.font = `700 ${30 * s}px system-ui,sans-serif`;
+  x.fillText('CONTENT CREDENTIALS', 776 * s, 200 * s);
+  x.fillStyle = '#fff'; x.font = `700 ${48 * s}px system-ui,sans-serif`;
+  x.fillText('Source : ' + sourceLabel(photo).slice(0, 40), 776 * s, 268 * s);
+  const lvl = photo.state === 'ok' ? ['#9be6b1', '#12683b']
+    : (photo.state === 'bad' || photo.state === 'error') ? ['#ffb0b0', '#4b2325']
+    : ['#ffcf77', '#4a3410'];
+  x.fillStyle = lvl[0]; x.beginPath(); x.roundRect(776 * s, 300 * s, 210 * s, 44 * s, 22 * s); x.fill();
+  x.fillStyle = lvl[1]; x.font = `700 ${24 * s}px system-ui,sans-serif`;
+  x.fillText((LABEL[photo.state] || 'Provenance').slice(0, 20), 792 * s, 330 * s);
+  return c;
 }
 function updateCaption(card,photo) {
   const el=card.querySelector('.caption-source');if(!el)return;
@@ -520,6 +550,8 @@ function openLightbox(idx) {
   hideTapReveal();
   crBadge.className=`cr ${photo.state}`;
   addBadgeContent(crBadge,mode,photo.state);
+  const curl = crBadge._curl;
+  if (curl) curl.updatePhoto(lbPhoto, makeProvenanceCard(photo));
   scheduleDelayedBadge(mode);
   lightbox.classList.toggle('direct-layout',mode==='direct');
   if(mode==='direct'){

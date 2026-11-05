@@ -80,16 +80,16 @@
       .lb-stage{padding:56px 8px}}
 
     /* ===== Badge logo AFP sur la photo (50 % de transparence, logo complet) ===== */
-    .cr{position:absolute;right:14px;bottom:14px;padding:0;border:0;background:transparent;cursor:pointer;
+    .cr{position:absolute;right:3px;bottom:2px;padding:0;border:0;background:transparent;cursor:pointer;
       opacity:.5;transition:opacity .15s,transform .15s}
     .cr:hover{opacity:1;transform:translateY(-2px)}
-    .cr img{display:block;height:42px;width:auto;object-fit:contain;border-radius:8px;
+    .cr img{display:block;height:var(--afp-logo-height,33.6px);max-height:none;width:auto;max-width:none;object-fit:contain;border-radius:5px;
       filter:drop-shadow(0 2px 10px #0007)}
     /* Repli si le logo manque : badge « CR » du design d'origine */
     .cr span{display:inline-flex;align-items:center;background:#fff;color:#111827;border:1px solid #ccd1d8;
       border-radius:999px;padding:8px 12px;font-weight:750;font-size:.75rem;box-shadow:0 2px 10px #0003}
     /* Pastille d'état : mini-badge de notification, ronde et nette */
-    .cr .dot{position:absolute;top:-4px;right:-4px;width:12px;height:12px;min-width:12px;min-height:12px;aspect-ratio:1/1;box-sizing:border-box;flex:none;padding:0;display:block;border-radius:50%;
+    .cr .dot{position:absolute;top:-4px;right:-4px;width:var(--afp-dot-size,9px);height:var(--afp-dot-size,9px);min-width:var(--afp-dot-size,9px);min-height:var(--afp-dot-size,9px);aspect-ratio:1/1;box-sizing:border-box;flex:none;padding:0;display:block;border-radius:50%;
       border:2px solid #fff;background:#8b96a5;box-shadow:0 1px 4px #0009}
     .cr.ok .dot{background:var(--ok)} .cr.warn .dot{background:var(--warn)}
     .cr.error .dot{background:var(--error)} .cr.none .dot{background:#6e7a89}

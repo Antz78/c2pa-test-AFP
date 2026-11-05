@@ -16,6 +16,19 @@ const lightbox = document.querySelector('#lightbox');
 const credentials = document.querySelector('#credentials');
 const crBadge = document.querySelector('#cr-badge');
 const lbPhoto = document.querySelector('#lb-photo');
+// Le badge suit la largeur RÉELLEMENT affichée de la photo, pas celle du viewport.
+// Sur grand écran, plafond à 80 % de l'ancien logo de 42 px.
+function resizeAfpBadge() {
+  const width = lbPhoto.getBoundingClientRect().width;
+  if (!width) return;
+  const height = Math.min(33.6, Math.max(12, width * 0.065));
+  crBadge.style.setProperty('--afp-logo-height', `${height}px`);
+  crBadge.style.setProperty('--afp-dot-size', `${Math.max(6, Math.min(9, height * 0.27))}px`);
+}
+const afpResizeObserver = new ResizeObserver(resizeAfpBadge);
+afpResizeObserver.observe(lbPhoto);
+lbPhoto.addEventListener('load', resizeAfpBadge);
+window.addEventListener('resize', resizeAfpBadge);
 const lbTitle = document.querySelector('#lb-title');
 const lbStatus = document.querySelector('#lb-status');
 const lbSummary = document.querySelector('#lb-summary');

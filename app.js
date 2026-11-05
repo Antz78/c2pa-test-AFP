@@ -201,44 +201,70 @@ function presentationFor(photo) {
 // Animation du repli par déformation géométrique réelle (pas de translation/saut).
 // Le repli se déploie sans bouger son point d'attache : le coin inférieur droit.
 function installPageCurl(button, svg) {
-  let progress=0, target=0, frameId=0;
-  const paper=svg.querySelector('.fold-paper');
-  const shadow=svg.querySelector('.fold-shadow');
-  const edge=svg.querySelector('.fold-edge');
-  const under=svg.querySelector('.fold-under');
-  const rim=svg.querySelector('.fold-rim');
-  const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  function draw(t) {
-    // La zone révélée devient plus grande, plus profonde et plus sombre.
-    const size=18+45*t;
-    const start=100-size;
-    const c1x=start+size*.42, c1y=100-size*.08;
-    const c2x=100-size*.08, c2y=start+size*.42;
-    const line=`M ${start.toFixed(2)} 100 C ${c1x.toFixed(2)} ${c1y.toFixed(2)} ${c2x.toFixed(2)} ${c2y.toFixed(2)} 100 ${start.toFixed(2)}`;
-    const shape=`${line} L100 100 Z`;
-    under.setAttribute('d',shape);
-    paper.setAttribute('d',shape);
-    edge.setAttribute('d',line);
-    rim.setAttribute('d',`M ${(start+1.3).toFixed(2)} 100 C ${(c1x+1).toFixed(2)} ${(c1y-1).toFixed(2)} ${(c2x-1).toFixed(2)} ${(c2y+1).toFixed(2)} 100 ${(start+1.3).toFixed(2)}`);
-    shadow.setAttribute('d',`M ${(start-3).toFixed(2)} 100 C ${(c1x-3).toFixed(2)} ${(c1y-4).toFixed(2)} ${(c2x-4).toFixed(2)} ${(c2y-3).toFixed(2)} 100 ${(start-3).toFixed(2)} L100 100 Z`);
-    under.style.opacity=String(.75+.25*t);
-    paper.style.opacity=String(.4+.15*t);
+  const isLarge = button.id === 'cr-badge';
+  const parts = Object.fromEntries(['fold-under','fold-shadow','fold-paper','fold-edge','fold-highlight'].map(k=>[k,svg.querySelector('.'+k)]));
+  let current=0, desired=0, animation=0, delay=0, active=false;
+  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function paint(t) {
+    // Courbe enroulée : le bord libre se creuse tandis que la pointe reste attachée.
+    const reach=16+65*t, p=100-reach;
+    const edge=`M ${p} 100 C ${p+reach*.17} ${100-reach*.06} ${100-reach*.18} ${p+reach*.08} 100 ${p}`;
+    const back=`${edge} C ${100-reach*.08} ${p+reach*.58} ${p+reach*.55} ${100-reach*.1} ${p} 100 Z`;
+    const underside=`M ${p} 100 C ${p+reach*.30} ${100-reach*.26} ${100-reach*.24} ${p+reach*.30} 100 ${p} L100 100 Z`;
+    const shade=`M ${p-4} 100 C ${p+reach*.14} ${100-reach*.18} ${100-reach*.18} ${p+reach*.14} 100 ${p-4} L100 100 Z`;
+    parts['fold-under'].setAttribute('d',underside);
+    parts['fold-shadow'].setAttribute('d',shade);
+    parts['fold-paper'].setAttribute('d',back);
+    parts['fold-edge'].setAttribute('d',edge);
+    parts['fold-highlight'].setAttribute('d',`M ${p+2} 100 C ${p+reach*.2} ${100-reach*.10} ${100-reach*.15} ${p+reach*.14} 100 ${p+2}`);
+    parts['fold-paper'].style.opacity=String(.64+.30*t);
+    parts['fold-shadow'].style.opacity=String(.45+.35*t);
   }
-  draw(0);
-  function animate(){
-    progress+=(target-progress)*.11;
-    draw(progress);
-    if(Math.abs(target-progress)>.003) frameId=requestAnimationFrame(animate);
-    else {progress=target;draw(progress);frameId=0;}
+  function tick(){
+    current+=(desired-current)*.10;
+    paint(current);
+    if(Math.abs(desired-current)>.003)animation=requestAnimationFrame(tick);
+    else {current=desired;paint(current);animation=0;}
   }
-  function lift(value){
-    target=reduced?0:value;
-    if(!frameId) frameId=requestAnimationFrame(animate);
+  function lift(to){desired=reduced?to:to;if(reduced){current=desired;paint(current);}else if(!animation)animation=requestAnimationFrame(tick);}
+  function reveal(){button.classList.add('curl-ready');active=true;paint(0);}
+  if(isLarge){delay=setTimeout(()=>{if(button.isConnected && button.classList.contains('mode-corner'))reveal();},2000);}
+  else {reveal();}
+  button.addEventListener('pointerenter',e=>{if(active&&e.pointerType!=='touch')lift(1);});
+  button.addEventListener('pointerleave',()=>{if(active)lift(0);});
+  button.addEventListener('focus',()=>{if(active)lift(1);});
+  button.addEventListener('blur',()=>{if(active)lift(0);});
+  // Sur mobile, premier toucher = dérouler, deuxième = fiche de provenance.
+  button.addEventListener('pointerdown',e=>{
+    if(e.pointerType==='touch'&&active){
+      if(!button.classList.contains('curl-touched')){
+        e.preventDefault();button.classList.add('curl-touched');lift(1);
+      }
+    }
+  });
+  button.addEventListener('click',e=>{
+    if(!active){e.stopImmediatePropagation();return;}
+    if(button.classList.contains('curl-touched') && !button.dataset.curlArmed){
+      e.stopImmediatePropagation();button.dataset.curlArmed='1';return;
+    }
+  },true);
+  button.addEventListener('pointercancel',()=>lift(0));
+}
+function setCurlTheme(button){
+  // Préférence explicite --c2pa-page-under, sinon couleur réelle du fond du visualiseur.
+  const frame=button.closest('.lb-frame')||button.parentElement;
+  let node=frame, rgb=null;
+  while(node){
+    const c=getComputedStyle(node).backgroundColor;
+    const m=c.match(/rgba?\((\d+)[, ]+\s*(\d+)[, ]+\s*(\d+)(?:[, /]+([\d.]+))?\)/);
+    if(m && (m[4]===undefined||Number(m[4])>.9)){rgb=[+m[1],+m[2],+m[3]];break;}
+    node=node.parentElement;
   }
-  button.addEventListener('pointerenter',()=>lift(1));
-  button.addEventListener('pointerleave',()=>lift(0));
-  button.addEventListener('focus',()=>lift(1));
-  button.addEventListener('blur',()=>lift(0));
+  const theme=getComputedStyle(document.documentElement).getPropertyValue('--c2pa-page-under').trim();
+  const bg=theme || (rgb?`rgb(${rgb.join(',')})`:'#10151d');
+  const light=rgb ? ((rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722)>140) : false;
+  button.style.setProperty('--curl-under',bg);
+  button.style.setProperty('--curl-shadow',light?'rgba(0,0,0,.27)':'rgba(0,0,0,.72)');
 }
 function addBadgeContent(target, mode, state) {
   target.replaceChildren();
@@ -304,23 +330,21 @@ function addBadgeContent(target, mode, state) {
     svg.setAttribute('aria-hidden','true');
     svg.innerHTML=`
       <defs>
-        <linearGradient id="pageFoldFront" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#e9edf5" stop-opacity=".07"/>
-          <stop offset=".58" stop-color="#e4ebf5" stop-opacity=".28"/>
-          <stop offset="1" stop-color="#ffffff" stop-opacity=".55"/>
-        </linearGradient>
-        <linearGradient id="pageFoldUnder" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#0a101c" stop-opacity=".80"/>
-          <stop offset="1" stop-color="#00030a" stop-opacity=".99"/>
+        <linearGradient id="curlBack" x1=".1" y1=".1" x2="1" y2="1">
+          <stop offset="0" stop-color="#f8f9fc" stop-opacity=".12"/>
+          <stop offset=".45" stop-color="#e1e4ea" stop-opacity=".78"/>
+          <stop offset=".8" stop-color="#f8f9fc" stop-opacity=".94"/>
+          <stop offset="1" stop-color="#929ba9" stop-opacity=".60"/>
         </linearGradient>
       </defs>
-      <path class="fold-shadow" fill="rgba(0,0,0,.36)"/>
-      <path class="fold-under" fill="url(#pageFoldUnder)"/>
-      <path class="fold-paper" fill="url(#pageFoldFront)"/>
-      <path class="fold-rim" fill="none" stroke="rgba(0,0,0,.24)" stroke-width=".9"/>
-      <path class="fold-edge" fill="none" stroke="rgba(255,255,255,.76)" stroke-width="1.15"/>
+      <path class="fold-shadow"/>
+      <path class="fold-under"/>
+      <path class="fold-paper" fill="url(#curlBack)"/>
+      <path class="fold-edge" fill="none" stroke="rgba(255,255,255,.75)" stroke-width=".85"/>
+      <path class="fold-highlight" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="2"/>
     `;
     target.append(svg);
+    setCurlTheme(target);
     installPageCurl(target,svg);
   }
   // En mode pastille, le point coloré est l'unique élément.

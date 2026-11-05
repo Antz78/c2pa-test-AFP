@@ -538,6 +538,16 @@
   background: #c8cdd3 !important;
   box-shadow: 0 1px 2px rgba(0,0,0,.25) !important;
 }
+
+/* V21 : vrai coin enroulé, apparition après 2 secondes sur la grande photo. */
+#lightbox #cr-badge.cr.mode-corner{width:clamp(80px,11vw,142px)!important;height:clamp(80px,11vw,142px)!important;opacity:0!important;visibility:hidden!important;transition:opacity .65s ease,visibility .65s!important;touch-action:manipulation}
+#lightbox #cr-badge.cr.mode-corner.curl-ready{opacity:.90!important;visibility:visible!important}
+#lightbox #cr-badge.cr.mode-corner.curl-ready:hover{opacity:1!important}
+.demo-overlay.mode-corner{opacity:.6!important}
+.cr.mode-corner .fold-under,.demo-overlay.mode-corner .fold-under{fill:var(--curl-under,#10151d)!important}
+.cr.mode-corner .fold-shadow,.demo-overlay.mode-corner .fold-shadow{fill:var(--curl-shadow,rgba(0,0,0,.7))!important}
+.cr.mode-corner .page-corner,.demo-overlay.mode-corner .page-corner{filter:none!important;transform:none!important}
+@media(prefers-reduced-motion:reduce){#lightbox #cr-badge.cr.mode-corner{transition:none!important}}
 </style>
 </head>
 <body>
@@ -664,6 +674,6 @@
     </section>
   </div>
 </dialog>
-<script type="module" src="./app.js?v=20261105-shield-delay-v18"></script>
+<script type="module" src="./app.js?v=20261105-v21-curl"></script>
 </body>
 </html>

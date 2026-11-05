@@ -34,7 +34,7 @@
     .tag{position:absolute;top:10px;right:10px;display:flex;align-items:center;gap:5px;padding:4px 10px;
       border-radius:999px;font-size:.72rem;font-weight:700;backdrop-filter:blur(4px)}
     .tag.ok{background:#12351d;color:var(--ok)} .tag.warn{background:#3a2c0a;color:var(--warn)}
-    .tag.none{background:#262d38;color:var(--muted)} .tag.error{background:#3d1512;color:var(--error)}
+    .tag.bad{background:#401d20;color:var(--error)} .tag.none{background:#262d38;color:var(--muted)} .tag.error{background:#3d1512;color:var(--error)}
     .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
     .tag.loading{background:#1d2735;color:var(--accent)}
     .empty{padding:56px 20px;text-align:center;color:var(--muted);line-height:1.7}
@@ -92,7 +92,7 @@
     .cr .dot{position:absolute;top:-4px;right:-4px;width:var(--afp-dot-size,9px);height:var(--afp-dot-size,9px);min-width:var(--afp-dot-size,9px);min-height:var(--afp-dot-size,9px);aspect-ratio:1/1;box-sizing:border-box;flex:none;padding:0;display:block;border-radius:50%;
       border:2px solid #fff;background:#8b96a5;box-shadow:0 1px 4px #0009}
     .cr.ok .dot{background:var(--ok)} .cr.warn .dot{background:var(--warn)}
-    .cr.error .dot{background:var(--error)} .cr.none .dot{background:#6e7a89}
+    .cr.bad .dot{background:var(--error)} .cr.error .dot{background:var(--error)} .cr.none .dot{background:#6e7a89}
     .cr.loading .dot{background:var(--accent);animation:pulse 1s infinite}
     @keyframes pulse{50%{opacity:.3}}
 
@@ -199,9 +199,10 @@
   <input id="search" type="search" placeholder="Rechercher un fichier…" aria-label="Rechercher">
   <div class="filters" role="group" aria-label="Filtres">
     <button class="chip" data-filter="all" aria-pressed="true">Toutes</button>
-    <button class="chip" data-filter="ok" aria-pressed="false">✓ Signées</button>
-    <button class="chip" data-filter="warn" aria-pressed="false">⚠ Validées</button>
-    <button class="chip" data-filter="none" aria-pressed="false">Sans manifeste</button>
+    <button class="chip" data-filter="ok" aria-pressed="false">✓ Vérifiées</button>
+    <button class="chip" data-filter="warn" aria-pressed="false">⚠ À vérifier</button>
+    <button class="chip" data-filter="bad" aria-pressed="false">✕ Échecs</button>
+    <button class="chip" data-filter="none" aria-pressed="false">Sans C2PA</button>
   </div>
   <span id="count"></span>
 </header>

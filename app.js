@@ -158,9 +158,8 @@ async function analyze(photo) {
     const list = Array.isArray(entries) ? entries : [];
     photo.validation = list;
     photo.active = await reader.activeManifest().catch(() => null);
-    const failures = list.filter(i => i && typeof i === 'object' &&
-      /failure|mismatch|untrusted/.test(String(i.code ?? '')));
-    photo.state = failures.length ? 'warn' : (store ? 'ok' : 'none');
+    const levels = list.map(validationLevel);
+    photo.state = !store ? 'none' : levels.includes('bad') ? 'bad' : levels.includes('warn') ? 'warn' : levels.includes('neutral') || !list.length ? 'warn' : 'ok';
     try { await reader.free(); } catch (_) {}
   } catch (e) {
     console.warn('C2PA', photo.name, e);
@@ -187,7 +186,7 @@ async function analyzeAll(limit = 3) {
 }
 
 /* ---------- Rendu ---------- */
-const LABEL = { loading: 'Analyse…', ok: 'Signée', warn: 'Validée ⚠', none: 'Sans CR', error: 'Erreur' };
+const LABEL = { loading: 'Analyse…', ok: 'Vérifiée', warn: 'À vérifier ⚠', bad: 'Échec ✕', none: 'Sans C2PA', error: 'Erreur de lecture' };
 
 function cardEl(photo) {
   const card = document.createElement('figure');
@@ -198,9 +197,9 @@ function cardEl(photo) {
   img.src = photo.url;
   img.alt = photo.name.split('/').pop();
   const tag = document.createElement('span');
-  tag.className = 'tag loading';
+  tag.className = `tag ${photo.state}`;
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),
-             document.createTextNode(LABEL.loading));
+             document.createTextNode(LABEL[photo.state] ?? photo.state));
   const name = document.createElement('figcaption');
   name.className = 'name';
   name.textContent = photo.name.split('/').pop();
@@ -222,22 +221,19 @@ function renderCard(photo) {
 
 function applyFilterToCard(card, photo) {
   const visible = (!search.value.trim() || photo.name.toLowerCase().includes(search.value.trim().toLowerCase())) && (currentFilter === 'all' ||
-    (currentFilter === 'none' && ['none', 'error'].includes(photo.state)) ||
+    (currentFilter === 'none' && photo.state === 'none') ||
     photo.state === currentFilter);
   card.style.display = visible ? '' : 'none';
 }
 
 function updateCount() {
   const n = (s) => photos.filter(p => p.state === s).length;
-  countEl.textContent = `${photos.length} photo(s) · ${n('ok')} signée(s) · ${n('warn')} à vérifier · ${n('none') + n('error')} sans manifeste`;
+  countEl.textContent = `${photos.length} photo(s) · ${n('ok')} vérifiée(s) · ${n('warn')} à vérifier · ${n('bad')} échec(s) · ${n('none')} sans C2PA · ${n('error')} erreur(s) de lecture`;
 }
 
 function rebuildGrid() {
   grid.replaceChildren(...photos.map(cardEl));
-  photos.forEach(p => {
-    const card = grid.querySelector(`[data-idx="${p.idx}"]`);
-    if (card) applyFilterToCard(card, p);
-  });
+  photos.forEach(renderCard);
   updateCount();
 }
 
@@ -331,14 +327,15 @@ function fillDetails(photo) {
   const levels = entries.map(validationLevel);
   if (levels.includes('bad')) setStatusLine('error', 'Manifeste présent, mais une ou plusieurs vérifications ont échoué.');
   else if (levels.includes('warn')) setStatusLine('warn', 'Manifeste présent, mais la confiance du signataire nécessite une vérification.');
-  else setStatusLine('ok', 'Manifeste C2PA présent. Sa présence ne prouve pas à elle seule l’authenticité de la scène photographiée.');
+  else if (!entries.length || levels.includes('neutral')) setStatusLine('warn', 'Manifeste présent, mais la validation complète ne peut pas être confirmée.');
+  else setStatusLine('ok', 'Contrôles C2PA retournés sans problème signalé. Cela ne prouve pas la véracité de la scène.');
   const a = photo.active ?? {};
   const sig = signatureOf(a);
   const generator = firstValue(a.claim_generator, a.claimGenerator, a.claim_generator_info?.[0]?.name, a.claimGeneratorInfo?.[0]?.name);
   const signer = firstValue(sig.name, sig.issuer, sig.organization, a.signer);
   const date = firstValue(a.created_at, a.createdAt, sig.time, sig.timestamp);
   const manifest = firstValue(photo.store?.active_manifest, photo.store?.activeManifest);
-  const signerLevel = levels.includes('bad') ? 'bad' : levels.includes('warn') ? 'warn' : present(signer);
+  const signerLevel = levels.includes('bad') ? 'bad' : levels.includes('warn') || !entries.length ? 'warn' : present(signer);
   const validationSection = document.createElement('section'); validationSection.className = 'credential-section';
   const vh = document.createElement('h3'); vh.textContent = 'Vérification et confiance';
   const vl = document.createElement('div'); vl.className = 'validation-list';
@@ -382,8 +379,7 @@ credentials.addEventListener('click', e => { if (e.target === credentials) crede
 function step(dir) {
   if (credentials.open) return; // navigation désactivée pendant la lecture des détails
   const visible = photos.map((p, i) => i)
-    .filter(i => currentFilter === 'all' || photos[i].state === currentFilter ||
-      (currentFilter === 'none' && ['none', 'error'].includes(photos[i].state)));
+    .filter(i => currentFilter === 'all' || photos[i].state === currentFilter);
   if (!visible.length) return;
   const pos = visible.indexOf(currentIdx);
   const next = visible[(pos + dir + visible.length) % visible.length];
@@ -404,18 +400,16 @@ window.addEventListener('keydown', e => {
 document.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => {
   document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c === chip)));
   currentFilter = chip.dataset.filter;
-  rebuildGrid();
+  photos.forEach(p => {
+    const card = grid.querySelector(`[data-idx="${p.idx}"]`);
+    if (card) applyFilterToCard(card, p);
+  });
 }));
 
 search.addEventListener('input', () => {
-  const q = search.value.trim().toLowerCase();
   photos.forEach(p => {
     const card = grid.querySelector(`[data-idx="${p.idx}"]`);
-    if (!card) return;
-    const visible = p.name.toLowerCase().includes(q) &&
-      (currentFilter === 'all' || p.state === currentFilter ||
-        (currentFilter === 'none' && ['none', 'error'].includes(p.state)));
-    card.style.display = visible ? '' : 'none';
+    if (card) applyFilterToCard(card, p);
   });
 });
 

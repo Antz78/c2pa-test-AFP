@@ -190,7 +190,7 @@ async function analyzeAll(limit = 3) {
 /* ---------- Rendu ---------- */
 const LABEL = { loading: 'Analyse…', ok: 'Vérifiée', warn: 'À vérifier ⚠', bad: 'Échec ✕', none: 'Sans C2PA', error: 'Erreur de lecture' };
 
-const PRESENTATIONS = ['info','afp','direct','banner','status'];
+const PRESENTATIONS = ['info','afp','direct','banner','status','corner'];
 const modeSelect = document.querySelector('#presentation-mode');
 let selectedMode = 'random';
 function presentationFor(photo) {
@@ -203,19 +203,25 @@ function addBadgeContent(target, mode, state) {
   target.classList.add('mode-' + mode);
   if (mode === 'direct') return;
   if (mode === 'info') {
-    const el=document.createElement('span'); el.className='info-symbol';el.textContent='i';target.append(el);
+    const el=document.createElement('span'); el.className='info-symbol';
+    el.textContent='i'; target.append(el);
   } else if (mode === 'afp') {
-    const logo=document.createElement('img');logo.src='./afp-gelule.png';logo.alt='AFP';logo.className='afp-tab-art';target.append(logo);
-    const label=document.createElement('span');label.className='afp-tab-text';label.textContent='Voir la provenance';target.append(label);
-    const arrow=document.createElement('span');arrow.className='afp-tab-arrow';arrow.textContent='›';target.append(arrow);
+    const logo=document.createElement('img'); logo.src='./afp-gelule.png';
+    logo.alt='AFP'; logo.className='afp-tab-art'; target.append(logo);
     target.classList.add('afp-tab');
-  } else {
-    const el=document.createElement('span');
-    el.className=mode==='banner'?'banner-label':'status-label';
-    el.textContent=mode==='banner'?'ⓘ  Voir la provenance':(LABEL[state]||'Provenance');
-    target.append(el);
+  } else if (mode === 'banner') {
+    const el=document.createElement('span'); el.className='banner-label';
+    el.textContent='Voir la provenance'; target.append(el);
+  } else if (mode === 'corner') {
+    const el=document.createElement('span'); el.className='page-corner';
+    el.setAttribute('aria-hidden','true'); target.append(el);
   }
-  const dot=document.createElement('span');dot.className='dot '+state;dot.setAttribute('aria-hidden','true');target.append(dot);
+  // En mode pastille, le point coloré est l'unique élément.
+  if (mode !== 'corner') {
+    const dot=document.createElement('span'); dot.className='dot '+state;
+    dot.setAttribute('aria-hidden','true'); target.append(dot);
+  }
+  target.setAttribute('aria-label', mode === 'corner' ? 'Soulever le coin pour voir la provenance C2PA' : 'Voir la provenance C2PA');
 }
 function redrawPresentations() {
   photos.forEach(photo => {

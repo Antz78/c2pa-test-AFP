@@ -562,6 +562,22 @@
 @media (max-width:700px){
   #lightbox #cr-badge.cr.mode-corner{width:60%!important;height:55%!important}
 }
+
+/* Correctif coin de page : dimensions constantes, ancrage exact à la photo. */
+#lightbox #cr-badge.cr.mode-corner {
+  position:absolute!important;right:0!important;bottom:0!important;
+  width:clamp(46px,9vw,90px)!important;height:clamp(46px,9vw,90px)!important;
+  min-width:0!important;min-height:0!important;
+  opacity:0!important;visibility:hidden!important;
+  overflow:hidden!important;transform:none!important;
+  transition:opacity .3s ease,visibility .3s ease!important;
+  z-index:6!important;touch-action:manipulation!important;
+}
+#lightbox #cr-badge.cr.mode-corner.curl-ready {opacity:1!important;visibility:visible!important}
+#lightbox #cr-badge.cr.mode-corner .page-corner {width:100%!important;height:100%!important}
+@media(max-width:700px){#lightbox #cr-badge.cr.mode-corner{
+  width:56px!important;height:56px!important;right:0!important;bottom:0!important;
+}}
 </style>
 </head>
 <body>
@@ -688,7 +704,7 @@
     </section>
   </div>
 </dialog>
-<script type="module" src="./app.js?v=20261105-v23-curl-inline"></script>
+<script type="module" src="./app.js?v=20261106-corner-fix"></script>
 <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" nonce="KWg17wLUltBWWOQ0sZa4ZA==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>

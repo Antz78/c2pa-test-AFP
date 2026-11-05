@@ -374,13 +374,13 @@ function installPageCurl(button, svg) {
     else {current=desired;paint(current);animation=0;}
   }
   function lift(to){desired=reduced?to:to;if(reduced){current=desired;paint(current);}else if(!animation)animation=requestAnimationFrame(tick);}
-  function reveal(){button.classList.add('curl-ready');active=true;paint(0);}
+  function reveal(){button.classList.add('curl-ready');active=true;paint(0);lift(.25);}
   if(isLarge){delay=setTimeout(()=>{if(button.isConnected && button.classList.contains('mode-corner'))reveal();},2000);}
   else {reveal();}
   button.addEventListener('pointerenter',e=>{if(active&&e.pointerType!=='touch')lift(1);});
-  button.addEventListener('pointerleave',()=>{if(active)lift(0);});
+  button.addEventListener('pointerleave',()=>{if(active)lift(.25);});
   button.addEventListener('focus',()=>{if(active)lift(1);});
-  button.addEventListener('blur',()=>{if(active)lift(0);});
+  button.addEventListener('blur',()=>{if(active)lift(.25);});
   // Sur mobile, premier toucher = dérouler, deuxième = fiche de provenance.
   button.addEventListener('pointerdown',e=>{
     if(e.pointerType==='touch'&&active){
@@ -395,7 +395,7 @@ function installPageCurl(button, svg) {
       e.stopImmediatePropagation();button.dataset.curlArmed='1';return;
     }
   },true);
-  button.addEventListener('pointercancel',()=>lift(0));
+  button.addEventListener('pointercancel',()=>lift(.25));
 }
 function setCurlTheme(button){
   // Préférence explicite --c2pa-page-under, sinon couleur réelle du fond du visualiseur.
@@ -470,37 +470,20 @@ function addBadgeContent(target, mode, state) {
     label.textContent='Source sous la photo ↓';target.append(label);
   } else if (mode === 'corner') {
     if (target.id === 'cr-badge') {
-      // Grande photo : repli WebGL (canvas géré par curl.js).
-      // Le clic continue de passer par l'écouteur existant de #cr-badge → openSidePanel.
-      const ctl = mountCurl(target);
-      // addBadgeContent vide le bouton : on réattache le canvas du repli s'il a été détaché.
-      if (ctl && ctl.canvas && ctl.canvas.parentElement !== target) target.append(ctl.canvas);
-      if (!ctl) {
-        // WebGL indisponible : repli SVG d'origine.
-        const ns='http://www.w3.org/2000/svg';
-        const svg=document.createElementNS(ns,'svg');
-        svg.setAttribute('class','page-corner');
-        svg.setAttribute('viewBox','0 0 100 100');
-        svg.setAttribute('aria-hidden','true');
-        svg.innerHTML=`
-          <defs>
-            <linearGradient id="curlBack" x1=".1" y1=".1" x2="1" y2="1">
-              <stop offset="0" stop-color="#f8f9fc" stop-opacity=".12"/>
-              <stop offset=".45" stop-color="#e1e4ea" stop-opacity=".78"/>
-              <stop offset=".8" stop-color="#f8f9fc" stop-opacity=".94"/>
-              <stop offset="1" stop-color="#929ba9" stop-opacity=".60"/>
-            </linearGradient>
-          </defs>
-          <path class="fold-shadow"/>
-          <path class="fold-under"/>
-          <path class="fold-paper" fill="url(#curlBack)"/>
-          <path class="fold-edge" fill="none" stroke="rgba(255,255,255,.75)" stroke-width=".85"/>
-          <path class="fold-highlight" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="2"/>
-        `;
-        target.append(svg);
-        setCurlTheme(target);
-        installPageCurl(target,svg);
-      }
+      // SVG stable sur ordinateur et mobile, sans dépendance WebGL.
+      const ns='http://www.w3.org/2000/svg';
+      const svg=document.createElementNS(ns,'svg');
+      svg.setAttribute('class','page-corner');
+      svg.setAttribute('viewBox','0 0 100 100');
+      svg.setAttribute('aria-hidden','true');
+      svg.innerHTML=`<defs><linearGradient id="curlBackMain" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d6dce5"/><stop offset=".55" stop-color="#f6f7fa"/><stop offset="1" stop-color="#929caa"/></linearGradient></defs>
+      <path class="fold-shadow"/><path class="fold-under"/>
+      <path class="fold-paper" fill="url(#curlBackMain)"/>
+      <path class="fold-edge" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.2"/>
+      <path class="fold-highlight" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="2"/>`;
+      target.append(svg);
+      setCurlTheme(target);
+      installPageCurl(target,svg);
     } else {
       // Miniatures : repli SVG léger d'origine.
       const ns='http://www.w3.org/2000/svg';

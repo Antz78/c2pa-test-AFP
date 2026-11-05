@@ -190,7 +190,7 @@ async function analyzeAll(limit = 3) {
 /* ---------- Rendu ---------- */
 const LABEL = { loading: 'Analyse…', ok: 'Vérifiée', warn: 'À vérifier ⚠', bad: 'Échec ✕', none: 'Sans C2PA', error: 'Erreur de lecture' };
 
-const PRESENTATIONS = ['info','afp','direct','banner','status','corner','glow','seal','drawer','shield','delayed','tap','caption'];
+const PRESENTATIONS = ['info','afp','direct','banner','status','corner','glow','seal','drawer','shield','delayed','tap','caption','shield-delayed'];
 const modeSelect = document.querySelector('#presentation-mode');
 let selectedMode = 'random';
 function presentationFor(photo) {
@@ -278,7 +278,7 @@ function addBadgeContent(target, mode, state) {
   } else if (mode === 'drawer') {
     const handle=document.createElement('span'); handle.className='provenance-drawer-handle';
     target.append(handle);
-  } else if (mode === 'shield') {
+  } else if (mode === 'shield' || mode === 'shield-delayed') {
     const ns='http://www.w3.org/2000/svg';
     const svg=document.createElementNS(ns,'svg');
     svg.setAttribute('class','provenance-shield');
@@ -324,7 +324,7 @@ function addBadgeContent(target, mode, state) {
     installPageCurl(target,svg);
   }
   // En mode pastille, le point coloré est l'unique élément.
-  if (!['corner','glow','seal','drawer','shield','delayed','tap','caption'].includes(mode)) {
+  if (!['corner','glow','seal','drawer','shield','shield-delayed','delayed','tap','caption'].includes(mode)) {
     const dot=document.createElement('span'); dot.className='dot '+state;
     dot.setAttribute('aria-hidden','true'); target.append(dot);
   }
@@ -347,8 +347,8 @@ function scheduleDelayedBadge(mode) {
   clearTimeout(delayedTimer);
   delayedRevealReady=false;
   crBadge.classList.remove('delayed-visible');
-  if(mode==='delayed') delayedTimer=setTimeout(()=>{
-    if(lightbox.open && currentIdx>=0 && presentationFor(photos[currentIdx])==='delayed') {
+  if(mode==='delayed' || mode==='shield-delayed') delayedTimer=setTimeout(()=>{
+    if(lightbox.open && currentIdx>=0 && ['delayed','shield-delayed'].includes(presentationFor(photos[currentIdx]))) {
       delayedRevealReady=true;
       crBadge.classList.add('delayed-visible');
     }
@@ -517,7 +517,7 @@ function openLightbox(idx) {
     if (currentIdx >= 0 && photos[currentIdx] === photo) {
       crBadge.className = `cr ${photo.state}`;
       addBadgeContent(crBadge,presentationFor(photo),photo.state);
-      if(presentationFor(photo)==='delayed' && delayedRevealReady) crBadge.classList.add('delayed-visible');
+      if(['delayed','shield-delayed'].includes(presentationFor(photo)) && delayedRevealReady) crBadge.classList.add('delayed-visible');
       if (!bottomSheet.hidden && bottomPhoto === photo) refreshBottomSheet(photo);
       if (!sidePanel.hidden) refreshSidePanel(photo);
       if (credentials.open) fillDetails(photo); // rafraîchir le panneau déjà ouvert

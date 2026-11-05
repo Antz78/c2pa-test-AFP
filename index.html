@@ -79,12 +79,15 @@
     @media (max-width:700px){.nav.prev{left:8px}.nav.next{right:8px}.nav{width:40px;height:40px;font-size:1.15rem}
       .lb-stage{padding:56px 8px}}
 
-    /* ===== Badge logo AFP sur la photo (50 % de transparence) ===== */
-    .cr{position:absolute;right:14px;bottom:14px;width:52px;height:52px;padding:0;cursor:pointer;
-      border-radius:12px;border:1px solid #ffffff30;background:#00000055;overflow:visible;
-      opacity:.5;transition:opacity .15s,transform .15s;backdrop-filter:blur(3px)}
-    .cr:hover{opacity:1;transform:scale(1.07)}
-    .cr img{width:100%;height:100%;object-fit:cover;border-radius:11px;display:block}
+    /* ===== Badge logo AFP sur la photo (50 % de transparence, logo complet) ===== */
+    .cr{position:absolute;right:14px;bottom:14px;padding:0;border:0;background:transparent;cursor:pointer;
+      opacity:.5;transition:opacity .15s,transform .15s}
+    .cr:hover{opacity:1;transform:translateY(-2px)}
+    .cr img{display:block;height:42px;width:auto;object-fit:contain;border-radius:8px;
+      filter:drop-shadow(0 2px 10px #0007)}
+    /* Repli si le logo manque : badge « CR » du design d'origine */
+    .cr span{display:inline-flex;align-items:center;background:#fff;color:#111827;border:1px solid #ccd1d8;
+      border-radius:999px;padding:8px 12px;font-weight:750;font-size:.75rem;box-shadow:0 2px 10px #0003}
     /* Pastille d'état en haut à droite du badge */
     .cr .dot{position:absolute;top:-5px;right:-5px;width:14px;height:14px;border-radius:50%;
       border:2px solid #0d1117;background:#8b96a5;flex-shrink:0}
@@ -93,33 +96,28 @@
     .cr.loading .dot{background:var(--accent);animation:pulse 1s infinite}
     @keyframes pulse{50%{opacity:.3}}
 
-    /* ===== Panneau Content Credentials (superposé, design) ===== */
-    dialog#credentials{border:1px solid var(--border);border-radius:20px;padding:0;
-      width:min(600px,94vw);max-height:88vh;background:var(--panel);color:var(--text);
-      box-shadow:0 30px 90px #000e;margin:auto}
-    dialog#credentials::backdrop{background:#000000a0;backdrop-filter:blur(3px)}
-    .cr-head{display:flex;align-items:center;gap:14px;padding:20px 22px 16px;
-      background:linear-gradient(180deg,#1d2735,var(--panel));border-radius:20px 20px 0 0}
-    .cr-head .cr-logo{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-      font-size:.82rem;font-weight:800;background:linear-gradient(135deg,#4f8ff7,#7b5cff);color:#fff;flex-shrink:0}
-    .cr-head h2{margin:0;font-size:1.05rem;flex:1}
-    .cr-head .cr-sub{margin:2px 0 0;font-size:.75rem;color:var(--muted);font-weight:400}
-    .cr-body{padding:0 22px 22px;overflow:auto;max-height:calc(88vh - 92px)}
-    .status-line{display:flex;align-items:center;gap:9px;font-weight:650;font-size:.85rem;
-      padding:11px 14px;border-radius:12px;margin:14px 0 6px}
-    .status-line .dot{width:9px;height:9px;flex-shrink:0}
-    .status-line.ok{background:#12351d;color:var(--ok)} .status-line.warn{background:#3a2c0a;color:var(--warn)}
-    .status-line.none{background:#212a36;color:var(--muted)} .status-line.error{background:#3d1512;color:var(--error)}
-    .status-line.loading{background:#1d2735;color:var(--accent)}
-    .field{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid #212a36;font-size:.85rem}
-    .field:last-child{border-bottom:0}
-    .field strong{color:var(--muted);font-weight:600;flex-shrink:0}
-    .field span{text-align:right;overflow-wrap:anywhere}
-    details{margin-top:12px;border:1px solid var(--border);border-radius:12px;background:var(--panel2)}
-    details summary{cursor:pointer;font-weight:650;padding:12px 14px;font-size:.83rem}
-    pre{margin:0;padding:14px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;
-      font-size:11.5px;line-height:1.5;color:#b6c2d0}
-    .note{color:var(--muted);font-size:.74rem;margin-top:14px;line-height:1.55}
+    /* ===== Fiche Content Credentials : reprise du design d'origine (clair) ===== */
+    dialog#credentials{border:0;border-radius:12px;max-width:min(600px,92vw);width:min(600px,92vw);
+      max-height:88vh;padding:24px;margin:auto;background:#fff;color:#18212e;
+      font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+      box-shadow:0 20px 60px #000a}
+    dialog#credentials::backdrop{background:#000000a0}
+    dialog#credentials button.close{float:right;border:0;background:#edf0f3;border-radius:6px;
+      padding:7px 12px;cursor:pointer;color:#18212e;font-weight:600}
+    dialog#credentials button.close:hover{background:#e0e5eb}
+    dialog#credentials h2{margin:0 0 14px;font-size:1.25rem;color:#18212e}
+    dialog#credentials .status{margin:0 0 14px;font-weight:600;line-height:1.5}
+    dialog#credentials .status.ok{color:#167345} dialog#credentials .status.warn{color:#986100}
+    dialog#credentials .status.error{color:#ae2929}
+    dialog#credentials .status.none,dialog#credentials .status.loading{color:#526071}
+    dialog#credentials .line{margin:7px 0;line-height:1.55;color:#18212e;font-size:.92rem}
+    dialog#credentials .line strong{font-weight:650}
+    dialog#credentials details{margin-top:18px;border:1px solid #d6dbe1;border-radius:10px;padding:14px;background:#fff}
+    dialog#credentials summary{cursor:pointer;font-weight:650;color:#18212e}
+    dialog#credentials pre{margin:10px 0 0;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;
+      max-height:420px;font-size:12px;background:#f3f5f7;padding:14px;border-radius:8px;color:#18212e}
+    dialog#credentials small{color:#526071}
+    dialog#credentials .note{margin-top:14px;font-size:.8rem;line-height:1.5;color:#526071}
   </style>
 </head>
 <body>
@@ -171,24 +169,17 @@
   <button class="nav next" id="lb-next" type="button" aria-label="Photo suivante">›</button>
 </dialog>
 
-<!-- Panneau Content Credentials -->
+<!-- Fiche Content Credentials (design d'origine) -->
 <dialog id="credentials">
-  <div class="cr-head">
-    <span class="cr-logo">CR</span>
-    <h2>Content Credentials
-      <p class="cr-sub">Données de provenance signées (C2PA)</p>
-    </h2>
-    <button class="close-x" id="cr-close" type="button" aria-label="Fermer">✕</button>
-  </div>
-  <div class="cr-body">
-    <div id="lb-status" class="status-line loading"><span class="dot"></span><span>Analyse en cours…</span></div>
-    <div id="lb-summary"></div>
-    <details><summary>Manifeste complet (JSON)</summary><pre id="lb-json"></pre></details>
-    <p class="note">La présence d'un manifeste ne garantit pas que le signataire soit reconnu comme fiable :
-    vérifiez les résultats de validation et l'identité du signataire.</p>
-  </div>
+  <button class="close" id="cr-close" type="button">Fermer</button>
+  <h2>Content Credentials</h2>
+  <p id="lb-status" class="status loading" role="status">Vérification C2PA en cours…</p>
+  <div id="lb-summary"></div>
+  <details><summary>Informations techniques du manifeste</summary><pre id="lb-json">Chargement…</pre></details>
+  <p class="note">La présence d'un manifeste ne garantit pas que le signataire soit reconnu comme fiable.
+  Vérifiez les résultats de validation et l'identité du signataire.</p>
 </dialog>
 <script type="module" src="./app.js"></script>
-<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" nonce="+glEknTuUWXxpLib56I4Xg==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" nonce="lv2AQRdMG37j7wQvRHW70Q==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>

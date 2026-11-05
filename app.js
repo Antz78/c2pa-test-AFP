@@ -98,8 +98,13 @@ function collectFromDataTransfer(items) {
 }
 
 function addFiles(files) {
-  const imgs = [...files].filter(f => IMAGE_RE.test(f.name));
+  let imgs = [...files].filter(f => IMAGE_RE.test(f.name));
   if (!imgs.length) return false;
+  // Si l'import contient un sous-dossier PHOTOS/, ne garder que ses photos :
+  // évite d'ajouter le logo ou d'autres images d'interface lors d'un
+  // glisser-déposer du dossier complet du projet.
+  const inPhotos = imgs.filter(f => (f.webkitRelativePath || '').split('/').includes('PHOTOS'));
+  if (inPhotos.length) imgs = inPhotos;
   imgs.forEach(f => {
     photos.push({
       url: URL.createObjectURL(f),
@@ -221,19 +226,17 @@ function rebuildGrid() {
 
 /* ---------- Lightbox plein écran ---------- */
 function setStatusLine(cls, text) {
-  lbStatus.className = `status-line ${cls}`;
-  lbStatus.replaceChildren(
-    Object.assign(document.createElement('span'), { className: 'dot' }),
-    Object.assign(document.createElement('span'), { textContent: text }),
-  );
+  lbStatus.className = `status ${cls}`;
+  lbStatus.textContent = text;
 }
 
+/* Ligne « Libellé : valeur » comme dans le design d'origine */
 function field(label, value) {
-  const div = document.createElement('div');
-  div.className = 'field';
-  div.append(Object.assign(document.createElement('strong'), { textContent: label }),
-             Object.assign(document.createElement('span'), { textContent: String(value ?? 'Non renseigné') }));
-  return div;
+  const p = document.createElement('p');
+  const b = document.createElement('strong');
+  b.textContent = `${label} : `;
+  p.append(b, document.createTextNode(String(value ?? 'Non renseigné')));
+  return p;
 }
 
 function openLightbox(idx) {
@@ -243,7 +246,7 @@ function openLightbox(idx) {
   lbPhoto.src = photo.url;
   lbPhoto.alt = photo.name.split('/').pop();
   crBadge.className = `cr ${photo.state}`;
-  setStatusLine('loading', 'Analyse en cours…');
+  setStatusLine('loading', 'Vérification C2PA en cours…');
   lbSummary.replaceChildren();
   lbJson.textContent = 'Chargement…';
   // Si le panneau était ouvert sur la photo précédente, on le ferme.
@@ -262,7 +265,7 @@ function openLightbox(idx) {
 /* ---------- Panneau Content Credentials (bouton logo AFP) ---------- */
 function fillDetails(photo) {
   if (photo.state === 'loading') {
-    setStatusLine('loading', 'Analyse en cours…');
+    setStatusLine('loading', 'Vérification C2PA en cours…');
     lbSummary.replaceChildren();
     lbJson.textContent = 'Chargement…';
     return;
@@ -293,7 +296,7 @@ function fillDetails(photo) {
     field('Signataire', a.signature_info?.[0]?.name ?? a.signatureInfo?.[0]?.name),
     field('Date de création', a.created_at ?? a.createdAt),
     field('Manifeste actif', photo.store?.active_manifest ?? photo.store?.activeManifest),
-    field('Résultats de validation', entries.length ? entries.map(e => e.code).join(', ') : 'Aucun message retourné'),
+    field('Résultats de validation', entries.length ? `${entries.length} message(s)` : 'Aucun message de validation retourné'),
   );
   lbJson.textContent = JSON.stringify(photo.store, null, 2);
 }

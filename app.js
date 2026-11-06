@@ -9,6 +9,290 @@ const SDK_URL = 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.15.4/+esm'
 let C2paReader = null;
 let sdkFailure = null;
 
+/* ===== Interface FR / EN : sans MutationObserver, sans analyse C2PA supplémentaire =====
+   Seuls les libellés changent. Les données brutes de provenance restent intactes. */
+const TRANSLATIONS = {
+  'À analyser': 'Pending analysis',
+  'Vérifiée': 'Verified',
+  'À vérifier ⚠': 'Needs verification ⚠',
+  'À vérifier': 'Needs verification',
+  'Échec ✕': 'Failed ✕',
+  'Échec': 'Failed',
+  'Sans C2PA': 'No C2PA',
+  'Analyse indisponible': 'Analysis unavailable',
+  'Non renseigné': 'Not provided',
+  'Non disponible': 'Not available',
+  'Non vérifié': 'Not verified',
+  'Non confirmé séparément': 'Not independently confirmed',
+  'Confiance à vérifier': 'Trust not established',
+  'Pourquoi ces indicateurs orange ?': 'Why are these indicators amber?',
+  'Le certificat du signataire n’est pas reconnu comme fiable : son identité reste à confirmer. Cela ne signifie pas que la photo est fausse ou modifiée.': 'The signer’s certificate is not recognized as trusted, so their identity remains unconfirmed. This does not mean the photo is fake or altered.',
+  'Certaines vérifications n’ont pas pu être confirmées par cet outil. Les informations restent à examiner : un indicateur orange ne prouve pas que la photo a été falsifiée.': 'This tool could not confirm some checks. The information needs further review: an amber indicator does not prove the photo was manipulated.',
+  'Certificat non reconnu comme fiable par ce vérificateur.': 'This verifier does not recognize the certificate as trusted.',
+  'Nom déclaré, mais identité non confirmée par ce vérificateur.': 'Declared name, but this verifier has not confirmed the identity.',
+  'Orange : confiance ou vérification non confirmée.': 'Amber: trust or verification not confirmed.',
+  'Source non renseignée': 'Source not provided',
+  'Source : ': 'Source: ',
+  'Provenance': 'Provenance',
+  'Provenance à examiner': 'Provenance to review',
+  'Informations sur la photo': 'Photo information',
+  'Vérification C2PA': 'C2PA verification',
+  'Intégrité du fichier': 'File integrity',
+  'Signature numérique': 'Digital signature',
+  'Signataire déclaré': 'Declared signer',
+  'Générateur': 'Generator',
+  'Auteur / photographe': 'Author / photographer',
+  'Horodatage certifié (TSA)': 'Trusted timestamp (TSA)',
+  'Date de prise de vue (EXIF)': 'Date taken (EXIF)',
+  'Informations complémentaires': 'Additional information',
+  'Données du manifeste': 'Manifest details',
+  'Identifiant du manifeste': 'Manifest identifier',
+  'Actions déclarées': 'Declared actions',
+  'Certificat / signataire déclaré': 'Certificate / declared signer',
+  'Résultats techniques de validation': 'Technical validation results',
+  'Validé': 'Validated',
+  'Indéterminé': 'Undetermined',
+  'Aucun résultat détaillé retourné.': 'No detailed results returned.',
+  'Chargement…': 'Loading…',
+  'Chargement des informations…': 'Loading information…',
+  'Vérification C2PA en cours…': 'C2PA verification in progress…',
+  'Aucun manifeste trouvé.': 'No manifest found.',
+  'Aucun manifeste C2PA intégré détecté.': 'No embedded C2PA manifest detected.',
+  'Manifeste présent, mais une ou plusieurs vérifications ont échoué.': 'Manifest found, but one or more checks failed.',
+  'Manifeste présent, mais la confiance du signataire nécessite une vérification.': 'Manifest found, but signer trust has not been established.',
+  'Manifeste présent, mais la validation complète ne peut pas être confirmée.': 'Manifest found, but full validation could not be confirmed.',
+  'Contrôles C2PA retournés sans problème signalé. Cela ne prouve pas la véracité de la scène.': 'C2PA checks reported no issue. This does not prove the scene is truthful.',
+  'Information présente': 'Information available',
+  'Information indisponible': 'Information unavailable',
+  'Problème détecté': 'Issue detected',
+  'Que signifie': 'What does',
+  'Voir la provenance': 'View provenance',
+  'Source sous la photo ↓': 'Source below photo ↓',
+  '◈  Provenance': '◈  Provenance',
+  'Soulever le coin pour voir la provenance C2PA': 'Lift the corner to view C2PA provenance',
+  'Ouvrir la provenance C2PA depuis le coin lumineux': 'Open C2PA provenance from the glowing corner',
+  'Ouvrir la provenance C2PA depuis le sceau': 'Open C2PA provenance from the seal',
+  'Voir la provenance C2PA': 'View C2PA provenance',
+  'Voir les informations C2PA': 'View C2PA information',
+  'Aucun index photo trouvé': 'Photo index not found',
+  'Aucune photo indexée': 'No indexed photos',
+  'Recherche des photos…': 'Looking for photos…',
+  'Vérification de photos.json et du dossier PHOTOS/…': 'Checking photos.json and the PHOTOS/ folder…',
+  'La galerie ne peut pas se charger automatiquement': 'The gallery could not load automatically',
+  'Le fichier photos.json est introuvable ou inaccessible. Si vous avez ouvert index.html en local (double-clic), les photos listées par GitHub ne sont pas visibles : utilisez les boutons ci-dessous ou glissez vos photos sur la page. Sur GitHub Pages, vérifiez que photos.json est bien présent à la racine du site.':
+    'The photos.json file is missing or inaccessible. If you opened index.html locally, GitHub photos cannot be listed: use the buttons below or drop photos onto the page. On GitHub Pages, check that photos.json exists at the site root.',
+  'photos.json contient une liste vide et le dossier PHOTOS/ n\'a pas pu être lu via GitHub. Vérifiez que les fichiers JPG/PNG sont présents dans PHOTOS/ sur GitHub, puis relancez le workflow « Galerie C2PA » dans Actions. Vous pouvez aussi importer vos photos avec les boutons ci-dessous.':
+    'photos.json is empty and the PHOTOS/ folder could not be listed via GitHub. Check that JPG/PNG files exist in PHOTOS/ and rerun the “Galerie C2PA” workflow in Actions. You can also import photos using the buttons below.',
+  'Vérifie que le fichier correspond aux données protégées par le manifeste C2PA.': 'Checks whether the file matches the data protected by the C2PA manifest.',
+  'Vérifie que les informations de provenance n’ont pas été modifiées après leur signature.': 'Checks that provenance information has not changed since it was signed.',
+  'Organisme ou entreprise identifié dans le certificat ayant signé la provenance.': 'Organization or company identified by the certificate used to sign the provenance.',
+  'Appareil ou logiciel ayant créé les informations C2PA.': 'Camera or software that created the C2PA information.',
+  'Personne déclarée comme auteur de la photo ; cette identité n’est pas forcément vérifiée.': 'Person named as the photo author; their identity is not necessarily verified.',
+  'Date attestée par un tiers indépendant : la signature existait au plus tard à cet instant.': 'Time certified by an independent authority: the signature existed no later than this time.',
+  'Date enregistrée par l’horloge de l’appareil, modifiable et non certifiée à elle seule.': 'Date recorded by the camera clock; it can be modified and is not independently certified.',
+  'EXIF Copyright (crédit déclaré)': 'EXIF Copyright (declared credit)',
+  'Les photos ne se sont pas affichées. Vous pouvez ouvrir vos photos avec les boutons ci-dessous, puis vérifier le fichier photos.json et le script app.js sur GitHub.':
+    'The photos have not appeared. You can open photos with the buttons below, then check photos.json and app.js on GitHub.'
+};
+let uiLanguage = 'fr';
+try { uiLanguage = localStorage.getItem('afp-c2pa-language') === 'en' ? 'en' : 'fr'; } catch (_) {}
+function tr(text) { return uiLanguage === 'en' ? (TRANSLATIONS[text] ?? text) : text; }
+function statusLabel(state) { return tr(LABEL[state] ?? state); }
+const STATIC_TRANSLATIONS = [
+  ['header h1', 'Galerie & Content Credentials', 'Gallery & Content Credentials', 'heading'],
+  ['.chip[data-filter="all"]', 'Toutes', 'All'],
+  ['.chip[data-filter="ok"]', '✓ Vérifiées', '✓ Verified'],
+  ['.chip[data-filter="warn"]', '⚠ À vérifier', '⚠ Review needed'],
+  ['.chip[data-filter="bad"]', '✕ Échecs', '✕ Failed'],
+  ['.chip[data-filter="none"]', 'Sans C2PA', 'No C2PA'],
+  ['.mode-label', 'Présentation :', 'Presentation:'],
+  ['#presentation-mode option[value="random"]', '🎲 Aléatoire', '🎲 Random'],
+  ['#presentation-mode option[value="info"]', 'ⓘ Icône info', 'ⓘ Info icon'],
+  ['#presentation-mode option[value="afp"]', 'AFP · Onglet', 'AFP · Tab'],
+  ['#presentation-mode option[value="direct"]', 'Panneau visible', 'Visible panel'],
+  ['#presentation-mode option[value="banner"]', 'Bandeau', 'Banner'],
+  ['#presentation-mode option[value="status"]', 'Pastille de confiance', 'Trust indicator'],
+  ['#presentation-mode option[value="corner"]', 'Coin de page transparent', 'Transparent page corner'],
+  ['#presentation-mode option[value="glow"]', 'Bordure lumineuse', 'Glowing corner'],
+  ['#presentation-mode option[value="seal"]', 'Sceau de provenance', 'Provenance seal'],
+  ['#presentation-mode option[value="drawer"]', 'Volet à tirer depuis le bas', 'Pull-up bottom sheet'],
+  ['#presentation-mode option[value="shield"]', 'Petit bouclier coché', 'Small check shield'],
+  ['#presentation-mode option[value="shield-delayed"]', 'Bouclier coloré après 2 secondes', 'Colored shield after 2 seconds'],
+  ['#presentation-mode option[value="delayed"]', 'Pastille retardée (1,5 s)', 'Delayed indicator (1.5 s)'],
+  ['#presentation-mode option[value="tap"]', 'Révélation au tap / glissement', 'Tap / swipe reveal'],
+  ['#presentation-mode option[value="caption"]', 'Légende liée sous la photo', 'Caption under photo'],
+  ['#reshuffle', '↻ Redistribuer', '↻ Shuffle'],
+  ['#empty-title', 'Glissez votre dossier PHOTOS/ (ou vos photos) sur cette page', 'Drop your PHOTOS/ folder (or photos) here', 'empty'],
+  ['#pick-photos', '🖼️ Choisir des photos', '🖼️ Choose photos'],
+  ['#pick-folder', '📁 Choisir un dossier', '📁 Choose a folder'],
+  ['#empty .hint', 'Sur GitHub Pages, la galerie lit automatiquement le dossier PHOTOS/ du repo (via photos.json généré par le workflow, ou en repli via l’API GitHub).', 'On GitHub Pages, the gallery automatically loads the PHOTOS/ folder (using workflow-generated photos.json or the GitHub API as a fallback).', 'hint'],
+  ['#dropzone .drop-inner', 'Relâchez pour importer vos photos', 'Drop to import your photos'],
+  ['#tap-reveal .tap-reveal-title', 'Provenance numérique', 'Digital provenance'],
+  ['#tap-reveal-more', 'Voir les informations complètes ›', 'View full information ›'],
+  ['#side-panel .eyebrow', 'Provenance numérique', 'Digital provenance'],
+  ['#bottom-sheet .eyebrow', 'Provenance numérique', 'Digital provenance'],
+  ['#credentials .eyebrow', 'Provenance numérique', 'Digital provenance'],
+  ['#side-panel details > summary', 'Informations techniques du manifeste', 'Technical manifest data'],
+  ['#bottom-sheet details > summary', 'Informations techniques du manifeste', 'Technical manifest data'],
+  ['#credentials details > summary', 'Informations techniques du manifeste', 'Technical manifest data'],
+  ['#side-panel .note', 'Vert : information présente ou contrôle réussi. Orange : confiance à vérifier. Rouge : échec de contrôle. Une information renseignée ne garantit pas qu\'elle soit vraie.', 'Green: information available or a successful check. Amber: trust requires review. Red: a failed check. A declared value is not proof it is true.'],
+  ['#bottom-sheet .bottom-sheet-note', 'Les Content Credentials décrivent une provenance déclarée et les contrôles effectués. Ils ne garantissent pas la véracité de la scène.', 'Content Credentials describe declared provenance and checks performed. They do not guarantee that the scene is true.'],
+  ['#credentials .note', 'Les indicateurs verts signalent des informations présentes ou des contrôles réussis ; orange signifie « à vérifier » ; rouge indique un échec de contrôle. Une information renseignée ne prouve pas à elle seule qu’elle est vraie.', 'Green indicators show available information or successful checks; amber means review needed, and red indicates a failed check. A provided value does not, by itself, prove it is true.'],
+  ['#side-panel .c2pa-explainer h3', 'ⓘ Qu’est-ce que le C2PA ?', 'ⓘ What is C2PA?'],
+  ['#side-panel .c2pa-explainer p:nth-of-type(1)', 'Le C2PA (Coalition for Content Provenance and Authenticity) est un standard ouvert permettant d’associer des Content Credentials à un fichier : origine déclarée, historique et modifications enregistrées.', 'C2PA (Coalition for Content Provenance and Authenticity) is an open standard for attaching Content Credentials to a file: declared origin, history, and recorded edits.'],
+  ['#side-panel .c2pa-explainer li:nth-child(1)', 'Il contribue à la transparence sur la provenance.', 'It increases transparency about provenance.'],
+  ['#side-panel .c2pa-explainer li:nth-child(2)', 'Il peut signaler des modifications ou des étapes impliquant l’IA si elles ont été enregistrées.', 'It may describe edits or AI-related steps if they were recorded.'],
+  ['#side-panel .c2pa-explainer li:nth-child(3)', 'Il ne prouve pas la véracité de la scène ni la fiabilité de la source.', 'It does not prove that a scene is real or a source trustworthy.'],
+  ['#side-panel .c2pa-explainer p:nth-of-type(2)', 'Un certificat non reconnu comme fiable ne signifie pas automatiquement que l’image a été falsifiée.', 'An untrusted certificate does not automatically mean the image was manipulated.'],
+  ['#c2pa-explain-title', 'Qu’est-ce que le C2PA ?', 'What is C2PA?'],
+  ['#credentials .c2pa-explainer > p:nth-of-type(1)', 'Le C2PA (Coalition for Content Provenance and Authenticity) est un standard ouvert qui permet d’associer à un fichier des Content Credentials : des informations sur sa provenance et, lorsqu’elles sont renseignées, sur les étapes de sa création ou de ses modifications.', 'C2PA is an open standard for attaching Content Credentials to a file: information about its provenance and, when recorded, steps in its creation or editing.'],
+  ['#credentials .c2pa-explainer li:nth-child(1)', 'Il aide à retracer l’origine déclarée et l’historique d’un contenu.', 'It helps trace the declared origin and history of content.'],
+  ['#credentials .c2pa-explainer li:nth-child(2)', 'Il peut signaler certaines modifications ou utilisations d’outils d’IA, si elles ont été enregistrées.', 'It may disclose edits or the use of AI tools if recorded.'],
+  ['#credentials .c2pa-explainer li:nth-child(3)', 'Il ne garantit pas qu’une scène est vraie, ni qu’une source est digne de confiance.', 'It does not guarantee that a scene is true or that a source is trustworthy.'],
+  ['#credentials .c2pa-explainer > p:nth-of-type(2)', '« certificat non fiable » ne signifie pas automatiquement « image falsifiée ». Cela signifie que la confiance cryptographique n’a pas pu être établie par le système de vérification utilisé.', 'An “untrusted certificate” does not automatically mean an “altered image.” It means cryptographic trust could not be established by the verification system.', 'strong'],
+  ['#cr-close', 'Fermer', 'Close'],
+];
+const STATIC_ATTRIBUTES = [
+  ['#search', 'placeholder', 'Rechercher un fichier…', 'Search files…'],
+  ['#search', 'aria-label', 'Rechercher', 'Search'],
+  ['.filters', 'aria-label', 'Filtres', 'Filters'],
+  ['#presentation-mode', 'aria-label', 'Choisir la présentation C2PA', 'Choose C2PA presentation'],
+  ['#reshuffle', 'title', 'Redistribuer les présentations', 'Shuffle presentations'],
+  ['#lb-close', 'aria-label', 'Fermer', 'Close'],
+  ['#lb-prev', 'aria-label', 'Photo précédente', 'Previous photo'],
+  ['#lb-next', 'aria-label', 'Photo suivante', 'Next photo'],
+  ['#side-panel', 'aria-label', 'Content Credentials de la photographie', 'Photo Content Credentials'],
+  ['#side-close', 'aria-label', 'Fermer le panneau', 'Close panel'],
+  ['#bottom-sheet', 'aria-label', 'Volet des informations C2PA', 'C2PA information sheet'],
+  ['#bottom-sheet-handle', 'aria-label', 'Tirer le volet de provenance vers le bas pour le fermer', 'Pull the provenance sheet down to close it'],
+  ['#bottom-close', 'aria-label', 'Fermer le volet', 'Close sheet'],
+  ['#tap-reveal-close', 'aria-label', 'Masquer les informations', 'Hide information'],
+  ['#cr-badge', 'aria-label', 'Afficher les Content Credentials', 'View Content Credentials'],
+];
+function updateStaticTranslations() {
+  document.documentElement.lang = uiLanguage;
+  document.title = uiLanguage === 'en' ? 'Gallery · Content Credentials' : 'Galerie · Content Credentials';
+  for (const [selector, fr, en, special] of STATIC_TRANSLATIONS) {
+    const el = document.querySelector(selector);
+    if (!el) continue;
+    const value = uiLanguage === 'en' ? en : fr;
+    if (special === 'heading') {
+      // Conserver le logo AFP, traduire uniquement le nœud texte.
+      const node = [...el.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
+      if (node) node.textContent = ' ' + value;
+    } else if (special === 'hint') {
+      el.replaceChildren(document.createTextNode(value));
+    } else if (special === 'strong') {
+      const node = [...el.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
+      if (node) node.textContent = value;
+    } else if (special === 'empty') {
+      // Ne pas écraser les messages de diagnostic générés par setEmpty().
+      if (el.dataset.dynamicEmpty !== '1') el.textContent = value;
+    } else {
+      el.textContent = value;
+    }
+  }
+  for (const [selector, attr, fr, en] of STATIC_ATTRIBUTES) {
+    const el = document.querySelector(selector);
+    if (el) el.setAttribute(attr, uiLanguage === 'en' ? en : fr);
+  }
+}
+function changeLanguage(next) {
+  if (!['fr','en'].includes(next) || next === uiLanguage) return;
+  uiLanguage = next;
+  try { localStorage.setItem('afp-c2pa-language', next); } catch (_) {}
+  updateStaticTranslations();
+  syncLanguageButtons();
+  updateCount();
+  for (const photo of photos) {
+    const card = grid.querySelector(`[data-idx="${photo.idx}"]`);
+    if (!card) continue;
+    const tag = card.querySelector('.tag');
+    const textNode = tag?.lastChild;
+    if (textNode?.nodeType === Node.TEXT_NODE) textNode.textContent = statusLabel(photo.state);
+  }
+  const overlays = document.querySelectorAll('.demo-overlay, #cr-badge');
+  for (const overlay of overlays) {
+    const mode = [...overlay.classList].find(c => c.startsWith('mode-'))?.slice(5) || 'info';
+    const banner = overlay.querySelector('.banner-label'); if (banner) banner.textContent = tr('Voir la provenance');
+    const caption = overlay.querySelector('.caption-marker'); if (caption) caption.textContent = tr('Source sous la photo ↓');
+    const delayed = overlay.querySelector('.delayed-badge'); if (delayed) delayed.textContent = tr('◈  Provenance');
+    overlay.setAttribute('aria-label', mode === 'corner' ? tr('Soulever le coin pour voir la provenance C2PA') : mode === 'glow' ? tr('Ouvrir la provenance C2PA depuis le coin lumineux') : mode === 'seal' ? tr('Ouvrir la provenance C2PA depuis le sceau') : tr('Voir la provenance C2PA'));
+  }
+  for (const photo of photos) {
+    const card = grid.querySelector(`[data-idx="${photo.idx}"]`);
+    if (card) updateCaption(card, photo);
+  }
+  if (currentIdx >= 0 && photos[currentIdx]) {
+    const photo = photos[currentIdx];
+    const captionBtn = document.querySelector('#lb-caption-source');
+    if (captionBtn && !captionBtn.hidden) captionBtn.textContent = tr('Source : ') + sourceLabel(photo) + '  ›';
+    if (!tapReveal.hidden) document.querySelector('#tap-reveal-summary').textContent = tr('Source : ') + sourceLabel(photo) + ' · ' + statusLabel(photo.state);
+    // Uniquement du rendu : ne pas appeler openLightbox() / analyze().
+    fillDetails(photo);
+    if (!sidePanel.hidden && sidePhoto === photo) refreshSidePanel(photo);
+    if (!bottomSheet.hidden && bottomPhoto === photo) refreshBottomSheet(photo);
+  }
+  if (emptyBox && !emptyBox.hidden) {
+    // Conserver la cause du diagnostic, mais retraduire les messages connus.
+    emptyTitle.textContent = tr(emptyTitle.dataset.frText || emptyTitle.textContent);
+    emptyMsg.textContent = tr(emptyMsg.dataset.frText || emptyMsg.textContent);
+  }
+}
+function syncLanguageButtons() {
+  for (const box of document.querySelectorAll('.afp-language-switch')) {
+    for (const button of box.querySelectorAll('button')) {
+      const active = button.dataset.lang === uiLanguage;
+      button.setAttribute('aria-pressed', String(active));
+      button.classList.toggle('is-current', active);
+    }
+  }
+}
+function installLanguageSwitch() {
+  if (document.querySelector('#afp-language-switch')) return;
+  const style = document.createElement('style');
+  style.textContent = `
+    .afp-language-switch{display:inline-flex;gap:2px;align-items:center;padding:3px;border:1px solid #40516a;border-radius:999px;background:#1c2733;white-space:nowrap;margin-left:auto;flex-shrink:0}
+    .afp-language-switch button{border:0;border-radius:999px;background:transparent;color:#b9c8da;font:700 12px/1.4 system-ui,sans-serif;padding:5px 9px;cursor:pointer}
+    .afp-language-switch button.is-current{background:#4f8ff7;color:white}
+    .afp-language-switch button:focus-visible{outline:2px solid #91bdff;outline-offset:2px}
+    #lightbox .afp-language-switch{margin-left:0;background:#172232dc;backdrop-filter:blur(8px);z-index:32}
+    #credentials .afp-language-switch{float:right;margin-left:8px}
+    #side-panel > .afp-language-switch, #bottom-sheet > .afp-language-switch{display:flex;width:max-content;margin:0 0 12px auto}
+    @media(max-width:700px){.afp-language-switch{margin-left:0} .afp-language-switch button{padding:5px 8px}}
+  `;
+  document.head.append(style);
+  const placements = [
+    ['header', 'afp-language-switch'],
+    ['#lightbox .lb-top', 'afp-language-switch-lightbox'],
+    ['#credentials .credential-head', 'afp-language-switch-credentials'],
+    ['#side-panel', 'afp-language-switch-side'],
+    ['#bottom-sheet', 'afp-language-switch-bottom']
+  ];
+  for (const [parentSelector, id] of placements) {
+    const parent = document.querySelector(parentSelector);
+    if (!parent) continue;
+    const box = document.createElement('div');
+    box.id = id; box.className = 'afp-language-switch';
+    box.setAttribute('role','group');
+    box.setAttribute('aria-label','Language / Langue');
+    for (const lang of ['fr','en']) {
+      const button = document.createElement('button');
+      button.type='button'; button.dataset.lang=lang; button.textContent=lang.toUpperCase();
+      button.addEventListener('click', () => changeLanguage(lang));
+      box.append(button);
+    }
+    if (id === 'afp-language-switch-side') {
+      parent.insertBefore(box, parent.querySelector('#side-status'));
+    } else if (id === 'afp-language-switch-bottom') {
+      parent.insertBefore(box, parent.querySelector('.bottom-sheet-body'));
+    } else if (id === 'afp-language-switch-lightbox') {
+      const close = parent.querySelector('#lb-close');
+      parent.insertBefore(box, close);
+    } else parent.append(box);
+  }
+  updateStaticTranslations(); syncLanguageButtons();
+}
 
 /* curl.js — Repli de coin de page WebGL, autonome, sans dépendance.
    Usage : const ctl = mountCurl(bouton); ctl.updatePhoto(imgElement, cardCanvas);
@@ -239,13 +523,15 @@ async function githubApiList() {
   const repo = detectRepo();
   if (!repo) return [];
   try {
-    const r = await fetchWithTimeout(`https://api.github.com/repos/${repo}/contents/PHOTOS?ref=main`, { cache: 'no-store' }, 6500);
+    // Pas de ref=main : certains dépôts publient depuis une branche différente.
+    const r = await fetchWithTimeout(`https://api.github.com/repos/${repo}/contents/PHOTOS`, { cache: 'no-store' }, 6500);
     if (!r.ok) return [];
     const items = await r.json();
     if (!Array.isArray(items)) return [];
     return items
       .filter(i => i.type === 'file' && IMAGE_RE.test(i.name))
-      .map(i => `./PHOTOS/${i.name}`);
+      // Les noms PNG peuvent contenir espaces, #, accents, etc. : URL encodée.
+      .map(i => `./PHOTOS/${encodeURIComponent(i.name)}`);
   } catch (_) { return []; }
 }
 
@@ -297,71 +583,123 @@ function addFiles(files) {
   return true;
 }
 
-/* Métadonnées EXIF JPEG lues localement depuis le fichier original.
-   Copyright (0x8298) est un crédit/droit, pas une preuve d'identité.
-   Artist (0x013B) est prioritaire ; DateTimeOriginal (0x9003) est déclarative. */
+/* EXIF / crédits lus dans les octets d'origine, sans réencoder l'image.
+   JPEG : segment APP1 ; PNG : bloc eXIf et blocs textuels tEXt / iTXt.
+   Il s'agit de déclarations, PAS de preuves cryptographiques. */
+function parseTiffExif(data, tiff, result) {
+  if (tiff + 8 > data.byteLength) return;
+  const endian = data.getUint16(tiff);
+  if (endian !== 0x4949 && endian !== 0x4d4d) return;
+  const le = endian === 0x4949;
+  const u16 = p => p >= tiff && p + 2 <= data.byteLength ? data.getUint16(p, le) : null;
+  const u32 = p => p >= tiff && p + 4 <= data.byteLength ? data.getUint32(p, le) : null;
+  if (u16(tiff + 2) !== 42) return;
+  function entries(offset) {
+    const out = new Map();
+    if (!Number.isInteger(offset) || offset < 0) return out;
+    const start = tiff + offset, n = u16(start);
+    if (n === null || n > 1024 || start + 2 + n * 12 > data.byteLength) return out;
+    for (let i = 0; i < n; i++) {
+      const e = start + 2 + i * 12;
+      const tag = u16(e), type = u16(e + 2), count = u32(e + 4);
+      if (tag === null || count === null) continue;
+      if (type === 2 && count > 0 && count <= 4096) {
+        const offsetValue = u32(e + 8);
+        const at = count <= 4 ? e + 8 : tiff + offsetValue;
+        if (at >= tiff && at + count <= data.byteLength) {
+          const bytes = new Uint8Array(data.buffer, data.byteOffset + at, count);
+          const zero = bytes.indexOf(0);
+          const str = new TextDecoder('latin1').decode(bytes.subarray(0, zero < 0 ? count : zero)).trim();
+          if (str) out.set(tag, str);
+        }
+      } else if (type === 4 && count === 1) out.set(tag, u32(e + 8));
+    }
+    return out;
+  }
+  const root = entries(u32(tiff + 4));
+  const exif = typeof root.get(0x8769) === 'number' ? entries(root.get(0x8769)) : new Map();
+  result.artist ||= root.get(0x013b) || null;
+  result.copyright ||= root.get(0x8298) || null;
+  const raw = exif.get(0x9003) || root.get(0x0132);
+  if (typeof raw === 'string' && /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)) {
+    const offset = exif.get(0x9011) || exif.get(0x9010) || '';
+    result.date ||= `${raw.slice(8,10)}/${raw.slice(5,7)}/${raw.slice(0,4)} ${raw.slice(11)}${/^[+-]\d{2}:\d{2}$/.test(offset) ? ' (UTC' + offset + ')' : ''}`;
+  }
+}
+function applyPngText(key, value, result) {
+  const name = key.trim().toLowerCase();
+  const text = value.trim();
+  if (!text) return;
+  if (['author', 'artist', 'creator', 'dc:creator', 'by-line'].includes(name)) result.artist ||= text;
+  else if (['copyright', 'copyright notice', 'rights', 'dc:rights'].includes(name)) result.copyright ||= text;
+  else if (['date time original', 'datetimeoriginal', 'date created', 'creation time'].includes(name)) {
+    // Les dates PNG non EXIF sont déclaratives et peuvent avoir plusieurs formats.
+    const exif = text.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}:\d{2}:\d{2})$/);
+    result.date ||= exif ? `${exif[3]}/${exif[2]}/${exif[1]} ${exif[4]}` : text.slice(0, 90);
+  }
+  // XMP simple (non compressé) : valeur textuelle fréquente dans les PNG exportés.
+  if (name.includes('xmp') && text.length < 500000) {
+    const xmlUnescape = str => str.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+    const author = text.match(/<dc:creator\b[^>]*>[\s\S]*?<rdf:li\b[^>]*>([^<]+)<\/rdf:li>/i) || text.match(/\b(?:photoshop:AuthorsPosition|dc:creator)="([^"]+)"/i);
+    if (author) result.artist ||= xmlUnescape(author[1]);
+    const rights = text.match(/<dc:rights\b[^>]*>[\s\S]*?<rdf:li\b[^>]*>([^<]+)<\/rdf:li>/i);
+    if (rights) result.copyright ||= xmlUnescape(rights[1]);
+    const date = text.match(/\bexif:DateTimeOriginal="([^"]+)"/i) || text.match(/<exif:DateTimeOriginal>([^<]+)<\/exif:DateTimeOriginal>/i);
+    if (date) applyPngText('DateTimeOriginal', date[1], result);
+  }
+}
 async function readExifMetadata(blob) {
   const result = { date: null, artist: null, copyright: null };
   try {
-    // Les segments EXIF JPEG sont généralement proches du début du fichier.
-    // Évite de charger deux fois des photographies haute résolution en mémoire.
-    const data = new DataView(await blob.slice(0, 4 * 1024 * 1024).arrayBuffer());
-    if (data.byteLength < 12 || data.getUint16(0) !== 0xffd8) return result;
-    let pos = 2;
-    while (pos + 4 <= data.byteLength) {
-      if (data.getUint8(pos) !== 0xff) break;
-      const marker = data.getUint8(pos + 1);
-      if (marker === 0xda || marker === 0xd9) break;
-      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { pos += 2; continue; }
-      const length = data.getUint16(pos + 2);
-      if (length < 2 || pos + 2 + length > data.byteLength) break;
-      const base = pos + 4;
-      if (marker === 0xe1 && length >= 8 && [69,120,105,102,0,0].every((v,i) => data.getUint8(base+i) === v)) {
-        const tiff = base + 6;
-        if (tiff + 8 > data.byteLength) break;
-        const endian = data.getUint16(tiff);
-        if (endian !== 0x4949 && endian !== 0x4d4d) break;
-        const le = endian === 0x4949;
-        const u16 = p => p >= tiff && p + 2 <= data.byteLength ? data.getUint16(p,le) : null;
-        const u32 = p => p >= tiff && p + 4 <= data.byteLength ? data.getUint32(p,le) : null;
-        if (u16(tiff + 2) !== 42) break;
-        function entries(offset) {
-          const out = new Map();
-          if (!Number.isInteger(offset) || offset < 0) return out;
-          const start = tiff + offset, n = u16(start);
-          if (n === null || n > 1024 || start + 2 + n * 12 > data.byteLength) return out;
-          for (let i = 0; i < n; i++) {
-            const e = start + 2 + i * 12;
-            const tag = u16(e), type = u16(e + 2), count = u32(e + 4);
-            if (tag === null || count === null) continue;
-            if (type === 2 && count > 0 && count <= 4096) {
-              const offsetValue = u32(e + 8);
-              const at = count <= 4 ? e + 8 : tiff + offsetValue;
-              if (at >= tiff && at + count <= data.byteLength) {
-                const bytes = new Uint8Array(data.buffer, data.byteOffset + at, count);
-                const zero = bytes.indexOf(0);
-                const raw = bytes.subarray(0, zero < 0 ? count : zero);
-                const str = new TextDecoder('latin1').decode(raw).trim();
-                if (str) out.set(tag, str);
-              }
-            } else if (type === 4 && count === 1) out.set(tag, u32(e + 8));
-          }
-          return out;
+    // Une tranche limitée pour préserver les performances des images haute résolution.
+    const data = new DataView(await blob.slice(0, 8 * 1024 * 1024).arrayBuffer());
+    if (data.byteLength < 12) return result;
+    if (data.getUint16(0) === 0xffd8) {
+      let pos = 2;
+      while (pos + 4 <= data.byteLength) {
+        if (data.getUint8(pos) !== 0xff) break;
+        const marker = data.getUint8(pos + 1);
+        if (marker === 0xda || marker === 0xd9) break;
+        if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { pos += 2; continue; }
+        const length = data.getUint16(pos + 2);
+        if (length < 2 || pos + 2 + length > data.byteLength) break;
+        const base = pos + 4;
+        if (marker === 0xe1 && length >= 8 && [69,120,105,102,0,0].every((v,i) => data.getUint8(base+i) === v)) {
+          parseTiffExif(data, base + 6, result);
+          break;
         }
-        const root = entries(u32(tiff + 4));
-        const exif = typeof root.get(0x8769) === 'number' ? entries(root.get(0x8769)) : new Map();
-        result.artist = root.get(0x013b) || null;
-        result.copyright = root.get(0x8298) || null;
-        const raw = exif.get(0x9003) || root.get(0x0132);
-        if (/^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw || '')) {
-          const offset = exif.get(0x9011) || exif.get(0x9010) || '';
-          result.date = `${raw.slice(8,10)}/${raw.slice(5,7)}/${raw.slice(0,4)} ${raw.slice(11)}${/^[+-]\d{2}:\d{2}$/.test(offset) ? ' (UTC' + offset + ')' : ''}`;
-        }
-        return result;
+        pos += 2 + length;
       }
-      pos += 2 + length;
+    } else if ([137,80,78,71,13,10,26,10].every((v,i) => data.getUint8(i) === v)) {
+      // Chaque bloc PNG a : longueur (4), type (4), données, CRC (4).
+      let pos = 8;
+      while (pos + 12 <= data.byteLength) {
+        const size = data.getUint32(pos); // PNG : big-endian
+        const end = pos + 12 + size;
+        if (end > data.byteLength) break; // tranche incomplète
+        const kind = String.fromCharCode(...new Uint8Array(data.buffer, data.byteOffset + pos + 4, 4));
+        const from = pos + 8;
+        if (kind === 'eXIf') parseTiffExif(data, from, result);
+        if ((kind === 'tEXt' || kind === 'iTXt') && size <= 1024 * 1024) {
+          const bytes = new Uint8Array(data.buffer, data.byteOffset + from, size);
+          const zero = bytes.indexOf(0);
+          if (zero > 0) {
+            const key = new TextDecoder('latin1').decode(bytes.subarray(0, zero));
+            if (kind === 'tEXt') {
+              applyPngText(key, new TextDecoder('latin1').decode(bytes.subarray(zero + 1)), result);
+            } else if (zero + 3 < size && bytes[zero + 1] === 0) {
+              // iTXt non compressé : flag/méthode, langue NUL, traduction NUL, texte UTF-8.
+              const langEnd = bytes.indexOf(0, zero + 3);
+              const translatedEnd = langEnd < 0 ? -1 : bytes.indexOf(0, langEnd + 1);
+              if (translatedEnd >= 0) applyPngText(key, new TextDecoder('utf-8').decode(bytes.subarray(translatedEnd + 1)), result);
+            }
+          }
+        }
+        pos = end;
+        if (kind === 'IEND') break;
+      }
     }
-  } catch (err) { console.warn('Lecture EXIF', err); }
+  } catch (err) { console.warn('Lecture EXIF/PNG', err); }
   return result;
 }
 
@@ -399,8 +737,10 @@ async function analyze(photo) {
       photo.exifDate = photo.exif.date;
       const engine = await ensureC2pa();
       const ext = photo.name.split('.').pop().toLowerCase();
-      // Le SDK attend d'abord le type MIME, pas seulement l'extension « jpg ».
-      reader = await C2paReader.fromBlob(engine, blob.type || ({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp'}[ext] || ext), blob);
+      // Utiliser le format du fichier avant le Content-Type HTTP, parfois générique.
+      // Indispensable pour analyser correctement les PNG hébergés sur GitHub Pages.
+      const mime = ({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',tif:'image/tiff',tiff:'image/tiff'})[ext] || blob.type;
+      reader = await C2paReader.fromBlob(engine, mime, blob);
       if (!reader) { photo.state = 'none'; return; }
       const store = await reader.manifestStore();
       photo.store = store;
@@ -543,7 +883,7 @@ function addBadgeContent(target, mode, state) {
     target.classList.add('afp-tab');
   } else if (mode === 'banner') {
     const el=document.createElement('span'); el.className='banner-label';
-    el.textContent='Voir la provenance'; target.append(el);
+    el.textContent=tr('Voir la provenance'); target.append(el);
   } else if (mode === 'glow') {
     const ns='http://www.w3.org/2000/svg';
     const angle=document.createElementNS(ns,'svg');
@@ -578,13 +918,13 @@ function addBadgeContent(target, mode, state) {
     target.append(svg);
   } else if (mode === 'delayed') {
     const badge=document.createElement('span');badge.className='delayed-badge';
-    badge.textContent='◈  Provenance';target.append(badge);
+    badge.textContent=tr('◈  Provenance');target.append(badge);
     target.classList.add('delayed-pending');
   } else if (mode === 'tap') {
     // Aucun indicateur visible au repos ; la photo elle-même est interactive.
   } else if (mode === 'caption') {
     const label=document.createElement('span');label.className='caption-marker';
-    label.textContent='Source sous la photo ↓';target.append(label);
+    label.textContent=tr('Source sous la photo ↓');target.append(label);
   } else if (mode === 'corner') {
     if (target.id === 'cr-badge') {
       // SVG stable sur ordinateur et mobile, sans dépendance WebGL.
@@ -632,13 +972,13 @@ function addBadgeContent(target, mode, state) {
     const dot=document.createElement('span'); dot.className='dot '+state;
     dot.setAttribute('aria-hidden','true'); target.append(dot);
   }
-  target.setAttribute('aria-label', mode === 'corner' ? 'Soulever le coin pour voir la provenance C2PA' : mode === 'glow' ? 'Ouvrir la provenance C2PA depuis le coin lumineux' : mode === 'seal' ? 'Ouvrir la provenance C2PA depuis le sceau' : 'Voir la provenance C2PA');
+  target.setAttribute('aria-label', mode === 'corner' ? tr('Soulever le coin pour voir la provenance C2PA') : mode === 'glow' ? tr('Ouvrir la provenance C2PA depuis le coin lumineux') : mode === 'seal' ? tr('Ouvrir la provenance C2PA depuis le sceau') : tr('Voir la provenance C2PA'));
 }
 function sourceLabel(photo) {
   const a=photo.active||{};
   const sig=a.signature_info||a.signatureInfo||{};
   const signer=sig.issuer||sig.signer||sig.organization||a.claim_generator||a.claimGenerator;
-  return signer ? String(signer).slice(0,90) : 'Source non renseignée';
+  return signer ? String(signer).slice(0,90) : tr('Source non renseignée');
 }
 /* Carte révélée sous le coin enroulé (repli WebGL) : vraies données de la photo. */
 function makeProvenanceCard(photo) {
@@ -653,19 +993,19 @@ function makeProvenanceCard(photo) {
   x.fillStyle = '#8fa3c8'; x.font = `700 ${30 * s}px system-ui,sans-serif`;
   x.fillText('CONTENT CREDENTIALS', 776 * s, 200 * s);
   x.fillStyle = '#fff'; x.font = `700 ${48 * s}px system-ui,sans-serif`;
-  x.fillText('Source : ' + sourceLabel(photo).slice(0, 40), 776 * s, 268 * s);
+  x.fillText(tr('Source : ') + sourceLabel(photo).slice(0, 40), 776 * s, 268 * s);
   const lvl = photo.state === 'ok' ? ['#9be6b1', '#12683b']
     : (photo.state === 'bad' || photo.state === 'error') ? ['#ffb0b0', '#4b2325']
     : ['#ffcf77', '#4a3410'];
   x.fillStyle = lvl[0]; x.beginPath(); x.roundRect(776 * s, 300 * s, 210 * s, 44 * s, 22 * s); x.fill();
   x.fillStyle = lvl[1]; x.font = `700 ${24 * s}px system-ui,sans-serif`;
-  x.fillText((LABEL[photo.state] || 'Provenance').slice(0, 20), 792 * s, 330 * s);
+  x.fillText((statusLabel(photo.state) || tr('Provenance')).slice(0, 20), 792 * s, 330 * s);
   return c;
 }
 function updateCaption(card,photo) {
   const el=card.querySelector('.caption-source');if(!el)return;
   el.hidden=true;
-  el.textContent='Source : '+sourceLabel(photo)+'  ›';
+  el.textContent=tr('Source : ')+sourceLabel(photo)+'  ›';
 }
 let delayedTimer=0;
 let delayedRevealReady=false;
@@ -710,13 +1050,13 @@ function cardEl(photo) {
   const tag = document.createElement('span');
   tag.className = `tag ${photo.state}`;
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),
-             document.createTextNode(LABEL[photo.state] ?? photo.state));
+             document.createTextNode(statusLabel(photo.state)));
   const name = document.createElement('figcaption');
   name.className = 'name';
   name.textContent = photo.name.split('/').pop();
   const overlay = document.createElement('button');
   overlay.type='button'; overlay.className='demo-overlay';
-  overlay.setAttribute('aria-label','Voir les informations C2PA');
+  overlay.setAttribute('aria-label',tr('Voir les informations C2PA'));
   addBadgeContent(overlay,presentationFor(photo),photo.state);
   overlay.addEventListener('click',event=>{event.stopPropagation();openLightbox(photo.idx); if(presentationFor(photo)==='drawer') openBottomSheet(photo); else if(presentationFor(photo)==='tap') toggleTapReveal(photo); else openSidePanel(photo);});
   card.append(img, tag, name, overlay);
@@ -736,7 +1076,7 @@ function renderCard(photo) {
   tag.className = `tag ${photo.state}`;
   tag.textContent = '';
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),
-             document.createTextNode(LABEL[photo.state] ?? photo.state));
+             document.createTextNode(statusLabel(photo.state)));
   const overlay = card.querySelector('.demo-overlay');
   if (overlay) { overlay.className='demo-overlay'; addBadgeContent(overlay,presentationFor(photo),photo.state); }
   updateCaption(card,photo);
@@ -754,7 +1094,7 @@ function applyFilterToCard(card, photo) {
 
 function updateCount() {
   const n = (s) => photos.filter(p => p.state === s).length;
-  countEl.textContent = `${photos.length} photo(s) · ${n('ok')} vérifiée(s) · ${n('warn')} à vérifier · ${n('bad')} échec(s) · ${n('none')} sans C2PA · ${n('error')} erreur(s) de lecture`;
+  countEl.textContent = uiLanguage === 'en' ? `${photos.length} photos · ${n('ok')} verified · ${n('warn')} need review · ${n('bad')} failed · ${n('none')} without C2PA · ${n('error')} read errors` : `${photos.length} photo(s) · ${n('ok')} vérifiée(s) · ${n('warn')} à vérifier · ${n('bad')} échec(s) · ${n('none')} sans C2PA · ${n('error')} erreur(s) de lecture`;
 }
 
 function rebuildGrid() {
@@ -766,13 +1106,13 @@ function rebuildGrid() {
 /* ---------- Lightbox plein écran ---------- */
 function setStatusLine(cls, text) {
   lbStatus.className = `status ${cls}`;
-  lbStatus.textContent = text;
+  lbStatus.textContent = tr(text);
 }
 
 /* Métadonnées présentées sans inventer de valeurs absentes. */
 function firstValue(...values) { return values.find(v => v !== undefined && v !== null && v !== '') ?? null; }
 function readable(value) {
-  if (value == null) return 'Non renseigné';
+  if (value == null) return tr('Non renseigné');
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }
@@ -814,6 +1154,18 @@ c2paHelpStyle.textContent = `
     overflow-wrap:anywhere;white-space:normal;
   }
   .credential-row .c2pa-help-copy[hidden]{display:none!important}
+  .c2pa-warning-explainer{
+    border:1px solid #dba84b;border-left:3px solid #e5a12f;
+    border-radius:9px;margin:0 0 16px;padding:11px 12px;
+    background:#fff6e8;color:#714b10;font-size:12px;line-height:1.5;
+    overflow-wrap:anywhere;
+  }
+  .c2pa-warning-explainer strong{display:block;font-size:12.5px;margin:0 0 4px}
+  .c2pa-warning-explainer p{margin:0;font-size:12px;line-height:1.5}
+  #side-panel .c2pa-warning-explainer{
+    background:#352b1a;color:#ffe1aa;border-color:#71521c;border-left-color:#f2ae36;
+  }
+  .bottom-sheet .c2pa-warning-explainer{background:#fff6e8;color:#714b10}
   #side-panel .credential-row{
     grid-template-columns:22px minmax(0,38%) minmax(0,1fr);
     gap:5px 8px;align-items:start;padding:11px 10px;min-width:0;
@@ -862,9 +1214,10 @@ function field(label, value, level = 'ok', help = '') {
   const row = document.createElement('div'); row.className = 'credential-row';
   const marker = document.createElement('span'); marker.className = `signal ${level}`;
   marker.textContent = level === 'ok' ? '✓' : level === 'warn' ? '!' : level === 'bad' ? '×' : 'i';
-  marker.setAttribute('aria-label', level === 'ok' ? 'Information présente' : level === 'warn' ? 'À vérifier' : level === 'bad' ? 'Problème détecté' : 'Information indisponible');
+  marker.setAttribute('aria-label', tr(level === 'ok' ? 'Information présente' : level === 'warn' ? 'À vérifier' : level === 'bad' ? 'Problème détecté' : 'Information indisponible'));
+  if (level === 'warn') marker.title = tr('Orange : confiance ou vérification non confirmée.');
   const name = document.createElement('div'); name.className = 'field-label';
-  const labelText = document.createElement('span'); labelText.textContent = label;
+  const labelText = document.createElement('span'); labelText.textContent = tr(label);
   name.append(labelText);
   const detail = document.createElement('div'); detail.className = 'field-value'; detail.textContent = readable(value);
   if (help) { const note = document.createElement('small'); note.textContent = help; detail.append(note); }
@@ -872,19 +1225,19 @@ function field(label, value, level = 'ok', help = '') {
   if (C2PA_FIELD_HELP[label]) {
     const trigger = document.createElement('button'); trigger.type = 'button';
     trigger.className = 'c2pa-help-trigger'; trigger.textContent = 'i';
-    trigger.setAttribute('aria-label', 'Explication : ' + label);
+    trigger.setAttribute('aria-label', (uiLanguage === 'en' ? 'Explanation: ' : 'Explication : ') + tr(label));
     trigger.setAttribute('aria-expanded', 'false');
-    trigger.title = 'Que signifie « ' + label + ' » ?';
+    trigger.title = uiLanguage === 'en' ? 'What does “' + tr(label) + '” mean?' : 'Que signifie « ' + label + ' » ?';
     name.append(trigger);
     const copy = document.createElement('div'); copy.className = 'c2pa-help-copy';
-    copy.textContent = C2PA_FIELD_HELP[label]; copy.hidden = true;
+    copy.textContent = tr(C2PA_FIELD_HELP[label]); copy.hidden = true;
     row.append(copy);
   }
   return row;
 }
 function section(title, rows) {
   const block = document.createElement('section'); block.className = 'credential-section';
-  const heading = document.createElement('h3'); heading.textContent = title;
+  const heading = document.createElement('h3'); heading.textContent = tr(title);
   const dl = document.createElement('div'); dl.className = 'credential-fields';
   dl.append(...rows); block.append(heading, dl); return block;
 }
@@ -913,7 +1266,7 @@ function openLightbox(idx) {
   const captionBtn=document.querySelector('#lb-caption-source');
   lightbox.classList.toggle('caption-layout',mode==='caption');
   captionBtn.hidden=mode!=='caption';
-  captionBtn.textContent='Source : '+sourceLabel(photo)+'  ›';
+  captionBtn.textContent=tr('Source : ')+sourceLabel(photo)+'  ›';
   closeBottomSheet();
   hideTapReveal();
   crBadge.className=`cr ${photo.state}`;
@@ -930,9 +1283,9 @@ function openLightbox(idx) {
     sidePanel.classList.remove('direct-visible');
     sidePhoto=null;
   }
-  setStatusLine(photo.state === 'loading' ? 'loading' : photo.state, 'Chargement des informations…');
+  setStatusLine(photo.state === 'loading' ? 'loading' : photo.state, tr('Chargement des informations…'));
   lbSummary.replaceChildren();
-  lbJson.textContent = 'Chargement…';
+  lbJson.textContent = tr('Chargement…');
   // Si le panneau était ouvert sur la photo précédente, on le ferme.
   if (credentials.open) credentials.close();
   if (!lightbox.open) lightbox.showModal();
@@ -947,7 +1300,7 @@ function openLightbox(idx) {
       if (credentials.open) fillDetails(photo); // rafraîchir le panneau déjà ouvert
       renderCard(photo);
       if (presentationFor(photo)==='caption') {
-        document.querySelector('#lb-caption-source').textContent='Source : '+sourceLabel(photo)+'  ›';
+        document.querySelector('#lb-caption-source').textContent=tr('Source : ')+sourceLabel(photo)+'  ›';
         syncLargeCaptionWidth();
       }
       updateCount();
@@ -958,13 +1311,13 @@ function openLightbox(idx) {
 /* ---------- Panneau Content Credentials (bouton logo AFP) ---------- */
 function fillDetails(photo) {
   if (photo.state === 'loading') {
-    setStatusLine('loading', 'Vérification C2PA en cours…');
+    setStatusLine('loading', tr('Vérification C2PA en cours…'));
     lbSummary.replaceChildren();
-    lbJson.textContent = 'Chargement…';
+    lbJson.textContent = tr('Chargement…');
     return;
   }
   if (photo.state === 'error') {
-    setStatusLine('error', `Analyse C2PA indisponible : ${photo.error}`);
+    setStatusLine('error', (uiLanguage === 'en' ? 'C2PA analysis unavailable: ' : 'Analyse C2PA indisponible : ') + photo.error);
     lbSummary.replaceChildren(section('Informations sur la photo', [
       field('Auteur / photographe', photo.exif?.artist || photo.exif?.copyright || null, 'neutral'),
       field('Date de prise de vue (EXIF)', photo.exifDate || null, 'neutral')
@@ -976,9 +1329,9 @@ function fillDetails(photo) {
     setStatusLine('none', 'Aucun manifeste C2PA intégré détecté.');
     lbSummary.replaceChildren(section('Informations sur la photo', [
       field('Auteur / photographe', photo.exif?.artist || photo.exif?.copyright || null, 'neutral'),
-      field('Date de prise de vue (EXIF)', photo.exifDate || 'Non disponible', 'neutral')
+      field('Date de prise de vue (EXIF)', photo.exifDate || tr('Non disponible'), 'neutral')
     ]));
-    lbJson.textContent = 'Aucun manifeste trouvé.';
+    lbJson.textContent = tr('Aucun manifeste trouvé.');
     return;
   }
   const entries = photo.validation ?? [];
@@ -987,6 +1340,18 @@ function fillDetails(photo) {
   else if (levels.includes('warn')) setStatusLine('warn', 'Manifeste présent, mais la confiance du signataire nécessite une vérification.');
   else if (!entries.length || levels.includes('neutral')) setStatusLine('warn', 'Manifeste présent, mais la validation complète ne peut pas être confirmée.');
   else setStatusLine('ok', 'Contrôles C2PA retournés sans problème signalé. Cela ne prouve pas la véracité de la scène.');
+  const codesForWarning = entries.map(v => String(typeof v === 'string' ? v : v?.code ?? v?.status ?? '').toLowerCase());
+  const hasUntrustedSignerWarning = codesForWarning.some(c => /signingcredential\.(untrusted|unknown)|signer\.untrusted/.test(c));
+  const warningNotice = document.createElement('div');
+  warningNotice.className = 'c2pa-warning-explainer';
+  warningNotice.setAttribute('role', 'note');
+  const warningTitle = document.createElement('strong');
+  warningTitle.textContent = tr('Pourquoi ces indicateurs orange ?');
+  const warningBody = document.createElement('p');
+  warningBody.textContent = tr(hasUntrustedSignerWarning
+    ? 'Le certificat du signataire n’est pas reconnu comme fiable : son identité reste à confirmer. Cela ne signifie pas que la photo est fausse ou modifiée.'
+    : 'Certaines vérifications n’ont pas pu être confirmées par cet outil. Les informations restent à examiner : un indicateur orange ne prouve pas que la photo a été falsifiée.');
+  warningNotice.append(warningTitle, warningBody);
   const a = photo.active ?? {};
   const sig = signatureOf(a);
   const generator = firstValue(a.claim_generator, a.claimGenerator, a.claim_generator_info?.[0]?.name, a.claimGeneratorInfo?.[0]?.name);
@@ -999,8 +1364,8 @@ function fillDetails(photo) {
   const hasSignatureFailure = codes.some(c => /claimsignature\.mismatch|claimsignature\.invalid|signature\.invalid/.test(c));
   const hasUntrustedSigner = codes.some(c => /signingcredential\.untrusted|signingcredential\.unknown/.test(c));
   // Un statut global positif sans détail ne prouve pas individuellement ces contrôles.
-  const integrityStatus = hasIntegrityFailure ? 'Échec' : 'Non confirmé séparément';
-  const signatureStatus = hasSignatureFailure ? 'Échec' : hasUntrustedSigner ? 'Confiance à vérifier' : 'Non confirmé séparément';
+  const integrityStatus = tr(hasIntegrityFailure ? 'Échec' : 'Non confirmé séparément');
+  const signatureStatus = tr(hasSignatureFailure ? 'Échec' : hasUntrustedSigner ? 'Confiance à vérifier' : 'Non confirmé séparément');
   const integrityLevel = hasIntegrityFailure ? 'bad' : 'neutral';
   const signatureLevel = hasSignatureFailure ? 'bad' : hasUntrustedSigner ? 'warn' : 'neutral';
 
@@ -1017,10 +1382,10 @@ function fillDetails(photo) {
   }
   const c2paAuthor = authorName(authorValue);
   const author = firstValue(c2paAuthor, photo.exif?.artist, photo.exif?.copyright);
-  const authorSource = c2paAuthor ? 'C2PA' : photo.exif?.artist ? 'EXIF Artist' : photo.exif?.copyright ? 'EXIF Copyright (crédit déclaré)' : null;
+  const authorSource = c2paAuthor ? 'C2PA' : photo.exif?.artist ? 'EXIF Artist' : photo.exif?.copyright ? tr('EXIF Copyright (crédit déclaré)') : null;
 
   const validationSection = document.createElement('section'); validationSection.className = 'credential-section';
-  const vh = document.createElement('h3'); vh.textContent = 'Résultats techniques de validation';
+  const vh = document.createElement('h3'); vh.textContent = tr('Résultats techniques de validation');
   const vl = document.createElement('div'); vl.className = 'validation-list';
   if (entries.length) entries.forEach(v => {
     const line = document.createElement('div'); line.className = 'validation-item';
@@ -1029,17 +1394,17 @@ function fillDetails(photo) {
     marker.textContent = level === 'ok' ? '✓' : level === 'warn' ? '!' : level === 'bad' ? '×' : 'i';
     const code = document.createElement('span'); code.textContent = validationText(v);
     const label = document.createElement('span'); label.className = `validation-pill ${level}`;
-    label.textContent = level === 'ok' ? 'Validé' : level === 'warn' ? 'À vérifier' : level === 'bad' ? 'Échec' : 'Indéterminé';
+    label.textContent = tr(level === 'ok' ? 'Validé' : level === 'warn' ? 'À vérifier' : level === 'bad' ? 'Échec' : 'Indéterminé');
     line.append(marker, code, label); vl.append(line);
   });
-  else { const line = document.createElement('p'); line.textContent = 'Aucun résultat détaillé retourné.'; vl.append(line); }
+  else { const line = document.createElement('p'); line.textContent = tr('Aucun résultat détaillé retourné.'); vl.append(line); }
   validationSection.append(vh, vl);
 
   const extras = document.createElement('details');
   extras.className = 'credential-section';
   extras.style.cssText = 'border:1px solid #354252;border-radius:10px;padding:12px;margin-top:16px';
   const summary = document.createElement('summary');
-  summary.textContent = 'Informations complémentaires';
+  summary.textContent = tr('Informations complémentaires');
   summary.style.cssText = 'cursor:pointer;font-weight:700';
   extras.append(summary,
     section('Données du manifeste', [
@@ -1049,16 +1414,17 @@ function fillDetails(photo) {
     ]), validationSection);
 
   lbSummary.replaceChildren(
+    ...(!levels.includes('bad') && (levels.includes('warn') || !entries.length || levels.includes('neutral')) ? [warningNotice] : []),
     section('Vérification C2PA', [
       field('Intégrité du fichier', integrityStatus, integrityLevel),
-      field('Signature numérique', signatureStatus, signatureLevel),
-      field('Signataire déclaré', signer, signerLevel),
+      field('Signature numérique', signatureStatus, signatureLevel, hasUntrustedSignerWarning && signatureLevel === 'warn' ? tr('Certificat non reconnu comme fiable par ce vérificateur.') : ''),
+      field('Signataire déclaré', signer, signerLevel, hasUntrustedSignerWarning && signerLevel === 'warn' ? tr('Nom déclaré, mais identité non confirmée par ce vérificateur.') : ''),
       field('Générateur', generator, present(generator)),
     ]),
     section('Informations sur la photo', [
       field('Auteur / photographe', author ? `${author}${authorSource ? ' — ' + authorSource : ''}` : null, 'neutral'),
-      field('Horodatage certifié (TSA)', 'Non vérifié', 'neutral'),
-      field('Date de prise de vue (EXIF)', photo.exifDate ?? 'Non disponible', 'neutral'),
+      field('Horodatage certifié (TSA)', tr('Non vérifié'), 'neutral'),
+      field('Date de prise de vue (EXIF)', photo.exifDate ?? tr('Non disponible'), 'neutral'),
     ]),
     extras
   );
@@ -1159,8 +1525,11 @@ const filePhotos = document.querySelector('#file-photos');
 const fileFolder = document.querySelector('#file-folder');
 
 function setEmpty(title, msg) {
-  emptyTitle.textContent = title;
-  emptyMsg.textContent = msg;
+  emptyTitle.dataset.dynamicEmpty = '1';
+  emptyTitle.dataset.frText = title;
+  emptyMsg.dataset.frText = msg;
+  emptyTitle.textContent = tr(title);
+  emptyMsg.textContent = tr(msg);
 }
 
 document.querySelector('#pick-photos').addEventListener('click', () => filePhotos.click());
@@ -1168,20 +1537,41 @@ document.querySelector('#pick-folder').addEventListener('click', () => fileFolde
 filePhotos.addEventListener('change', () => { if (addFiles(filePhotos.files)) emptyBox.hidden = true; filePhotos.value = ''; });
 fileFolder.addEventListener('change', () => { if (addFiles(fileFolder.files)) emptyBox.hidden = true; fileFolder.value = ''; });
 
+// Dédupliquer les URLs du JSON et de l'API (dont les noms parfois encodés).
+function addRemotePhotos(urls) {
+  const normalized = url => {
+    try { return decodeURIComponent(new URL(url, location.href).pathname); }
+    catch (_) { return String(url); }
+  };
+  const known = new Set(photos.map(p => normalized(p.url)));
+  let added = 0;
+  for (const url of urls) {
+    if (typeof url !== 'string' || !IMAGE_RE.test(url.split(/[?#]/)[0])) continue;
+    const key = normalized(url);
+    if (known.has(key)) continue;
+    known.add(key);
+    photos.push({ url, name: decodeURIComponent(url), idx: photos.length, state: 'loading' });
+    added++;
+  }
+  if (added) {
+    emptyBox.hidden = true;
+    rebuildGrid();
+    scheduleAnalysis();
+  }
+  return added;
+}
 async function start() {
   const { state, urls } = await probeIndex();
-  if (state !== 'ok') {
-    // Repli : lecture directe du dossier PHOTOS/ du repo via l'API GitHub
-    const apiUrls = await githubApiList();
-    if (apiUrls.length) {
-      emptyBox.hidden = true;
-      [...new Set(apiUrls)].sort().forEach(url =>
-        photos.push({ url, name: decodeURIComponent(url), idx: photos.length, state: 'loading' }));
-      rebuildGrid();
-      scheduleAnalysis();
-      return;
-    }
+  if (state === 'ok') {
+    // Afficher immédiatement ce qui est indexé ; l'API complètera ensuite
+    // les PNG (ou autres photos) absents d'un ancien photos.json.
+    addRemotePhotos(urls);
+    githubApiList().then(extra => addRemotePhotos(extra)).catch(error => console.warn('Complément GitHub', error));
+    return;
   }
+  // Fichier photos.json absent ou vide : lire le dossier PHOTOS/ dans GitHub.
+  const apiUrls = await githubApiList();
+  if (addRemotePhotos(apiUrls)) return;
   if (state === 'missing') {
     setEmpty('Aucun index photo trouvé',
       'Le fichier photos.json est introuvable ou inaccessible. Si vous avez ouvert index.html en local '
@@ -1189,22 +1579,16 @@ async function start() {
       + 'ou glissez vos photos sur la page. Sur GitHub Pages, vérifiez que photos.json est bien présent à la racine du site.');
     return;
   }
-  if (state === 'empty') {
-    setEmpty('Aucune photo indexée',
-      'photos.json contient une liste vide et le dossier PHOTOS/ n\'a pas pu être lu via GitHub. Vérifiez que les fichiers JPG/PNG sont présents dans PHOTOS/ sur GitHub, puis relancez le workflow « Galerie C2PA » dans Actions. Vous pouvez aussi importer vos photos avec les boutons ci-dessous.');
-    return;
-  }
-  emptyBox.hidden = true;
-  [...new Set(urls)].sort().forEach(url =>
-    photos.push({ url, name: decodeURIComponent(url), idx: photos.length, state: 'loading' }));
-  rebuildGrid();
-  scheduleAnalysis();
+  setEmpty('Aucune photo indexée',
+    'photos.json contient une liste vide et le dossier PHOTOS/ n\'a pas pu être lu via GitHub. Vérifiez que les fichiers JPG/PNG sont présents dans PHOTOS/ sur GitHub, puis relancez le workflow « Galerie C2PA » dans Actions. Vous pouvez aussi importer vos photos avec les boutons ci-dessous.');
 }
+
+installLanguageSwitch();
 setEmpty('Recherche des photos…', 'Vérification de photos.json et du dossier PHOTOS/…');
 start().catch(error => {
   console.error('[C2PA AFP] Initialisation de la galerie', error);
   setEmpty('La galerie ne peut pas se charger automatiquement',
-    'Erreur : ' + (error?.message || String(error)) + '. Vous pouvez toujours choisir des photos ou un dossier avec les boutons ci-dessous.');
+    (uiLanguage === 'en' ? 'Error: ' : 'Erreur : ') + (error?.message || String(error)) + (uiLanguage === 'en' ? '. You can still choose photos or a folder using the buttons below.' : '. Vous pouvez toujours choisir des photos ou un dossier avec les boutons ci-dessous.'));
 });
 
 /* Mode 9 : volet inférieur tactile et souris, données C2PA identiques au panneau. */
@@ -1286,7 +1670,7 @@ function hideTapReveal(){tapReveal.hidden=true;}
 function toggleTapReveal(photo){
   if(!tapReveal.hidden){hideTapReveal();return;}
   const summary=document.querySelector('#tap-reveal-summary');
-  summary.textContent='Source : '+sourceLabel(photo)+' · '+(LABEL[photo.state]||'Provenance à examiner');
+  summary.textContent=tr('Source : ')+sourceLabel(photo)+' · '+(statusLabel(photo.state)||tr('Provenance à examiner'));
   tapReveal.hidden=false;
 }
 document.querySelector('#tap-reveal-close').addEventListener('click',e=>{e.stopPropagation();hideTapReveal();});

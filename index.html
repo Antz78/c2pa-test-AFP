@@ -621,7 +621,7 @@
       <button class="pick" id="pick-photos" type="button">🖼️ Choisir des photos</button>
       <button class="pick secondary" id="pick-folder" type="button">📁 Choisir un dossier</button>
     </div>
-    <input type="file" id="file-photos" accept="image/jpeg,image/png,image/webp,image/tiff" multiple hidden>
+    <input type="file" id="file-photos" accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,image/jpeg,image/png,image/webp,image/tiff" multiple hidden>
     <input type="file" id="file-folder" webkitdirectory hidden>
     <p class="hint">Sur GitHub Pages, la galerie lit automatiquement le dossier <code>PHOTOS/</code> du repo
     (via <code>photos.json</code> généré par le workflow, ou en repli via l'API GitHub).</p>
@@ -704,7 +704,22 @@
     </section>
   </div>
 </dialog>
-<script type="module" src="./app.js?v=20261106-corner-fix"></script>
+<script type="module" src="./app.js?v=20261106-png-v3"></script>
+<script>
+  // Diagnostic indépendant de app.js si une erreur empêche son exécution.
+  setTimeout(function () {
+    var grid = document.getElementById('grid');
+    var empty = document.getElementById('empty');
+    var title = document.getElementById('empty-title');
+    var msg = document.getElementById('empty-msg');
+    if (!grid || !empty || grid.children.length || !title || !msg) return;
+    if (title.textContent.indexOf('Glissez votre dossier') !== -1) {
+      empty.hidden = false;
+      title.textContent = 'Chargement automatique indisponible';
+      msg.textContent = 'Les photos ne se sont pas affichées. Vous pouvez ouvrir vos photos avec les boutons ci-dessous, puis vérifier le fichier photos.json et le script app.js sur GitHub.';
+    }
+  }, 11000);
+</script>
 <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" nonce="KWg17wLUltBWWOQ0sZa4ZA==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>

@@ -922,7 +922,7 @@ originBadgeStyle.textContent = `
   #grid .demo-overlay.mode-origin-distinguo.loading,
   #lightbox #cr-badge.mode-origin-distinguo.neutral,
   #lightbox #cr-badge.mode-origin-distinguo.none,
-  #lightbox #cr-badge.mode-origin-distinguo.loading {color:#9ca3af!important;}
+  #lightbox #cr-badge.mode-origin-distinguo.loading {color:#cad3df!important;}
   /* Même taille visuelle que l'icône AI pour les 4 marquages. */
   #grid .demo-overlay.mode-origin-distinguo svg,
   #lightbox #cr-badge.mode-origin-distinguo svg,
@@ -933,15 +933,35 @@ originBadgeStyle.textContent = `
     fill:none!important;stroke:currentColor!important;stroke-width:1.75!important;
     stroke-linecap:round!important;stroke-linejoin:round!important;
     opacity:.9!important;
-    filter:drop-shadow(0 1px 2px rgba(0,0,0,.60))!important;
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.55))!important;
     pointer-events:none;
     transform-origin:50% 50%!important;
   }
-  #lightbox #cr-badge.mode-origin-distinguo svg,
+  /* +20 % uniquement sur les quatre icônes Distinguo (le CR officiel reste inchangé). */
+  #grid .demo-overlay.mode-origin-distinguo svg {width:28.8px!important;height:28.8px!important;}
+  #lightbox #cr-badge.mode-origin-distinguo svg {width:31.2px!important;height:31.2px!important;}
   #lightbox #cr-badge.mode-cr-official svg {width:26px!important;height:26px!important;}
+  /* Lisibilité sur fonds noirs, blancs et colorés : double contour, sans pastille. */
+  #grid .demo-overlay.mode-origin-distinguo svg .origin-halo,
+  #lightbox #cr-badge.mode-origin-distinguo svg .origin-halo {
+    fill:none!important;
+    stroke:rgba(10,16,25,.92)!important;
+    stroke-width:3.85!important;
+    stroke-linecap:round!important;stroke-linejoin:round!important;
+    pointer-events:none;
+  }
+  #grid .demo-overlay.mode-origin-distinguo svg .origin-ink,
+  #lightbox #cr-badge.mode-origin-distinguo svg .origin-ink {
+    fill:none!important;
+    stroke:currentColor!important;
+    stroke-width:1.95!important;
+    stroke-linecap:round!important;stroke-linejoin:round!important;
+    pointer-events:none;
+  }
+  /* 50 % -> 65 % d'opacité (+30 % de luminosité perçue au repos). */
   #grid .demo-overlay.mode-origin-distinguo.origin-visible,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible {
-    opacity:.5!important;visibility:visible!important;pointer-events:auto!important;
+    opacity:.65!important;visibility:visible!important;pointer-events:auto!important;
     transform:translateY(0) scale(1)!important;
   }
   #grid .demo-overlay.mode-origin-distinguo.origin-visible:hover,
@@ -949,19 +969,17 @@ originBadgeStyle.textContent = `
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:hover,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:focus-visible {
     opacity:1!important;
-    filter:drop-shadow(0 0 6px currentColor)!important brightness(1.18);
+    filter:drop-shadow(0 0 8px currentColor)!important brightness(1.25);
   }
   #grid .demo-overlay.mode-origin-distinguo.origin-visible:hover svg,
   #grid .demo-overlay.mode-origin-distinguo.origin-visible:focus-visible svg,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:hover svg,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:focus-visible svg {
     opacity:1!important;
-    filter:drop-shadow(0 0 6px currentColor)!important;
+    filter:drop-shadow(0 0 8px currentColor)!important;
     animation:c2paOriginBadgeJiggle .75s ease-in-out infinite;
   }
-  /* Le '?' reste gris car l'origine n'est pas précisée. */
-  #grid .demo-overlay.mode-origin-distinguo.origin-unknown,
-  #lightbox #cr-badge.mode-origin-distinguo.origin-unknown {color:#9ca3af!important;}
+  /* Même le '?' suit l’état C2PA : il n’est PAS forcé en gris. */
   /* CR officiel : mode séparé, immédiat, en haut à droite. */
   #grid .demo-overlay.mode-cr-official,
   #lightbox #cr-badge.mode-cr-official {
@@ -1023,19 +1041,24 @@ function appendOriginBadge(target, photo, state) {
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
   svg.setAttribute('class', `origin-icon origin-icon--${origin}`);
+  // Un seul jeu de dessins, reproduit en deux contours : liseré sombre de contraste,
+  // puis trait fin coloré (vert/orange/rouge/gris selon la validation C2PA).
+  // Même stroke et même gabarit pour les quatre pictogrammes.
+  let iconPaths;
   if (origin === 'capture') {
-    // Appareil photo : silhouette de même hauteur que le AI (environ 14 unités).
-    svg.innerHTML = '<path d="M5 7h3.2l1.2-1.8h5.2L15.8 7H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.35"/>';
+    // Appareil photo compact, objectif centré, optique équilibrée.
+    iconPaths = '<path d="M5.4 8h2.8l1.45-2h4.7l1.45 2h2.8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5.4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.35"/>';
   } else if (origin === 'ai') {
-    // Lettres AI filaires, sans carré, sans cercle, sans pastille.
-    svg.innerHTML = '<path d="M4.2 18.8 9.1 5.2l4.9 13.6 M6 14.1h6.2"/><path d="M16.8 5.2h4.7 M19.15 5.2v13.6 M16.8 18.8h4.7"/>';
+    // AI en lettres vectorielles, sans encadrement : dessin net et géométrique.
+    iconPaths = '<path d="M3.4 18.7 8.4 5.3l5 13.4 M5.35 13.65h6.1"/><path d="M16.3 5.3h5 M18.8 5.3v13.4 M16.3 18.7h5"/>';
   } else if (origin === 'composite') {
-    // Couches superposées : hauteur ramenée à celle du AI (sans effet de grossissement).
-    svg.innerHTML = '<path d="M12 5.2 20.3 9.2 12 13.2 3.7 9.2Z"/><path d="m3.7 12.6 8.3 4 8.3-4"/><path d="m3.7 15.6 8.3 3.9 8.3-3.9"/>';
+    // Calques filaires, même largeur perçue que AI et l’appareil photo.
+    iconPaths = '<path d="M12 4.6 20.8 9.1 12 13.6 3.2 9.1Z"/><path d="m3.2 12.45 8.8 4.5 8.8-4.5"/><path d="m3.2 15.8 8.8 4.5 8.8-4.5"/>';
   } else {
-    // Point d'interrogation filaire élargi et centré, sans cercle, à l'échelle du AI.
-    svg.innerHTML = '<path d="M5.5 9.2C5.5 3.5 18.5 3.5 18.5 9.2C18.5 12.8 12 13 12 15.6"/><path d="M12 19v.2"/>';
+    // Point d’interrogation filaire sans cercle. Proportions adaptées au même cadre.
+    iconPaths = '<path d="M6.3 8.9c0-2.5 2.1-4.35 5.7-4.35s5.7 1.85 5.7 4.35c0 3.25-5.7 3.85-5.7 6.75"/><path d="M12 19.3v.15"/>';
   }
+  svg.innerHTML = `<g class="origin-halo">${iconPaths}</g><g class="origin-ink">${iconPaths}</g>`;
   target.append(svg);
   target.classList.add(originStatusLevel(state), 'origin-' + origin);
   target.dataset.originKind = origin;

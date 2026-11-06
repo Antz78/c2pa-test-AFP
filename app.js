@@ -874,26 +874,105 @@ function ensurePresentationOptions() {
 ensurePresentationOptions();
 const originBadgeStyle = document.createElement('style');
 originBadgeStyle.textContent = `
-  @keyframes c2paOriginBadgeFade { from { opacity: 0; transform: translateY(4px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
-  .demo-overlay.mode-origin-distinguo, #cr-badge.mode-origin-distinguo{
-    right:10px;left:auto;top:auto;bottom:10px;width:34px;height:34px;border-radius:999px;
-    background:rgba(11,18,29,.14);border:1px solid rgba(255,255,255,.22);backdrop-filter:blur(6px);
-    box-shadow:0 6px 18px rgba(0,0,0,.18);color:#aeb9c7;overflow:hidden;
+  /* Quatre pictogrammes en outline, SANS pastille, fond, cercle décoratif ni contour de bouton. */
+  @keyframes c2paOriginBadgeFade {
+    from { opacity: 0; transform: translateY(4px) scale(.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  #grid .demo-overlay.mode-origin-distinguo,
+  #lightbox #cr-badge.mode-origin-distinguo,
+  #grid .demo-overlay.mode-cr-official,
+  #lightbox #cr-badge.mode-cr-official {
+    display:flex!important;align-items:center!important;justify-content:center!important;
+    width:40px!important;height:40px!important;min-width:0!important;min-height:0!important;
+    padding:0!important;margin:0!important;
+    background:transparent!important;border:0!important;border-radius:0!important;
+    box-shadow:none!important;backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+    outline:0!important;
+    filter:none!important;
+  }
+  #grid .demo-overlay.mode-origin-distinguo,
+  #lightbox #cr-badge.mode-origin-distinguo {
+    right:8px!important;left:auto!important;top:auto!important;bottom:8px!important;
     opacity:0;transform:translateY(4px) scale(.96);
   }
-  .demo-overlay.mode-origin-distinguo.origin-visible, #cr-badge.mode-origin-distinguo.delayed-visible{opacity:1;transform:translateY(0) scale(1);}
-  .demo-overlay.mode-origin-distinguo svg, #cr-badge.mode-origin-distinguo svg{width:18px;height:18px;display:block;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;opacity:.98}
-  .demo-overlay.mode-origin-distinguo.ok, #cr-badge.mode-origin-distinguo.ok{color:#88ddb1;border-color:rgba(136,221,177,.45);background:rgba(19,38,30,.26);}
-  .demo-overlay.mode-origin-distinguo.warn, #cr-badge.mode-origin-distinguo.warn{color:#f2bf66;border-color:rgba(242,191,102,.44);background:rgba(55,41,18,.26);}
-  .demo-overlay.mode-origin-distinguo.bad, .demo-overlay.mode-origin-distinguo.error, #cr-badge.mode-origin-distinguo.bad, #cr-badge.mode-origin-distinguo.error{color:#f09090;border-color:rgba(240,144,144,.44);background:rgba(66,24,28,.26);}
-  .demo-overlay.mode-origin-distinguo.neutral, .demo-overlay.mode-origin-distinguo.none, .demo-overlay.mode-origin-distinguo.loading, #cr-badge.mode-origin-distinguo.neutral, #cr-badge.mode-origin-distinguo.none, #cr-badge.mode-origin-distinguo.loading{color:#c7d0da;border-color:rgba(199,208,218,.38);background:rgba(29,37,49,.20);}
-  #grid .demo-overlay.mode-origin-distinguo{animation:c2paOriginBadgeFade .35s ease forwards;animation-delay:2s;}
-  .demo-overlay.mode-origin-distinguo.no-origin, #cr-badge.mode-origin-distinguo.no-origin{opacity:0!important;transform:translateY(4px) scale(.96)!important;pointer-events:none!important;border-color:transparent!important;background:transparent!important;box-shadow:none!important;}
-  .demo-overlay.mode-cr-official, #cr-badge.mode-cr-official{
-    top:10px;right:10px;left:auto;bottom:auto;min-width:28px;height:22px;padding:0 5px;border-radius:999px;
-    background:rgba(255,255,255,.92);border:1px solid rgba(17,20,28,.16);color:#10151d;box-shadow:0 4px 12px rgba(0,0,0,.16);
+  #lightbox #cr-badge.mode-origin-distinguo {
+    right:10px!important;bottom:10px!important;
+    width:45px!important;height:45px!important;
   }
-  .demo-overlay.mode-cr-official svg, #cr-badge.mode-cr-official svg{width:22px;height:14px;display:block}
+  /* La couleur indique exclusivement le statut de validation C2PA. */
+  #grid .demo-overlay.mode-origin-distinguo.ok,
+  #lightbox #cr-badge.mode-origin-distinguo.ok {color:#92E2B1!important;}
+  #grid .demo-overlay.mode-origin-distinguo.warn,
+  #lightbox #cr-badge.mode-origin-distinguo.warn {color:#F3C777!important;}
+  #grid .demo-overlay.mode-origin-distinguo.bad,
+  #grid .demo-overlay.mode-origin-distinguo.error,
+  #lightbox #cr-badge.mode-origin-distinguo.bad,
+  #lightbox #cr-badge.mode-origin-distinguo.error {color:#F29E9E!important;}
+  #grid .demo-overlay.mode-origin-distinguo.neutral,
+  #grid .demo-overlay.mode-origin-distinguo.none,
+  #grid .demo-overlay.mode-origin-distinguo.loading,
+  #lightbox #cr-badge.mode-origin-distinguo.neutral,
+  #lightbox #cr-badge.mode-origin-distinguo.none,
+  #lightbox #cr-badge.mode-origin-distinguo.loading {color:#D3DCE7!important;}
+  /* Même dessin filaire / épaisseur que le bouclier. Taille un peu plus généreuse. */
+  #grid .demo-overlay.mode-origin-distinguo svg,
+  #lightbox #cr-badge.mode-origin-distinguo svg,
+  #grid .demo-overlay.mode-cr-official svg,
+  #lightbox #cr-badge.mode-cr-official svg {
+    display:block!important;width:29px!important;height:29px!important;
+    flex:none!important;overflow:visible!important;
+    fill:none!important;stroke:currentColor!important;stroke-width:1.85!important;
+    stroke-linecap:round!important;stroke-linejoin:round!important;
+    opacity:.88!important;
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,.65))!important;
+    pointer-events:none;
+  }
+  #lightbox #cr-badge.mode-origin-distinguo svg,
+  #lightbox #cr-badge.mode-cr-official svg {width:33px!important;height:33px!important;}
+  /* Même luminosité que le petit bouclier : 50 % au repos, 100 % au survol.
+     Les !important sont nécessaires : le style générique .cr de la page en utilise. */
+  #grid .demo-overlay.mode-origin-distinguo,
+  #lightbox #cr-badge.mode-origin-distinguo {
+    opacity:0!important;visibility:hidden!important;pointer-events:none!important;
+    transition:opacity .35s ease, transform .35s ease!important;
+  }
+  #grid .demo-overlay.mode-origin-distinguo.origin-visible,
+  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible {
+    opacity:.5!important;visibility:visible!important;pointer-events:auto!important;
+    transform:translateY(0) scale(1)!important;
+  }
+  #grid .demo-overlay.mode-origin-distinguo.origin-visible:hover,
+  #grid .demo-overlay.mode-origin-distinguo.origin-visible:focus-visible,
+  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:hover,
+  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:focus-visible {
+    opacity:1!important;
+    filter:drop-shadow(0 0 4px currentColor)!important;
+  }
+  /* Le '?' exprime une origine non déclarée. Il reste gris, quelle que soit la signature. */
+  #grid .demo-overlay.mode-origin-distinguo.origin-unknown,
+  #lightbox #cr-badge.mode-origin-distinguo.origin-unknown {
+    color:#9ca3af!important;
+  }
+  /* CR officiel : mode autonome, immédiat, en haut à droite, sans pastille extérieure. */
+  #grid .demo-overlay.mode-cr-official,
+  #lightbox #cr-badge.mode-cr-official {
+    top:8px!important;right:8px!important;bottom:auto!important;left:auto!important;
+    color:#E4EAF2!important;opacity:.89!important;
+  }
+  #lightbox #cr-badge.mode-cr-official {top:10px!important;right:10px!important;}
+  #grid .demo-overlay.mode-cr-official svg,
+  #lightbox #cr-badge.mode-cr-official svg {width:31px!important;height:31px!important;}
+  #grid .demo-overlay.mode-cr-official:hover svg,
+  #lightbox #cr-badge.mode-cr-official:hover svg,
+  #grid .demo-overlay.mode-origin-distinguo:hover svg,
+  #lightbox #cr-badge.mode-origin-distinguo:hover svg {opacity:1!important;}
+  /* Empêcher les pseudo-éléments d'autres modes de dessiner une pastille. */
+  .demo-overlay.mode-origin-distinguo::before,.demo-overlay.mode-origin-distinguo::after,
+  .demo-overlay.mode-cr-official::before,.demo-overlay.mode-cr-official::after,
+  #cr-badge.mode-origin-distinguo::before,#cr-badge.mode-origin-distinguo::after,
+  #cr-badge.mode-cr-official::before,#cr-badge.mode-cr-official::after {display:none!important;}
 `;
 document.head.append(originBadgeStyle);
 function originStatusLevel(state) {
@@ -933,32 +1012,54 @@ function originTitle(origin) {
   return tr('Origine non précisée');
 }
 function appendOriginBadge(target, photo, state) {
-  const origin = detectDeclaredOrigin(photo);
-  if (!origin) { target.classList.add('no-origin'); target.title = originTitle(null); return; }
-  const ns='http://www.w3.org/2000/svg';
-  const svg=document.createElementNS(ns,'svg');
-  svg.setAttribute('viewBox','0 0 24 24');
-  svg.setAttribute('aria-hidden','true');
+  const origin = detectDeclaredOrigin(photo) || 'unknown';
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
   if (origin === 'capture') {
+    // Appareil photo : même épaisseur de trait que le bouclier.
     svg.innerHTML = '<rect x="4" y="7.2" width="16" height="11" rx="2.4"/><path d="M8 7.2 9.4 5.2h5.2L16 7.2"/><circle cx="12" cy="12.7" r="3.5"/>';
   } else if (origin === 'ai') {
-    svg.innerHTML = '<path d="M12 3.2 13.5 7l3.7 1.5-3.7 1.5L12 13.8 10.5 10 6.8 8.5 10.5 7z"/><path d="M18.2 13.8 19 15.8l2 0.8-2 0.8-.8 2-.8-2-2-.8 2-.8z"/><path d="M6.2 14.3 7 16.1l1.8.8-1.8.8-.8 1.8-.8-1.8-1.8-.8 1.8-.8z"/>';
+    // Lettres AI filaires, sans carré, sans cercle, sans pastille.
+    svg.innerHTML = '<path d="M3.6 19 9 5 14.4 19 M5.5 14.4h7"/><path d="M17.7 5.2h4.4 M19.9 5.2v13.6 M17.7 18.8h4.4"/>';
+  } else if (origin === 'composite') {
+    // Couches superposées filaires.
+    svg.innerHTML = '<path d="M12 3.2 21 8.2 12 13.2 3 8.2Z"/><path d="m3 12.5 9 5 9-5 M3 16.7l9 5 9-5"/>';
   } else {
-    svg.innerHTML = '<path d="M6 8.2h10"/><path d="M8 5.5h10a1.8 1.8 0 0 1 1.8 1.8v7.9A1.8 1.8 0 0 1 18 17H8a1.8 1.8 0 0 1-1.8-1.8V7.3A1.8 1.8 0 0 1 8 5.5Z"/><path d="M4.2 9h10"/><path d="M4.2 12.2h10"/><path d="M4.2 15.4h10"/>';
+    // Point d'interrogation filaire SANS cercle, pour les origines inconnues.
+    svg.innerHTML = '<path d="M8.6 8.1a3.8 3.8 0 1 1 5.8 3.4c-1.8 1.2-2.5 2.2-2.5 4.1"/><path d="M11.9 19.6h.02"/>';
   }
   target.append(svg);
-  target.classList.add(originStatusLevel(state), 'origin-visible');
+  target.classList.add(originStatusLevel(state), 'origin-' + origin);
   target.dataset.originKind = origin;
+  target.setAttribute('aria-label', originTitle(origin));
   target.title = originTitle(origin);
+
+  // Miniatures : 2 secondes à partir de l'activation du mode (ou première apparition).
+  // Conserver l'échéance lorsque l'analyse C2PA rafraîchit la miniature.
+  if (target.id !== 'cr-badge') {
+    const now = performance.now();
+    if (!target._originRevealDeadline) target._originRevealDeadline = now + 2000;
+    clearTimeout(target._originRevealTimer);
+    if (now >= target._originRevealDeadline) target.classList.add('origin-visible');
+    else target._originRevealTimer = setTimeout(() => {
+      if (target.isConnected && target.classList.contains('mode-origin-distinguo')) {
+        target.classList.add('origin-visible');
+      }
+    }, Math.max(0, target._originRevealDeadline - now));
+  }
 }
 function appendOfficialCr(target) {
-  const ns='http://www.w3.org/2000/svg';
-  const svg=document.createElementNS(ns,'svg');
-  svg.setAttribute('viewBox','0 0 34 18');
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns,'svg');
+  svg.setAttribute('viewBox','0 0 24 24');
   svg.setAttribute('aria-hidden','true');
-  svg.innerHTML = '<rect x="1" y="1" width="22" height="16" rx="8" fill="white" stroke="rgba(16,21,29,.18)"/><text x="12" y="11.9" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,sans-serif" font-size="8.8" font-weight="700" fill="#11151d">CR</text><path d="M24.3 3.4h5.4a3.3 3.3 0 0 1 3.3 3.3v4.6a3.3 3.3 0 0 1-3.3 3.3h-5.4" fill="none" stroke="#11151d" stroke-width="1.25" stroke-linecap="round" opacity=".6"/>';
+  // CR filaire, sans rectangle, fond ni pastille circulaire supplémentaire.
+  // Le C dessine un contour ouvert autour du R, proche de l'esprit du pictogramme CR.
+  svg.innerHTML = '<path d="M18.6 6.2a8.9 8.9 0 1 0 0 11.6"/><path d="M9 8.5v7 M9 8.5h3.3a2.1 2.1 0 0 1 0 4.2H9 M11.4 12.7l2.6 2.8"/>';
   target.append(svg);
-  target.title = 'Content Credentials';
+  target.title = 'Content Credentials (CR)';
 }
 let selectedMode = 'random';
 function presentationFor(photo) {
@@ -1036,6 +1137,10 @@ function setCurlTheme(button){
   button.style.setProperty('--curl-shadow',light?'rgba(0,0,0,.27)':'rgba(0,0,0,.72)');
 }
 function addBadgeContent(target, mode, state, photo = null) {
+  if (mode !== 'origin-distinguo') {
+    clearTimeout(target._originRevealTimer);
+    target._originRevealDeadline = null;
+  }
   target.dataset.c2paStatus = state;
   target.replaceChildren();
   target.classList.add('mode-' + mode, originStatusLevel(state), 'state-' + originStatusLevel(state));

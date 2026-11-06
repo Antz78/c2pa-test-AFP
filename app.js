@@ -893,16 +893,12 @@ function ensurePresentationOptions() {
 ensurePresentationOptions();
 const originBadgeStyle = document.createElement('style');
 originBadgeStyle.textContent = `
-  /* Distinguo : 4 pictogrammes outline, même taille et même position. */
-  @keyframes afpDistinguoAppear {
-    from { opacity:0; transform:translateY(3px) scale(.95); }
-    to { opacity:1; transform:translateY(0) scale(1); }
-  }
+  /* Distinguo : 4 pictogrammes homogènes, plus gros, plus lisibles sur tous les fonds. */
   @keyframes afpDistinguoHop {
     0%,100% { transform:translateY(0) scale(1); }
-    25% { transform:translateY(-2px) rotate(-3deg) scale(1.045); }
-    50% { transform:translateY(0) rotate(2deg) scale(1.02); }
-    75% { transform:translateY(-1px) rotate(-1.5deg) scale(1.04); }
+    22% { transform:translateY(-2px) scale(1.05) rotate(-2deg); }
+    48% { transform:translateY(0) scale(1.01) rotate(1.5deg); }
+    72% { transform:translateY(-1.4px) scale(1.045) rotate(-1.2deg); }
   }
   #grid .demo-overlay.mode-origin-distinguo,
   #lightbox #cr-badge.mode-origin-distinguo {
@@ -910,67 +906,62 @@ originBadgeStyle.textContent = `
     display:grid!important;place-items:center!important;
     position:absolute!important;
     padding:0!important;margin:0!important;
-    width:42px!important;height:42px!important;min-width:0!important;min-height:0!important;
-    right:11px!important;bottom:7px!important;left:auto!important;top:auto!important;
+    width:48px!important;height:48px!important;min-width:0!important;min-height:0!important;
+    right:10px!important;bottom:6px!important;left:auto!important;top:auto!important;
     background:transparent!important;border:0!important;border-radius:0!important;
     outline:0!important;box-shadow:none!important;backdrop-filter:none!important;
-    -webkit-backdrop-filter:none!important;
-    overflow:visible!important;
+    -webkit-backdrop-filter:none!important;overflow:visible!important;
     opacity:0!important;visibility:hidden!important;pointer-events:none!important;
-    transform:none!important;
-    transition:filter .2s ease!important;
+    transition:filter .2s ease, opacity .22s ease!important;
     filter:none!important;
   }
   #lightbox #cr-badge.mode-origin-distinguo {
-    width:46px!important;height:46px!important;
-    right:19px!important;bottom:9px!important;
+    width:56px!important;height:56px!important;
+    right:18px!important;bottom:8px!important;
   }
-  /* NE PAS atténuer la couleur à 50-65 %, surtout le blanc sur fond clair. */
   #grid .demo-overlay.mode-origin-distinguo.origin-visible,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible {
-    opacity:1!important;visibility:visible!important;pointer-events:auto!important;
+    opacity:.88!important;visibility:visible!important;pointer-events:auto!important;
   }
-  /* Le double trait s'applique aux dessins et aux lettres, pas à une pastille. */
   #grid .demo-overlay.mode-origin-distinguo svg,
   #lightbox #cr-badge.mode-origin-distinguo svg {
     display:block!important;overflow:visible!important;flex:none!important;
-    width:35px!important;height:35px!important;
-    padding:0!important;margin:0!important;
-    fill:none!important;
-    stroke:none!important;
-    opacity:1!important;
-    transform-origin:center!important;
-    pointer-events:none!important;
-    filter:drop-shadow(0 0 2px rgba(255,255,255,.48)) drop-shadow(0 1px 2px rgba(0,0,0,.70))!important;
+    width:40px!important;height:40px!important;
+    padding:0!important;margin:0!important;fill:none!important;stroke:none!important;
+    opacity:1!important;transform-origin:center!important;pointer-events:none!important;
+    filter:drop-shadow(0 0 1px rgba(255,255,255,.55)) drop-shadow(0 1px 2px rgba(0,0,0,.72))!important;
   }
-  #lightbox #cr-badge.mode-origin-distinguo svg {width:38px!important;height:38px!important;}
+  #lightbox #cr-badge.mode-origin-distinguo svg {width:46px!important;height:46px!important;}
   #grid .demo-overlay.mode-origin-distinguo svg .origin-halo,
   #lightbox #cr-badge.mode-origin-distinguo svg .origin-halo {
-    fill:none!important;stroke:#111827!important;stroke-width:4.15!important;
-    stroke-linecap:round!important;stroke-linejoin:round!important;
-    opacity:.98!important;
+    fill:none!important;stroke:#0b1220!important;stroke-width:4.9!important;
+    stroke-linecap:round!important;stroke-linejoin:round!important;opacity:1!important;
   }
   #grid .demo-overlay.mode-origin-distinguo svg .origin-ink,
   #lightbox #cr-badge.mode-origin-distinguo svg .origin-ink {
-    fill:none!important;stroke:var(--origin-foreground,#FFFFFF)!important;
-    stroke-width:2.30!important;stroke-linecap:round!important;stroke-linejoin:round!important;
+    fill:none!important;stroke:var(--origin-foreground,#cfd6de)!important;
+    stroke-width:2.55!important;stroke-linecap:round!important;stroke-linejoin:round!important;
     opacity:1!important;
+  }
+  #grid .demo-overlay.mode-origin-distinguo.origin-visible:hover,
+  #grid .demo-overlay.mode-origin-distinguo.origin-visible:focus-visible,
+  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:hover,
+  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:focus-visible {
+    opacity:1!important;
+    filter:brightness(1.18) drop-shadow(0 0 5px var(--origin-foreground,#cfd6de)) drop-shadow(0 0 9px rgba(255,255,255,.22))!important;
   }
   #grid .demo-overlay.mode-origin-distinguo.origin-visible:hover svg,
   #grid .demo-overlay.mode-origin-distinguo.origin-visible:focus-visible svg,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:hover svg,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:focus-visible svg {
-    filter:drop-shadow(0 0 4px var(--origin-foreground,#FFFFFF)) drop-shadow(0 0 7px var(--origin-foreground,#FFFFFF))!important;
     animation:afpDistinguoHop .75s ease-in-out infinite!important;
   }
-  /* Toutes les origines, y compris '?', suivent la COULEUR de VALIDATION.
-     Aucune règle .origin-unknown ne peut imposer le gris. */
   #grid .demo-overlay.mode-origin-distinguo::before,
   #grid .demo-overlay.mode-origin-distinguo::after,
   #lightbox #cr-badge.mode-origin-distinguo::before,
   #lightbox #cr-badge.mode-origin-distinguo::after {display:none!important;}
 
-  /* CR officiel : mode autonome et immédiat, inchangé. */
+  /* CR officiel : mode autonome, inchangé. */
   #grid .demo-overlay.mode-cr-official,
   #lightbox #cr-badge.mode-cr-official {
     display:flex!important;align-items:center!important;justify-content:center!important;
@@ -1089,13 +1080,13 @@ function originTitle(origin) {
 /* La teinte du dessin représente le statut C2PA, PAS l'origine.
    Ne jamais déduire la couleur de 'unknown' : un '?' peut être orange ou rouge. */
 const DISTINGUO_COLORS = Object.freeze({
-  ok: '#29EE86',     // vert net
-  warn: '#FFAF12',   // orange franc
-  bad: '#FF626F',    // rouge
-  error: '#FF626F',
-  none: '#FFFFFF',   // blanc franc, lisible grâce au contour sombre
-  neutral: '#FFFFFF',
-  loading: '#FFFFFF'
+  ok: '#35C979',
+  warn: '#F6A928',
+  bad: '#F16B6B',
+  error: '#F16B6B',
+  none: '#C7D0DA',
+  neutral: '#C7D0DA',
+  loading: '#C7D0DA'
 });
 function appendOriginBadge(target, photo, state) {
   const origin = detectDeclaredOrigin(photo) || 'unknown';
@@ -1105,7 +1096,7 @@ function appendOriginBadge(target, photo, state) {
   target.dataset.originStatus = level;
   target.dataset.originKind = origin;
   target.title = originTitle(origin);
-  target.setAttribute('aria-label', originTitle(origin) + ' — ' + (level === 'warn' ? tr('À vérifier') : level === 'bad' ? tr('Échec') : level === 'ok' ? tr('Validé') : 'Statut non confirmé'));
+  target.setAttribute('aria-label', originTitle(origin) + ' — ' + (level === 'warn' ? tr('À vérifier') : level === 'bad' ? tr('Échec') : level === 'ok' ? tr('Validé') : tr('Indéterminé')));
   target.classList.add(level, 'origin-' + origin);
 
   // Dessins optiquement équilibrés sur un cadre SVG 24 × 24 : appareil, AI, calques, ?.

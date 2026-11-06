@@ -874,70 +874,71 @@ function ensurePresentationOptions() {
 ensurePresentationOptions();
 const originBadgeStyle = document.createElement('style');
 originBadgeStyle.textContent = `
-  /* Quatre pictogrammes en outline, SANS pastille, fond, cercle décoratif ni contour de bouton. */
+  /* Quatre pictogrammes homogènes : même position, même taille, même esprit filaire que le bouclier. */
   @keyframes c2paOriginBadgeFade {
     from { opacity: 0; transform: translateY(4px) scale(.96); }
     to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes c2paOriginBadgeJiggle {
+    0%,100% { transform: translateY(0) scale(1); }
+    20% { transform: translateY(-1px) scale(1.03); }
+    40% { transform: translateY(0) scale(1); }
+    60% { transform: translateY(-1.6px) scale(1.035); }
+    80% { transform: translateY(0) scale(1.01); }
   }
   #grid .demo-overlay.mode-origin-distinguo,
   #lightbox #cr-badge.mode-origin-distinguo,
   #grid .demo-overlay.mode-cr-official,
   #lightbox #cr-badge.mode-cr-official {
     display:flex!important;align-items:center!important;justify-content:center!important;
-    width:40px!important;height:40px!important;min-width:0!important;min-height:0!important;
+    width:34px!important;height:34px!important;min-width:0!important;min-height:0!important;
     padding:0!important;margin:0!important;
     background:transparent!important;border:0!important;border-radius:0!important;
     box-shadow:none!important;backdrop-filter:none!important;
-    -webkit-backdrop-filter:none!important;
-    outline:0!important;
-    filter:none!important;
+    -webkit-backdrop-filter:none!important;outline:0!important;
   }
   #grid .demo-overlay.mode-origin-distinguo,
   #lightbox #cr-badge.mode-origin-distinguo {
-    right:8px!important;left:auto!important;top:auto!important;bottom:8px!important;
-    opacity:0;transform:translateY(4px) scale(.96);
+    right:12px!important;left:auto!important;top:auto!important;bottom:7px!important;
+    opacity:0!important;visibility:hidden!important;pointer-events:none!important;
+    transform:translateY(4px) scale(.96)!important;
+    transition:opacity .28s ease, transform .28s ease, filter .22s ease!important;
+    filter:none!important;
   }
   #lightbox #cr-badge.mode-origin-distinguo {
-    right:10px!important;bottom:10px!important;
-    width:45px!important;height:45px!important;
+    right:20px!important;bottom:10px!important;width:36px!important;height:36px!important;
   }
-  /* La couleur indique exclusivement le statut de validation C2PA. */
+  /* Couleur = statut C2PA. */
   #grid .demo-overlay.mode-origin-distinguo.ok,
-  #lightbox #cr-badge.mode-origin-distinguo.ok {color:#92E2B1!important;}
+  #lightbox #cr-badge.mode-origin-distinguo.ok {color:#35c979!important;}
   #grid .demo-overlay.mode-origin-distinguo.warn,
-  #lightbox #cr-badge.mode-origin-distinguo.warn {color:#F3C777!important;}
+  #lightbox #cr-badge.mode-origin-distinguo.warn {color:#f6a928!important;}
   #grid .demo-overlay.mode-origin-distinguo.bad,
   #grid .demo-overlay.mode-origin-distinguo.error,
   #lightbox #cr-badge.mode-origin-distinguo.bad,
-  #lightbox #cr-badge.mode-origin-distinguo.error {color:#F29E9E!important;}
+  #lightbox #cr-badge.mode-origin-distinguo.error {color:#f16b6b!important;}
   #grid .demo-overlay.mode-origin-distinguo.neutral,
   #grid .demo-overlay.mode-origin-distinguo.none,
   #grid .demo-overlay.mode-origin-distinguo.loading,
   #lightbox #cr-badge.mode-origin-distinguo.neutral,
   #lightbox #cr-badge.mode-origin-distinguo.none,
-  #lightbox #cr-badge.mode-origin-distinguo.loading {color:#D3DCE7!important;}
-  /* Même dessin filaire / épaisseur que le bouclier. Taille un peu plus généreuse. */
+  #lightbox #cr-badge.mode-origin-distinguo.loading {color:#9ca3af!important;}
+  /* Même taille visuelle que l'icône AI pour les 4 marquages. */
   #grid .demo-overlay.mode-origin-distinguo svg,
   #lightbox #cr-badge.mode-origin-distinguo svg,
   #grid .demo-overlay.mode-cr-official svg,
   #lightbox #cr-badge.mode-cr-official svg {
-    display:block!important;width:29px!important;height:29px!important;
+    display:block!important;width:24px!important;height:24px!important;
     flex:none!important;overflow:visible!important;
-    fill:none!important;stroke:currentColor!important;stroke-width:1.85!important;
+    fill:none!important;stroke:currentColor!important;stroke-width:1.75!important;
     stroke-linecap:round!important;stroke-linejoin:round!important;
-    opacity:.88!important;
-    filter:drop-shadow(0 1px 2px rgba(0,0,0,.65))!important;
+    opacity:.9!important;
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,.60))!important;
     pointer-events:none;
+    transform-origin:50% 50%!important;
   }
   #lightbox #cr-badge.mode-origin-distinguo svg,
-  #lightbox #cr-badge.mode-cr-official svg {width:33px!important;height:33px!important;}
-  /* Même luminosité que le petit bouclier : 50 % au repos, 100 % au survol.
-     Les !important sont nécessaires : le style générique .cr de la page en utilise. */
-  #grid .demo-overlay.mode-origin-distinguo,
-  #lightbox #cr-badge.mode-origin-distinguo {
-    opacity:0!important;visibility:hidden!important;pointer-events:none!important;
-    transition:opacity .35s ease, transform .35s ease!important;
-  }
+  #lightbox #cr-badge.mode-cr-official svg {width:26px!important;height:26px!important;}
   #grid .demo-overlay.mode-origin-distinguo.origin-visible,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible {
     opacity:.5!important;visibility:visible!important;pointer-events:auto!important;
@@ -948,14 +949,20 @@ originBadgeStyle.textContent = `
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:hover,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:focus-visible {
     opacity:1!important;
-    filter:drop-shadow(0 0 4px currentColor)!important;
+    filter:drop-shadow(0 0 6px currentColor)!important brightness(1.18);
   }
-  /* Le '?' exprime une origine non déclarée. Il reste gris, quelle que soit la signature. */
+  #grid .demo-overlay.mode-origin-distinguo.origin-visible:hover svg,
+  #grid .demo-overlay.mode-origin-distinguo.origin-visible:focus-visible svg,
+  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:hover svg,
+  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:focus-visible svg {
+    opacity:1!important;
+    filter:drop-shadow(0 0 6px currentColor)!important;
+    animation:c2paOriginBadgeJiggle .75s ease-in-out infinite;
+  }
+  /* Le '?' reste gris car l'origine n'est pas précisée. */
   #grid .demo-overlay.mode-origin-distinguo.origin-unknown,
-  #lightbox #cr-badge.mode-origin-distinguo.origin-unknown {
-    color:#9ca3af!important;
-  }
-  /* CR officiel : mode autonome, immédiat, en haut à droite, sans pastille extérieure. */
+  #lightbox #cr-badge.mode-origin-distinguo.origin-unknown {color:#9ca3af!important;}
+  /* CR officiel : mode séparé, immédiat, en haut à droite. */
   #grid .demo-overlay.mode-cr-official,
   #lightbox #cr-badge.mode-cr-official {
     top:8px!important;right:8px!important;bottom:auto!important;left:auto!important;
@@ -965,9 +972,7 @@ originBadgeStyle.textContent = `
   #grid .demo-overlay.mode-cr-official svg,
   #lightbox #cr-badge.mode-cr-official svg {width:31px!important;height:31px!important;}
   #grid .demo-overlay.mode-cr-official:hover svg,
-  #lightbox #cr-badge.mode-cr-official:hover svg,
-  #grid .demo-overlay.mode-origin-distinguo:hover svg,
-  #lightbox #cr-badge.mode-origin-distinguo:hover svg {opacity:1!important;}
+  #lightbox #cr-badge.mode-cr-official:hover svg {opacity:1!important;}
   /* Empêcher les pseudo-éléments d'autres modes de dessiner une pastille. */
   .demo-overlay.mode-origin-distinguo::before,.demo-overlay.mode-origin-distinguo::after,
   .demo-overlay.mode-cr-official::before,.demo-overlay.mode-cr-official::after,
@@ -1017,18 +1022,19 @@ function appendOriginBadge(target, photo, state) {
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', `origin-icon origin-icon--${origin}`);
   if (origin === 'capture') {
-    // Appareil photo : même épaisseur de trait que le bouclier.
-    svg.innerHTML = '<rect x="4" y="7.2" width="16" height="11" rx="2.4"/><path d="M8 7.2 9.4 5.2h5.2L16 7.2"/><circle cx="12" cy="12.7" r="3.5"/>';
+    // Appareil photo : taille visuelle alignée sur AI.
+    svg.innerHTML = '<path d="M5 8.2h3.1l1.2-1.7h5.4l1.2 1.7H19a1.8 1.8 0 0 1 1.8 1.8v7a1.8 1.8 0 0 1-1.8 1.8H5A1.8 1.8 0 0 1 3.2 17v-7A1.8 1.8 0 0 1 5 8.2Z"/><circle cx="12" cy="13.2" r="3.35"/>';
   } else if (origin === 'ai') {
     // Lettres AI filaires, sans carré, sans cercle, sans pastille.
-    svg.innerHTML = '<path d="M3.6 19 9 5 14.4 19 M5.5 14.4h7"/><path d="M17.7 5.2h4.4 M19.9 5.2v13.6 M17.7 18.8h4.4"/>';
+    svg.innerHTML = '<path d="M4.2 18.8 9.1 5.2l4.9 13.6 M6 14.1h6.2"/><path d="M16.8 5.2h4.7 M19.15 5.2v13.6 M16.8 18.8h4.7"/>';
   } else if (origin === 'composite') {
-    // Couches superposées filaires.
-    svg.innerHTML = '<path d="M12 3.2 21 8.2 12 13.2 3 8.2Z"/><path d="m3 12.5 9 5 9-5 M3 16.7l9 5 9-5"/>';
+    // Couches superposées filaires, remplies visuellement comme AI.
+    svg.innerHTML = '<path d="M12 4.2 20.5 8.7 12 13.2 3.5 8.7Z"/><path d="m3.5 12.3 8.5 4.5 8.5-4.5"/><path d="m3.5 15.8 8.5 4 8.5-4"/>';
   } else {
-    // Point d'interrogation filaire SANS cercle, pour les origines inconnues.
-    svg.innerHTML = '<path d="M8.6 8.1a3.8 3.8 0 1 1 5.8 3.4c-1.8 1.2-2.5 2.2-2.5 4.1"/><path d="M11.9 19.6h.02"/>';
+    // Point d'interrogation filaire sans cercle, même gabarit global que AI.
+    svg.innerHTML = '<path d="M8.2 8.2a4 4 0 1 1 6.6 3c-1.65 1.3-2.55 2.3-2.55 4.3"/><path d="M12.2 18.9h.02"/>';
   }
   target.append(svg);
   target.classList.add(originStatusLevel(state), 'origin-' + origin);
@@ -1061,7 +1067,9 @@ function appendOfficialCr(target) {
   target.append(svg);
   target.title = 'Content Credentials (CR)';
 }
-let selectedMode = 'random';
+// Affichage initial : Distinguo ; l'utilisateur peut ensuite choisir un autre mode.
+let selectedMode = 'origin-distinguo';
+modeSelect.value = selectedMode;
 function presentationFor(photo) {
 
   if (!photo.demoStyle || !PRESENTATIONS.includes(photo.demoStyle))

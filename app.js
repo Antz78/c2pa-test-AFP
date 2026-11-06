@@ -1024,17 +1024,17 @@ function appendOriginBadge(target, photo, state) {
   svg.setAttribute('aria-hidden', 'true');
   svg.setAttribute('class', `origin-icon origin-icon--${origin}`);
   if (origin === 'capture') {
-    // Appareil photo : taille visuelle alignée sur AI.
-    svg.innerHTML = '<path d="M5 8.2h3.1l1.2-1.7h5.4l1.2 1.7H19a1.8 1.8 0 0 1 1.8 1.8v7a1.8 1.8 0 0 1-1.8 1.8H5A1.8 1.8 0 0 1 3.2 17v-7A1.8 1.8 0 0 1 5 8.2Z"/><circle cx="12" cy="13.2" r="3.35"/>';
+    // Appareil photo : silhouette de même hauteur que le AI (environ 14 unités).
+    svg.innerHTML = '<path d="M5 7h3.2l1.2-1.8h5.2L15.8 7H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.35"/>';
   } else if (origin === 'ai') {
     // Lettres AI filaires, sans carré, sans cercle, sans pastille.
     svg.innerHTML = '<path d="M4.2 18.8 9.1 5.2l4.9 13.6 M6 14.1h6.2"/><path d="M16.8 5.2h4.7 M19.15 5.2v13.6 M16.8 18.8h4.7"/>';
   } else if (origin === 'composite') {
-    // Couches superposées filaires, remplies visuellement comme AI.
-    svg.innerHTML = '<path d="M12 4.2 20.5 8.7 12 13.2 3.5 8.7Z"/><path d="m3.5 12.3 8.5 4.5 8.5-4.5"/><path d="m3.5 15.8 8.5 4 8.5-4"/>';
+    // Couches superposées : hauteur ramenée à celle du AI (sans effet de grossissement).
+    svg.innerHTML = '<path d="M12 5.2 20.3 9.2 12 13.2 3.7 9.2Z"/><path d="m3.7 12.6 8.3 4 8.3-4"/><path d="m3.7 15.6 8.3 3.9 8.3-3.9"/>';
   } else {
-    // Point d'interrogation filaire sans cercle, même gabarit global que AI.
-    svg.innerHTML = '<path d="M8.2 8.2a4 4 0 1 1 6.6 3c-1.65 1.3-2.55 2.3-2.55 4.3"/><path d="M12.2 18.9h.02"/>';
+    // Point d'interrogation filaire élargi et centré, sans cercle, à l'échelle du AI.
+    svg.innerHTML = '<path d="M5.5 9.2C5.5 3.5 18.5 3.5 18.5 9.2C18.5 12.8 12 13 12 15.6"/><path d="M12 19v.2"/>';
   }
   target.append(svg);
   target.classList.add(originStatusLevel(state), 'origin-' + origin);

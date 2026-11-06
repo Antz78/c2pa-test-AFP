@@ -712,12 +712,44 @@ function readable(value) {
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }
+// Aide courte : repliée par défaut pour préserver la place sur mobile.
+const C2PA_FIELD_HELP = {
+  'Intégrité du fichier': 'Vérifie que le fichier correspond aux données protégées par le manifeste C2PA.',
+  'Signature numérique': 'Vérifie que les informations de provenance n’ont pas été modifiées après leur signature.',
+  'Signataire déclaré': 'Organisme ou entreprise identifié dans le certificat ayant signé la provenance.',
+  'Générateur': 'Appareil ou logiciel ayant créé les informations C2PA.',
+  'Auteur / photographe': 'Personne déclarée comme auteur de la photo ; cette identité n’est pas forcément vérifiée.',
+  'Horodatage certifié (TSA)': 'Date attestée par un tiers indépendant : la signature existait au plus tard à cet instant.',
+  'Date de prise de vue (EXIF)': 'Date enregistrée par l’horloge de l’appareil, modifiable et non certifiée à elle seule.'
+};
+const c2paHelpStyle = document.createElement('style');
+c2paHelpStyle.textContent = `
+  .credential-row .field-label{min-width:0}
+  .c2pa-help{display:inline;position:relative;margin-left:5px;font-weight:400}
+  .c2pa-help>summary{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;width:17px;height:17px;border:1px solid #8498b2;border-radius:50%;color:#b9c9dd;font-size:11px;font-weight:700;cursor:pointer;list-style:none;user-select:none}
+  .c2pa-help>summary::-webkit-details-marker{display:none}
+  .c2pa-help[open]>summary{background:#38536f;color:white}
+  .c2pa-help .c2pa-help-copy{display:block;margin:7px 0 2px;padding:9px 10px;background:#2a3b4e;color:#eef4ff;border-radius:7px;font-size:12px;font-weight:400;line-height:1.45;max-width:290px;overflow-wrap:break-word}
+  .credential-row:has(.c2pa-help[open]) .field-label{overflow:visible}
+  @media(max-width:560px){.c2pa-help .c2pa-help-copy{max-width:min(260px,70vw)}}
+`;
+document.head.append(c2paHelpStyle);
+
 function field(label, value, level = 'ok', help = '') {
   const row = document.createElement('div'); row.className = 'credential-row';
   const marker = document.createElement('span'); marker.className = `signal ${level}`;
   marker.textContent = level === 'ok' ? '✓' : level === 'warn' ? '!' : level === 'bad' ? '×' : 'i';
   marker.setAttribute('aria-label', level === 'ok' ? 'Information présente' : level === 'warn' ? 'À vérifier' : level === 'bad' ? 'Problème détecté' : 'Information indisponible');
-  const name = document.createElement('div'); name.className = 'field-label'; name.textContent = label;
+  const name = document.createElement('div'); name.className = 'field-label'; name.append(document.createTextNode(label));
+  if (C2PA_FIELD_HELP[label]) {
+    const hint = document.createElement('details'); hint.className = 'c2pa-help';
+    const trigger = document.createElement('summary'); trigger.textContent = 'i';
+    trigger.setAttribute('aria-label', 'Explication : ' + label);
+    trigger.title = 'Que signifie « ' + label + ' » ?';
+    const copy = document.createElement('span'); copy.className = 'c2pa-help-copy';
+    copy.textContent = C2PA_FIELD_HELP[label];
+    hint.append(trigger, copy); name.append(hint);
+  }
   const detail = document.createElement('div'); detail.className = 'field-value'; detail.textContent = readable(value);
   if (help) { const note = document.createElement('small'); note.textContent = help; detail.append(note); }
   row.append(marker, name, detail); return row;
@@ -827,8 +859,32 @@ function fillDetails(photo) {
   const signer = firstValue(sig.name, sig.issuer, sig.organization, a.signer);
   const manifest = firstValue(photo.store?.active_manifest, photo.store?.activeManifest);
   const signerLevel = levels.includes('bad') ? 'bad' : levels.includes('warn') || !entries.length ? 'warn' : present(signer);
+  // Ne pas déduire une intégrité valide de la seule présence d'un manifeste.
+  const codes = entries.map(v => String(typeof v === 'string' ? v : v?.code ?? v?.status ?? '').toLowerCase());
+  const hasIntegrityFailure = codes.some(c => /assertion\.datahash\.mismatch|assertion\.bmffhash\.mismatch|assertion\.hasheduri\.mismatch|assertion\.boxhash\.mismatch|hash\.mismatch/.test(c));
+  const hasSignatureFailure = codes.some(c => /claimsignature\.mismatch|claimsignature\.invalid|signature\.invalid/.test(c));
+  const hasUntrustedSigner = codes.some(c => /signingcredential\.untrusted|signingcredential\.unknown/.test(c));
+  // Un statut global positif sans détail ne prouve pas individuellement ces contrôles.
+  const integrityStatus = hasIntegrityFailure ? 'Échec' : 'Non confirmé séparément';
+  const signatureStatus = hasSignatureFailure ? 'Échec' : hasUntrustedSigner ? 'Confiance à vérifier' : 'Non confirmé séparément';
+  const integrityLevel = hasIntegrityFailure ? 'bad' : 'neutral';
+  const signatureLevel = hasSignatureFailure ? 'bad' : hasUntrustedSigner ? 'warn' : 'neutral';
+
+  // Auteur : seulement une déclaration explicite dans les métadonnées C2PA.
+  const assertions = Array.isArray(a.assertions) ? a.assertions : [];
+  const metadata = assertions.filter(x => /metadata|creativework|stds\.schema-org/i.test(String(x?.label ?? x?.type ?? '')))
+    .map(x => x?.data ?? x).filter(x => x && typeof x === 'object');
+  const authorValue = firstValue(a.author, a.creator, ...metadata.map(m => m.author ?? m.creator));
+  function authorName(v) {
+    if (Array.isArray(v)) return v.map(authorName).filter(Boolean).join(', ') || null;
+    if (typeof v === 'string') return v;
+    if (v && typeof v === 'object') return firstValue(v.name, v['@id']);
+    return null;
+  }
+  const author = authorName(authorValue);
+
   const validationSection = document.createElement('section'); validationSection.className = 'credential-section';
-  const vh = document.createElement('h3'); vh.textContent = 'Vérification et confiance';
+  const vh = document.createElement('h3'); vh.textContent = 'Résultats techniques de validation';
   const vl = document.createElement('div'); vl.className = 'validation-list';
   if (entries.length) entries.forEach(v => {
     const line = document.createElement('div'); line.className = 'validation-item';
@@ -840,20 +896,35 @@ function fillDetails(photo) {
     label.textContent = level === 'ok' ? 'Validé' : level === 'warn' ? 'À vérifier' : level === 'bad' ? 'Échec' : 'Indéterminé';
     line.append(marker, code, label); vl.append(line);
   });
-  else { const line = document.createElement('p'); line.textContent = 'Aucun résultat de validation détaillé retourné. La confiance du signataire n’est pas établie par cette absence.'; vl.append(line); }
+  else { const line = document.createElement('p'); line.textContent = 'Aucun résultat détaillé retourné.'; vl.append(line); }
   validationSection.append(vh, vl);
+
+  const extras = document.createElement('details');
+  extras.className = 'credential-section';
+  extras.style.cssText = 'border:1px solid #354252;border-radius:10px;padding:12px;margin-top:16px';
+  const summary = document.createElement('summary');
+  summary.textContent = 'Informations complémentaires';
+  summary.style.cssText = 'cursor:pointer;font-weight:700';
+  extras.append(summary,
+    section('Données du manifeste', [
+      field('Identifiant du manifeste', manifest, 'neutral'),
+      field('Actions déclarées', firstValue(a.actions, assertions.find(x => /actions/i.test(String(x?.label ?? '')))?.data?.actions), 'neutral'),
+      field('Certificat / signataire déclaré', signer, signerLevel),
+    ]), validationSection);
+
   lbSummary.replaceChildren(
-    section('Informations sur le contenu', [
-      field('Titre', a.title, present(a.title)),
+    section('Vérification C2PA', [
+      field('Intégrité du fichier', integrityStatus, integrityLevel),
+      field('Signature numérique', signatureStatus, signatureLevel),
+      field('Signataire déclaré', signer, signerLevel),
       field('Générateur', generator, present(generator)),
-      field('Date de prise de vue (EXIF)', photo.exifDate ?? 'Non disponible', 'neutral', 'Date déclarée par l’appareil, non certifiée par un horodatage TSA.'),
-      field('Horodatage certifié (TSA)', 'Non vérifié', 'neutral', 'La présence et la validité d’un jeton TSA ne sont pas vérifiées par cette interface.'),
     ]),
-    section('Signature et provenance', [
-      field('Signataire déclaré', signer, signerLevel, signerLevel === 'warn' ? 'Le certificat du signataire n’est pas reconnu comme fiable.' : signerLevel === 'bad' ? 'Un problème de validation est signalé.' : ''),
-      field('Manifeste actif', manifest, present(manifest)),
+    section('Informations sur la photo', [
+      field('Auteur / photographe', author, 'neutral'),
+      field('Horodatage certifié (TSA)', 'Non vérifié', 'neutral'),
+      field('Date de prise de vue (EXIF)', photo.exifDate ?? 'Non disponible', 'neutral'),
     ]),
-    validationSection
+    extras
   );
   lbJson.textContent = JSON.stringify(photo.store, null, 2);
 
@@ -1081,3 +1152,151 @@ function toggleTapReveal(photo){
 }
 document.querySelector('#tap-reveal-close').addEventListener('click',e=>{e.stopPropagation();hideTapReveal();});
 document.querySelector('#tap-reveal-more').addEventListener('click',e=>{e.stopPropagation();if(currentIdx>=0)openSidePanel(photos[currentIdx]);});
+
+
+/* AFP bilingual interface — FR / EN. No changes to C2PA verification. */
+const AFP_TRANSLATIONS = new Map(Object.entries({
+  'Galerie & Content Credentials':'Gallery & Content Credentials',
+  'Toutes':'All','Vérifiées':'Verified','À vérifier':'Needs review','Échecs':'Failures','Sans C2PA':'No C2PA',
+  'Présentation :':'Display:','Aléatoire':'Random','Icône info':'Info icon','Onglet':'Tab','Panneau visible':'Visible panel','Bandeau':'Banner','Pastille de confiance':'Trust indicator','Coin de page transparent':'Transparent page corner','Bordure lumineuse':'Glowing border','Sceau de provenance':'Provenance seal','Volet à tirer depuis le bas':'Pull-up panel','Petit bouclier coché':'Small checked shield','Bouclier coloré après 2 secondes':'Colored shield after 2 seconds','Pastille retardée (1,5 s)':'Delayed indicator (1.5 s)','Révélation au tap / glissement':'Tap / swipe to reveal','Légende liée sous la photo':'Linked caption below photo','Redistribuer':'Reshuffle',
+  'Glissez votre dossier PHOTOS/ (ou vos photos) sur cette page':'Drop your PHOTOS/ folder (or photos) onto this page',
+  'Choisir des photos':'Choose photos','Choisir un dossier':'Choose a folder','Relâchez pour importer vos photos':'Release to import your photos',
+  'Sur GitHub Pages, la galerie lit automatiquement le dossier':'On GitHub Pages, the gallery automatically reads the',
+  'du repo':'folder in the repository','généré par le workflow, ou en repli via l’API GitHub':'generated by the workflow, or via the GitHub API as a fallback',
+  'Fermer':'Close','Provenance numérique':'Digital provenance','Voir les informations complètes':'View full details',
+  'Informations techniques du manifeste':'Technical manifest details',
+  'Informations complémentaires':'Additional information',
+  'Les Content Credentials décrivent une provenance déclarée et les contrôles effectués. Ils ne garantissent pas la véracité de la scène.':'Content Credentials describe declared provenance and performed checks. They do not guarantee that the scene is truthful.',
+  'Vert : information présente ou contrôle réussi. Orange : confiance à vérifier. Rouge : échec de contrôle. Une information renseignée ne garantit pas qu\'elle soit vraie.':'Green: information present or check passed. Amber: trust needs review. Red: check failed. A populated field does not guarantee accuracy.',
+  'Qu’est-ce que le C2PA ?':'What is C2PA?',
+  'Le C2PA (Coalition for Content Provenance and Authenticity) est un standard ouvert permettant d’associer des Content Credentials à un fichier : origine déclarée, historique et modifications enregistrées.':'C2PA (Coalition for Content Provenance and Authenticity) is an open standard for attaching Content Credentials to a file: declared origin, history and recorded changes.',
+  'Il contribue à la transparence sur la provenance.':'It improves transparency about provenance.',
+  'Il peut signaler des modifications ou des étapes impliquant l’IA si elles ont été enregistrées.':'It may disclose edits or AI-related steps if they were recorded.',
+  'Il ne prouve pas la véracité de la scène ni la fiabilité de la source.':'It does not prove that a scene is real or that a source is trustworthy.',
+  'Un certificat non reconnu comme fiable ne signifie pas automatiquement que l’image a été falsifiée.':'An untrusted certificate does not automatically mean the image was manipulated.',
+  'Vérification C2PA':'C2PA verification','Informations sur la photo':'Photo information',
+  'Intégrité du fichier':'File integrity','Signature numérique':'Digital signature','Signataire déclaré':'Declared signer',
+  'Générateur':'Generator','Auteur / photographe':'Author / photographer','Horodatage certifié (TSA)':'Certified timestamp (TSA)',
+  'Date de prise de vue (EXIF)':'Capture date (EXIF)',
+  'Données du manifeste':'Manifest data','Identifiant du manifeste':'Manifest ID','Actions déclarées':'Declared actions',
+  'Certificat / signataire déclaré':'Certificate / declared signer','Résultats techniques de validation':'Technical validation results',
+  'Vérifie que le fichier correspond aux données protégées par le manifeste C2PA.':'Checks that the file matches the data protected by the C2PA manifest.',
+  'Vérifie que les informations de provenance n’ont pas été modifiées après leur signature.':'Checks that provenance information has not been altered since signing.',
+  'Organisme ou entreprise identifié dans le certificat ayant signé la provenance.':'Organization or company identified in the certificate that signed the provenance.',
+  'Appareil ou logiciel ayant créé les informations C2PA.':'Device or software that generated the C2PA information.',
+  'Personne déclarée comme auteur de la photo ; cette identité n’est pas forcément vérifiée.':'Person identified as the photo author; their identity may not have been verified.',
+  'Date attestée par un tiers indépendant : la signature existait au plus tard à cet instant.':'Time attested by an independent authority: the signature existed no later than this time.',
+  'Date enregistrée par l’horloge de l’appareil, modifiable et non certifiée à elle seule.':'Date recorded by the camera clock; editable and not independently certified.',
+  'Non renseigné':'Not provided','Non disponible':'Unavailable','Non vérifié':'Not verified',
+  'Non confirmé séparément':'Not independently confirmed','Confiance à vérifier':'Trust needs review',
+  'Échec':'Failed','Validé':'Validated','Indéterminé':'Undetermined',
+  'Information présente':'Information available','Problème détecté':'Problem detected','Information indisponible':'Information unavailable',
+  'Aucun résultat détaillé retourné.':'No detailed results returned.',
+  'Vérification C2PA en cours…':'C2PA verification in progress…','Analyse en cours…':'Analyzing…','Chargement…':'Loading…',
+  'Chargement des informations…':'Loading information…','Aucun manifeste C2PA intégré détecté.':'No embedded C2PA manifest detected.',
+  'Aucun manifeste trouvé.':'No manifest found.',
+  'Manifeste présent, mais une ou plusieurs vérifications ont échoué.':'Manifest found, but one or more checks failed.',
+  'Manifeste présent, mais la confiance du signataire nécessite une vérification.':'Manifest found, but signer trust needs further verification.',
+  'Manifeste présent, mais la validation complète ne peut pas être confirmée.':'Manifest found, but full validation cannot be confirmed.',
+  'Contrôles C2PA retournés sans problème signalé. Cela ne prouve pas la véracité de la scène.':'C2PA checks reported no issues. This does not prove the scene is truthful.',
+  'Les indicateurs verts signalent des informations présentes ou des contrôles réussis ; orange signifie « à vérifier » ; rouge indique un échec de contrôle. Une information renseignée ne prouve pas à elle seule qu’elle est vraie.':'Green indicators mean information is present or a check passed; amber means further review is needed; red indicates a failed check. A populated field alone does not prove accuracy.',
+  'Le C2PA (Coalition for Content Provenance and Authenticity) est un standard ouvert qui permet d’associer à un fichier des':'C2PA (Coalition for Content Provenance and Authenticity) is an open standard for attaching',
+  ': des informations sur sa provenance et, lorsqu’elles sont renseignées, sur les étapes de sa création ou de ses modifications.':': information about a file’s provenance and, when recorded, the steps of its creation or editing.',
+  'Il aide à retracer l’origine déclarée et l’historique d’un contenu.':'It helps trace the declared origin and history of content.',
+  'Il peut signaler certaines modifications ou utilisations d’outils d’IA, si elles ont été enregistrées.':'It may disclose certain edits or AI-tool use if these were recorded.',
+  'Il ne garantit pas qu’une scène est vraie, ni qu’une source est digne de confiance.':'It does not guarantee that a scene is real or that a source is trustworthy.',
+  'À retenir :':'Key point:',
+  '« certificat non fiable » ne signifie pas automatiquement « image falsifiée ». Cela signifie que la confiance cryptographique n’a pas pu être établie par le système de vérification utilisé.':'“Untrusted certificate” does not automatically mean “manipulated image.” It means cryptographic trust could not be established by the verification system used.',
+  'Rechercher un fichier…':'Search files…','Rechercher':'Search','Filtres':'Filters',
+  'Choisir la présentation C2PA':'Choose C2PA display','Fermer le panneau':'Close panel','Fermer le volet':'Close panel',
+  'Masquer les informations':'Hide information','Afficher les Content Credentials':'Show Content Credentials',
+  'Photo précédente':'Previous photo','Photo suivante':'Next photo','Source :':'Source:',
+  'Impossible de lire le manifeste :':'Unable to read manifest:',
+  'Que signifie «':'What does “','» ?':'” mean?','Explication :':'Explanation:',
+  'photographies':'photos','photographie':'photo','photos chargées':'photos loaded',
+  'Aucun fichier':'No file','Aucune photo':'No photo','Aucun résultat':'No results'
+}));
+const AFP_TEXT_ORIGINAL = new WeakMap();
+const AFP_ATTR_ORIGINAL = new WeakMap();
+let afpLanguage = 'fr';
+const afpLangBtn = document.createElement('button');
+afpLangBtn.id = 'afp-language-toggle';
+afpLangBtn.type = 'button';
+afpLangBtn.className = 'chip';
+afpLangBtn.setAttribute('aria-label', 'Switch language to English');
+afpLangBtn.textContent = 'EN';
+afpLangBtn.title = 'English';
+const afpHeader = document.querySelector('header');
+if (afpHeader) afpHeader.append(afpLangBtn);
+const afpLangCss = document.createElement('style');
+afpLangCss.textContent = `#afp-language-toggle{flex-shrink:0;min-width:42px;font-weight:700;white-space:nowrap;order:100}#afp-language-toggle:focus-visible{outline:2px solid #79baff;outline-offset:3px}`;
+document.head.append(afpLangCss);
+function afpTranslate(s) {
+  if (AFP_TRANSLATIONS.has(s)) return AFP_TRANSLATIONS.get(s);
+  // Preserve symbols and spacing surrounding labels.
+  const trimmed = s.trim();
+  if (AFP_TRANSLATIONS.has(trimmed)) return s.replace(trimmed, AFP_TRANSLATIONS.get(trimmed));
+  let out = s;
+  // Translate longer status sentences and short UI fragments without touching filenames/technical codes.
+  for (const [fr,en] of AFP_TRANSLATIONS) {
+    if (fr.length > 8 && out.includes(fr)) out = out.split(fr).join(en);
+  }
+  return out;
+}
+function afpLocalizeNode(node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    if (node.parentElement?.closest('pre,code,script,style')) return;
+    let original = AFP_TEXT_ORIGINAL.get(node);
+    if (original === undefined) { original = node.nodeValue; AFP_TEXT_ORIGINAL.set(node,original); }
+    const wanted = afpLanguage === 'en' ? afpTranslate(original) : original;
+    if (node.nodeValue !== wanted) node.nodeValue = wanted;
+    return;
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return;
+  if (node.matches('script,style,pre,code')) return;
+  for (const attr of ['title','aria-label','placeholder']) {
+    if (!node.hasAttribute(attr) || node === afpLangBtn) continue;
+    let record = AFP_ATTR_ORIGINAL.get(node);
+    if (!record) { record = {}; AFP_ATTR_ORIGINAL.set(node,record); }
+    if (!(attr in record)) record[attr] = node.getAttribute(attr);
+    const wanted = afpLanguage === 'en' ? afpTranslate(record[attr]) : record[attr];
+    if (node.getAttribute(attr) !== wanted) node.setAttribute(attr,wanted);
+  }
+  for (const child of node.childNodes) afpLocalizeNode(child);
+}
+let afpTranslationBusy = false;
+function afpApplyLanguage() {
+  if (afpTranslationBusy) return;
+  afpTranslationBusy = true;
+  afpLocalizeNode(document.body);
+  document.documentElement.lang = afpLanguage;
+  afpLangBtn.textContent = afpLanguage === 'en' ? 'FR' : 'EN';
+  afpLangBtn.title = afpLanguage === 'en' ? 'Français' : 'English';
+  afpLangBtn.setAttribute('aria-label', afpLanguage === 'en' ? 'Passer en français' : 'Switch language to English');
+  afpTranslationBusy = false;
+}
+afpLangBtn.addEventListener('click', () => {
+  afpLanguage = afpLanguage === 'fr' ? 'en' : 'fr';
+  afpApplyLanguage();
+});
+const afpTranslationObserver = new MutationObserver(mutations => {
+  if (afpTranslationBusy) return;
+  // Application updates may replace text on existing nodes; track their new French source.
+  for (const m of mutations) {
+    if (m.type === 'characterData') {
+      const n = m.target;
+      const original = AFP_TEXT_ORIGINAL.get(n);
+      if (original !== undefined && n.nodeValue !== original && n.nodeValue !== afpTranslate(original)) AFP_TEXT_ORIGINAL.set(n,n.nodeValue);
+    }
+    if (m.type === 'attributes' && m.attributeName && m.target !== afpLangBtn) {
+      const record = AFP_ATTR_ORIGINAL.get(m.target);
+      if (record && m.attributeName in record) {
+        const current = m.target.getAttribute(m.attributeName);
+        if (current !== record[m.attributeName] && current !== afpTranslate(record[m.attributeName])) record[m.attributeName] = current;
+      }
+    }
+  }
+  afpApplyLanguage();
+});
+afpTranslationObserver.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['title','aria-label','placeholder']});
+afpApplyLanguage();

@@ -94,7 +94,7 @@ const TRANSLATIONS = {
     'photos.json is empty and the PHOTOS/ folder could not be listed via GitHub. Check that JPG/PNG files exist in PHOTOS/ and rerun the “Galerie C2PA” workflow in Actions. You can also import photos using the buttons below.',
   'Vérifie que le fichier correspond aux données protégées par le manifeste C2PA.': 'Checks whether the file matches the data protected by the C2PA manifest.',
   'Vérifie que les informations de provenance n’ont pas été modifiées après leur signature.': 'Checks that provenance information has not changed since it was signed.',
-  'Organisme ou entreprise identifié dans le certificat ayant signé la provenance.': 'Organization or company identified by the certificate used to sign the provenance.',
+  'Nom indiqué dans le certificat C2PA. Le vert confirme seulement sa présence, pas que le certificat est reconnu comme fiable.': 'Name shown in the C2PA certificate. Green only means the name is present, not that the certificate is trusted.',
   'Appareil ou logiciel ayant créé les informations C2PA.': 'Camera or software that created the C2PA information.',
   'Personne déclarée comme auteur de la photo ; cette identité n’est pas forcément vérifiée.': 'Person named as the photo author; their identity is not necessarily verified.',
   'Date attestée par un tiers indépendant : la signature existait au plus tard à cet instant.': 'Time certified by an independent authority: the signature existed no later than this time.',
@@ -1182,7 +1182,7 @@ function readable(value) {
 const C2PA_FIELD_HELP = {
   'Intégrité du fichier': 'Vérifie que le fichier correspond aux données protégées par le manifeste C2PA.',
   'Signature numérique': 'Vérifie que les informations de provenance n’ont pas été modifiées après leur signature.',
-  'Signataire déclaré': 'Organisme ou entreprise identifié dans le certificat ayant signé la provenance.',
+  'Signataire déclaré': 'Nom indiqué dans le certificat C2PA. Le vert confirme seulement sa présence, pas que le certificat est reconnu comme fiable.',
   'Générateur': 'Appareil ou logiciel ayant créé les informations C2PA.',
   'Auteur / photographe': 'Personne déclarée comme auteur de la photo ; cette identité n’est pas forcément vérifiée.',
   'Horodatage certifié (TSA)': 'Date attestée par un tiers indépendant : la signature existait au plus tard à cet instant.',
@@ -1514,7 +1514,9 @@ function fillDetails(photo) {
   const generator = firstValue(a.claim_generator, a.claimGenerator, a.claim_generator_info?.[0]?.name, a.claimGeneratorInfo?.[0]?.name);
   const signer = firstValue(sig.name, sig.issuer, sig.organization, a.signer);
   const manifest = firstValue(photo.store?.active_manifest, photo.store?.activeManifest);
-  const signerLevel = levels.includes('bad') ? 'bad' : levels.includes('warn') || !entries.length ? 'warn' : present(signer);
+  // Le vert indique uniquement qu'un signataire est renseigné, pas que son certificat est fiable.
+  // Les échecs C2PA éventuels restent visibles dans les contrôles de signature et dans le bandeau.
+  const signerLevel = present(signer);
   // Ne pas déduire une intégrité valide de la seule présence d'un manifeste.
   const codes = entries.map(v => String(typeof v === 'string' ? v : v?.code ?? v?.status ?? '').toLowerCase());
   const hasIntegrityFailure = codes.some(c => /assertion\.datahash\.mismatch|assertion\.bmffhash\.mismatch|assertion\.hasheduri\.mismatch|assertion\.boxhash\.mismatch|hash\.mismatch/.test(c));
@@ -1577,7 +1579,7 @@ function fillDetails(photo) {
     section('Vérification C2PA', [
       field('Intégrité du fichier', integrityStatus, integrityLevel),
       field('Signature numérique', signatureStatus, signatureLevel, hasUntrustedSignerWarning && signatureLevel === 'warn' ? tr('Certificat non reconnu comme fiable par ce vérificateur.') : ''),
-      field('Signataire déclaré', signer, signerLevel, hasUntrustedSignerWarning && signerLevel === 'warn' ? tr('Nom déclaré, mais identité non confirmée par ce vérificateur.') : ''),
+      field('Signataire déclaré', signer, signerLevel, hasUntrustedSignerWarning ? tr('Nom déclaré, mais identité non confirmée par ce vérificateur.') : ''),
       field('Générateur', generator, present(generator)),
     ]),
     section('Informations sur la photo', [

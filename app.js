@@ -4,7 +4,11 @@ console.info('[C2PA AFP] Version filtres v3 chargée — badges À vérifier');
 //  A) ./photos.json existe (généré par GitHub Action à chaque push) → galerie automatique.
 //  B) Sinon, glissez le dossier PHOTOS/ (ou des photos) directement sur la page.
 // Version SDK fixée pour éviter les changements silencieux du CDN.
-import { createC2pa, Reader } from 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.15.4/+esm';
+// Le SDK C2PA est chargé à la demande : une panne du CDN ne bloque PLUS la galerie.
+const SDK_URL = 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.15.4/+esm';
+let C2paReader = null;
+let sdkFailure = null;
+
 
 /* curl.js — Repli de coin de page WebGL, autonome, sans dépendance.
    Usage : const ctl = mountCurl(bouton); ctl.updatePhoto(imgElement, cardCanvas);
@@ -189,15 +193,27 @@ let currentIdx = -1;
 let c2pa = null;
 let c2paPromise = null;
 
+// Réseau borné dans le temps : une API GitHub lente ne doit pas laisser l'écran vide.
+async function fetchWithTimeout(url, options = {}, milliseconds = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), milliseconds);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /* ---------- Mode A : index photos.json (généré par CI) ---------- */
 /* Renvoie { state: 'ok' | 'missing' | 'empty', urls: string[] } */
 async function probeIndex() {
   try {
-    const r = await fetch('./photos.json', { cache: 'no-store' });
+    const r = await fetchWithTimeout('./photos.json', { cache: 'no-store' }, 5500);
     if (!r.ok) return { state: 'missing', urls: [] };
     const data = await r.json();
-    const list = Array.isArray(data) ? data : data.photos;
-    const urls = (list ?? []).map(p => p.url ?? p).filter(u => IMAGE_RE.test(u));
+    const list = Array.isArray(data) ? data : (Array.isArray(data?.photos) ? data.photos : []);
+    const urls = list.map(p => typeof p === 'string' ? p : p?.url)
+      .filter(u => typeof u === 'string' && IMAGE_RE.test(u.split(/[?#]/)[0]));
     return { state: urls.length ? 'ok' : 'empty', urls };
   } catch (_) {
     return { state: 'missing', urls: [] }; // file:// : fetch bloqué par le navigateur
@@ -223,7 +239,7 @@ async function githubApiList() {
   const repo = detectRepo();
   if (!repo) return [];
   try {
-    const r = await fetch(`https://api.github.com/repos/${repo}/contents/PHOTOS`, { cache: 'no-store' });
+    const r = await fetchWithTimeout(`https://api.github.com/repos/${repo}/contents/PHOTOS?ref=main`, { cache: 'no-store' }, 6500);
     if (!r.ok) return [];
     const items = await r.json();
     if (!Array.isArray(items)) return [];
@@ -239,7 +255,7 @@ function collectFromDataTransfer(items) {
   const files = [];
   const walk = (entry, path = '') => new Promise(resolve => {
     if (entry.isFile) {
-      entry.file(f => { f.webkitRelativePath = path + entry.name; files.push(f); resolve(); },
+      entry.file(f => { try { Object.defineProperty(f, 'webkitRelativePath', { value: path + entry.name, configurable: true }); } catch (_) {} files.push(f); resolve(); },
                  () => resolve());
     } else if (entry.isDirectory) {
       const reader = entry.createReader();
@@ -277,7 +293,7 @@ function addFiles(files) {
     });
   });
   rebuildGrid();
-  analyzeAll();
+  scheduleAnalysis(); // Laisser le navigateur afficher les vignettes avant la vérification.
   return true;
 }
 
@@ -287,7 +303,9 @@ function addFiles(files) {
 async function readExifMetadata(blob) {
   const result = { date: null, artist: null, copyright: null };
   try {
-    const data = new DataView(await blob.arrayBuffer());
+    // Les segments EXIF JPEG sont généralement proches du début du fichier.
+    // Évite de charger deux fois des photographies haute résolution en mémoire.
+    const data = new DataView(await blob.slice(0, 4 * 1024 * 1024).arrayBuffer());
     if (data.byteLength < 12 || data.getUint16(0) !== 0xffd8) return result;
     let pos = 2;
     while (pos + 4 <= data.byteLength) {
@@ -349,61 +367,92 @@ async function readExifMetadata(blob) {
 
 /* ---------- Analyse C2PA ---------- */
 async function ensureC2pa() {
-  if (!c2paPromise) c2paPromise = createC2pa({ wasmSrc: WASM_URL }).catch(e => { c2paPromise = null; throw e; });
+  if (sdkFailure) throw sdkFailure;
+  if (!c2paPromise) {
+    c2paPromise = (async () => {
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Chargement du moteur C2PA trop long')), 12000));
+      const sdk = await Promise.race([import(SDK_URL), timeout]);
+      C2paReader = sdk.Reader;
+      if (typeof sdk.createC2pa !== 'function' || !C2paReader) throw new Error('SDK C2PA incomplet');
+      c2pa = await sdk.createC2pa({ wasmSrc: WASM_URL });
+      return c2pa;
+    })().catch(error => { sdkFailure = error; throw error; });
+  }
   return c2paPromise;
 }
 
 async function getBlob(photo) {
   if (photo.blob) return photo.blob;
-  return (await fetch(photo.url, { cache: 'no-store' })).blob();
+  const response = await fetchWithTimeout(photo.url, { cache: 'no-store' }, 30000);
+  if (!response.ok) throw new Error('Photo inaccessible (HTTP ' + response.status + ')');
+  return response.blob();
 }
 
 async function analyze(photo) {
-  if (photo.state !== 'loading') return; // déjà analysée
+  if (photo.state !== 'loading') return;
+  if (photo.analysisPromise) return photo.analysisPromise;
+  photo.analysisPromise = (async () => {
+    let reader = null;
+    try {
+      const blob = await getBlob(photo);
+      photo.exif = await readExifMetadata(blob);
+      photo.exifDate = photo.exif.date;
+      const engine = await ensureC2pa();
+      const ext = photo.name.split('.').pop().toLowerCase();
+      // Le SDK attend d'abord le type MIME, pas seulement l'extension « jpg ».
+      reader = await C2paReader.fromBlob(engine, blob.type || ({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp'}[ext] || ext), blob);
+      if (!reader) { photo.state = 'none'; return; }
+      const store = await reader.manifestStore();
+      photo.store = store;
+      const entries = store?.validation_status ?? store?.validationStatus ?? [];
+      const list = Array.isArray(entries) ? entries : [];
+      photo.validation = list;
+      photo.active = await reader.activeManifest().catch(() => null);
+      const levels = list.map(validationLevel);
+      photo.state = !store ? 'none' : levels.includes('bad') ? 'bad' : levels.includes('warn') ? 'warn' : levels.includes('neutral') || !list.length ? 'warn' : 'ok';
+    } catch (error) {
+      console.warn('C2PA', photo.name, error);
+      photo.error = error?.message ?? String(error);
+      photo.state = 'error';
+    } finally {
+      if (reader) try { await reader.free(); } catch (_) {}
+    }
+  })().finally(() => { photo.analysisPromise = null; });
+  return photo.analysisPromise;
+}
+
+// Traiter les photos l'une après l'autre, APRÈS l'affichage de la grille.
+// Une validation C2PA lourde ne peut ainsi plus retarder l'apparition des images.
+let analysisScheduled = false;
+let analysisRunning = false;
+function scheduleAnalysis() {
+  if (analysisScheduled || analysisRunning) return;
+  analysisScheduled = true;
+  setTimeout(() => { analysisScheduled = false; analyzeAll().catch(error => console.warn('Analyse galerie', error)); }, 800);
+}
+async function analyzeAll() {
+  if (analysisRunning) return;
+  analysisRunning = true;
   try {
-    const blob = await getBlob(photo);
-    photo.exif = await readExifMetadata(blob);
-    photo.exifDate = photo.exif.date;
-    const engine = await ensureC2pa();
-    const ext = photo.name.split('.').pop().toLowerCase();
-    const reader = await Reader.fromBlob(engine, ext, blob);
-    if (!reader) { photo.state = 'none'; return; }
-    const store = await reader.manifestStore();
-    photo.store = store;
-    const entries = store?.validation_status ?? store?.validationStatus ?? [];
-    const list = Array.isArray(entries) ? entries : [];
-    photo.validation = list;
-    photo.active = await reader.activeManifest().catch(() => null);
-    const levels = list.map(validationLevel);
-    photo.state = !store ? 'none' : levels.includes('bad') ? 'bad' : levels.includes('warn') ? 'warn' : levels.includes('neutral') || !list.length ? 'warn' : 'ok';
-    try { await reader.free(); } catch (_) {}
-  } catch (e) {
-    console.warn('C2PA', photo.name, e);
-    photo.error = e.message ?? String(e);
-    photo.state = 'error';
+    while (true) {
+      const photo = photos.find(p => p.state === 'loading' && !p.processing);
+      if (!photo) break;
+      photo.processing = true;
+      // Un rendu intermédiaire est possible même avec beaucoup de fichiers.
+      await new Promise(resolve => setTimeout(resolve, 75));
+      await analyze(photo);
+      photo.processing = false;
+      renderCard(photo);
+      updateCount();
+      refreshSidePanel(photo);
+    }
+  } finally {
+    analysisRunning = false;
   }
 }
 
-/* Analyse parallèle limitée */
-async function analyzeAll(limit = 3) {
-  const queue = () => photos.filter(p => p.state === 'loading' && !p.processing);
-  const workers = Array.from({ length: limit }, async () => {
-    while (queue().length) {
-      const p = queue().shift();
-      if (!p || p.processing) continue;
-      p.processing = true;
-      await analyze(p);
-      p.processing = false;
-      renderCard(p);
-      updateCount();
-      refreshSidePanel(p);
-    }
-  });
-  await Promise.all(workers);
-}
-
 /* ---------- Rendu ---------- */
-const LABEL = { loading: 'Analyse…', ok: 'Vérifiée', warn: 'À vérifier ⚠', bad: 'Échec ✕', none: 'Sans C2PA', error: 'Erreur de lecture' };
+const LABEL = { loading: 'À analyser', ok: 'Vérifiée', warn: 'À vérifier ⚠', bad: 'Échec ✕', none: 'Sans C2PA', error: 'Analyse indisponible' };
 
 const PRESENTATIONS = ['info','afp','direct','banner','status','corner','glow','seal','drawer','shield','delayed','tap','caption','shield-delayed'];
 const modeSelect = document.querySelector('#presentation-mode');
@@ -737,37 +786,101 @@ const C2PA_FIELD_HELP = {
   'Horodatage certifié (TSA)': 'Date attestée par un tiers indépendant : la signature existait au plus tard à cet instant.',
   'Date de prise de vue (EXIF)': 'Date enregistrée par l’horloge de l’appareil, modifiable et non certifiée à elle seule.'
 };
+// Les aides sont intégrées dans la ligne (et non en superposition) :
+// pas de débordement dans le panneau latéral ni sur téléphone.
 const c2paHelpStyle = document.createElement('style');
 c2paHelpStyle.textContent = `
-  .credential-row .field-label{min-width:0}
-  .c2pa-help{display:inline;position:relative;margin-left:5px;font-weight:400}
-  .c2pa-help>summary{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;width:17px;height:17px;border:1px solid #8498b2;border-radius:50%;color:#b9c9dd;font-size:11px;font-weight:700;cursor:pointer;list-style:none;user-select:none}
-  .c2pa-help>summary::-webkit-details-marker{display:none}
-  .c2pa-help[open]>summary{background:#38536f;color:white}
-  .c2pa-help .c2pa-help-copy{display:block;margin:7px 0 2px;padding:9px 10px;background:#2a3b4e;color:#eef4ff;border-radius:7px;font-size:12px;font-weight:400;line-height:1.45;max-width:290px;overflow-wrap:break-word}
-  .credential-row:has(.c2pa-help[open]) .field-label{overflow:visible}
-  @media(max-width:560px){.c2pa-help .c2pa-help-copy{max-width:min(260px,70vw)}}
+  .credential-row .field-label{min-width:0;display:flex;flex-wrap:nowrap;align-items:center;gap:7px;line-height:1.35;overflow-wrap:anywhere}
+  .credential-row .field-label > span{min-width:0;flex:1 1 auto;overflow-wrap:anywhere}
+  .credential-row .field-value{min-width:0;overflow-wrap:anywhere}
+  .credential-row .c2pa-help-trigger{
+    display:inline-grid;place-items:center;flex:0 0 17px;
+    width:17px;height:17px;min-width:17px;max-width:17px;
+    margin:0;padding:0;box-sizing:border-box;
+    border:1px solid #8197ad;border-radius:50%;background:transparent;
+    color:inherit;font:700 11px/1 Arial,sans-serif;cursor:pointer;
+    vertical-align:middle;opacity:.9;box-shadow:none;
+  }
+  .credential-row .c2pa-help-trigger:hover,
+  .credential-row .c2pa-help-trigger:focus-visible,
+  .credential-row .c2pa-help-trigger[aria-expanded="true"]{
+    background:#446887;border-color:#7299bc;color:#fff;outline-offset:2px;opacity:1;
+  }
+  .credential-row .c2pa-help-copy{
+    grid-column:1 / -1;min-width:0;
+    margin:3px 0 0;padding:9px 11px;
+    background:#293b4d;color:#f0f5ff;border-radius:7px;
+    font-size:12px;font-weight:400;line-height:1.5;
+    overflow-wrap:anywhere;white-space:normal;
+  }
+  .credential-row .c2pa-help-copy[hidden]{display:none!important}
+  #side-panel .credential-row{
+    grid-template-columns:22px minmax(0,38%) minmax(0,1fr);
+    gap:5px 8px;align-items:start;padding:11px 10px;min-width:0;
+  }
+  #side-panel .credential-row .signal{margin-top:1px}
+  #side-panel .credential-row .field-label{min-width:0}
+  #side-panel .credential-row .field-value{min-width:0;line-height:1.4}
+  #side-panel .credential-row .c2pa-help-copy{display:block;position:static}
+  .bottom-sheet .credential-row .c2pa-help-copy,
+  dialog#credentials .credential-row .c2pa-help-copy{
+    background:#eef4fa;color:#233a52;border:1px solid #dce7f1;
+  }
+  @media(max-width:480px){
+    #side-panel .credential-row,
+    .bottom-sheet .credential-row{
+      grid-template-columns:22px minmax(0,1fr);gap:3px 9px;
+    }
+    #side-panel .credential-row > .signal,
+    .bottom-sheet .credential-row > .signal{grid-column:1;grid-row:1 / span 2}
+    #side-panel .credential-row > .field-label,
+    .bottom-sheet .credential-row > .field-label{grid-column:2;grid-row:1}
+    #side-panel .credential-row > .field-value,
+    .bottom-sheet .credential-row > .field-value{grid-column:2;grid-row:2}
+    #side-panel .credential-row > .c2pa-help-copy,
+    .bottom-sheet .credential-row > .c2pa-help-copy{grid-column:1 / -1;grid-row:3}
+    #side-panel .credential-row{padding:10px}
+    dialog#credentials .credential-row > .c2pa-help-copy{grid-column:1 / -1}
+  }
 `;
 document.head.append(c2paHelpStyle);
+
+// Délégation du clic : fonctionne aussi dans les copies du panneau et du volet.
+document.addEventListener('click', event => {
+  const trigger = event.target.closest?.('.c2pa-help-trigger');
+  if (!trigger) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const row = trigger.closest('.credential-row');
+  const copy = row?.querySelector('.c2pa-help-copy');
+  if (!copy) return;
+  copy.hidden = !copy.hidden;
+  trigger.setAttribute('aria-expanded', String(!copy.hidden));
+});
 
 function field(label, value, level = 'ok', help = '') {
   const row = document.createElement('div'); row.className = 'credential-row';
   const marker = document.createElement('span'); marker.className = `signal ${level}`;
   marker.textContent = level === 'ok' ? '✓' : level === 'warn' ? '!' : level === 'bad' ? '×' : 'i';
   marker.setAttribute('aria-label', level === 'ok' ? 'Information présente' : level === 'warn' ? 'À vérifier' : level === 'bad' ? 'Problème détecté' : 'Information indisponible');
-  const name = document.createElement('div'); name.className = 'field-label'; name.append(document.createTextNode(label));
-  if (C2PA_FIELD_HELP[label]) {
-    const hint = document.createElement('details'); hint.className = 'c2pa-help';
-    const trigger = document.createElement('summary'); trigger.textContent = 'i';
-    trigger.setAttribute('aria-label', 'Explication : ' + label);
-    trigger.title = 'Que signifie « ' + label + ' » ?';
-    const copy = document.createElement('span'); copy.className = 'c2pa-help-copy';
-    copy.textContent = C2PA_FIELD_HELP[label];
-    hint.append(trigger, copy); name.append(hint);
-  }
+  const name = document.createElement('div'); name.className = 'field-label';
+  const labelText = document.createElement('span'); labelText.textContent = label;
+  name.append(labelText);
   const detail = document.createElement('div'); detail.className = 'field-value'; detail.textContent = readable(value);
   if (help) { const note = document.createElement('small'); note.textContent = help; detail.append(note); }
-  row.append(marker, name, detail); return row;
+  row.append(marker, name, detail);
+  if (C2PA_FIELD_HELP[label]) {
+    const trigger = document.createElement('button'); trigger.type = 'button';
+    trigger.className = 'c2pa-help-trigger'; trigger.textContent = 'i';
+    trigger.setAttribute('aria-label', 'Explication : ' + label);
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.title = 'Que signifie « ' + label + ' » ?';
+    name.append(trigger);
+    const copy = document.createElement('div'); copy.className = 'c2pa-help-copy';
+    copy.textContent = C2PA_FIELD_HELP[label]; copy.hidden = true;
+    row.append(copy);
+  }
+  return row;
 }
 function section(title, rows) {
   const block = document.createElement('section'); block.className = 'credential-section';
@@ -778,7 +891,7 @@ function section(title, rows) {
 function present(value) { return value === null || value === undefined || value === '' ? 'neutral' : 'ok'; }
 function validationLevel(v) {
   const code = String(typeof v === 'string' ? v : v?.code ?? v?.status ?? '').toLowerCase();
-  if (/mismatch|invalid|tamper|failure|error|hash|revoked|expired/.test(code)) return 'bad';
+  if (/mismatch|invalid|tamper|failure|error|revoked|expired/.test(code)) return 'bad';
   if (/untrusted|unknown|unsupported|warning|not.?trusted/.test(code)) return 'warn';
   if (/success|valid|trusted|match/.test(code)) return 'ok';
   return 'neutral';
@@ -851,8 +964,11 @@ function fillDetails(photo) {
     return;
   }
   if (photo.state === 'error') {
-    setStatusLine('error', `Impossible de lire le manifeste : ${photo.error}`);
-    lbSummary.replaceChildren();
+    setStatusLine('error', `Analyse C2PA indisponible : ${photo.error}`);
+    lbSummary.replaceChildren(section('Informations sur la photo', [
+      field('Auteur / photographe', photo.exif?.artist || photo.exif?.copyright || null, 'neutral'),
+      field('Date de prise de vue (EXIF)', photo.exifDate || null, 'neutral')
+    ]));
     lbJson.textContent = photo.error;
     return;
   }
@@ -1062,7 +1178,7 @@ async function start() {
       [...new Set(apiUrls)].sort().forEach(url =>
         photos.push({ url, name: decodeURIComponent(url), idx: photos.length, state: 'loading' }));
       rebuildGrid();
-      analyzeAll();
+      scheduleAnalysis();
       return;
     }
   }
@@ -1074,19 +1190,22 @@ async function start() {
     return;
   }
   if (state === 'empty') {
-    setEmpty('L\'index photos.json est vide',
-      'Aucune photo n\'est indexée. Sur GitHub Pages : vérifiez que vos photos sont bien dans PHOTOS/ à la racine '
-      + 'du repo, et que gallery.yml se trouve dans .github/workflows/ à la racine (pas dans PHOTOS/ !) — c\'est ce '
-      + 'workflow qui régénère l\'index à chaque push. En attendant, vous pouvez importer des photos ci-dessous.');
+    setEmpty('Aucune photo indexée',
+      'photos.json contient une liste vide et le dossier PHOTOS/ n\'a pas pu être lu via GitHub. Vérifiez que les fichiers JPG/PNG sont présents dans PHOTOS/ sur GitHub, puis relancez le workflow « Galerie C2PA » dans Actions. Vous pouvez aussi importer vos photos avec les boutons ci-dessous.');
     return;
   }
   emptyBox.hidden = true;
   [...new Set(urls)].sort().forEach(url =>
     photos.push({ url, name: decodeURIComponent(url), idx: photos.length, state: 'loading' }));
   rebuildGrid();
-  analyzeAll();
+  scheduleAnalysis();
 }
-start();
+setEmpty('Recherche des photos…', 'Vérification de photos.json et du dossier PHOTOS/…');
+start().catch(error => {
+  console.error('[C2PA AFP] Initialisation de la galerie', error);
+  setEmpty('La galerie ne peut pas se charger automatiquement',
+    'Erreur : ' + (error?.message || String(error)) + '. Vous pouvez toujours choisir des photos ou un dossier avec les boutons ci-dessous.');
+});
 
 /* Mode 9 : volet inférieur tactile et souris, données C2PA identiques au panneau. */
 const bottomSheet=document.querySelector('#bottom-sheet');

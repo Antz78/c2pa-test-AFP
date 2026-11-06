@@ -1,3 +1,4 @@
+console.info('[AFP Distinguo] Marqueurs vectoriels à contraste élevé, couleurs C2PA réelles — v20261106-v5-origin-panel');
 console.info('[C2PA AFP] Version filtres v3 chargée — badges À vérifier');
 // Galerie C2PA — 100 % statique, fonctionne sur GitHub Pages.
 // Deux modes :
@@ -84,6 +85,21 @@ const TRANSLATIONS = {
   'Voir la provenance C2PA': 'View C2PA provenance',
   'Voir les informations C2PA': 'View C2PA information',
   'Origine non précisée': 'Origin not specified',
+  'Origine du contenu (C2PA)': 'Content origin (C2PA)',
+  'Catégorie affichée': 'Displayed category',
+  'digitalSourceType (IPTC)': 'digitalSourceType (IPTC)',
+  'Action C2PA': 'C2PA action',
+  'Photo capturée': 'Captured photo',
+  'Image générée par IA': 'AI-generated image',
+  'Image composée': 'Composite image',
+  'Origine inconnue': 'Unknown origin',
+  'Image composée déclarée': 'Declared composite image',
+  'Non renseigné dans le manifeste': 'Not specified in the manifest',
+  'Sans manifeste C2PA intégré': 'No embedded C2PA manifest',
+  'Lecture C2PA indisponible': 'C2PA reading unavailable',
+  'Analyse en cours': 'Analysis in progress',
+  'La catégorie résume le champ digitalSourceType déclaré dans le manifeste actif. Elle ne prouve pas la véracité de la scène.': 'The category summarizes the digitalSourceType declared in the active manifest. It does not prove the scene is real.',
+  'Aucune valeur digitalSourceType utilisable : « inconnue » est une classification de cette interface, pas une valeur officielle C2PA.': 'No usable digitalSourceType value: “unknown” is a classification by this interface, not an official C2PA value.',
   'Prise du réel déclarée': 'Declared real-world capture',
   'Image générée par IA déclarée': 'Declared AI-generated image',
   'Image composite avec contenu IA déclaré': 'Declared composite image with AI-generated content',
@@ -100,6 +116,9 @@ const TRANSLATIONS = {
   'Vérifie que les informations de provenance n’ont pas été modifiées après leur signature.': 'Checks that provenance information has not changed since it was signed.',
   'Organisme ou entreprise identifié dans le certificat ayant signé la provenance.': 'Organization or company identified by the certificate used to sign the provenance.',
   'Appareil ou logiciel ayant créé les informations C2PA.': 'Camera or software that created the C2PA information.',
+  'Interprétation simplifiée de digitalSourceType par cette galerie. Ce n’est pas un verdict sur la vérité de la scène.': 'Simplified interpretation of digitalSourceType by this gallery. It is not a verdict about the scene.',
+  'Champ standard de la spécification C2PA, dont la valeur est un identifiant officiel IPTC. Une valeur absente ne prouve rien sur la génération IA.': 'A field defined by C2PA using an official IPTC identifier. A missing value proves nothing about AI generation.',
+  'Action (par exemple c2pa.created) portant le digitalSourceType dans le manifeste actif.': 'The action (for example c2pa.created) carrying digitalSourceType in the active manifest.',
   'Personne déclarée comme auteur de la photo ; cette identité n’est pas forcément vérifiée.': 'Person named as the photo author; their identity is not necessarily verified.',
   'Date attestée par un tiers indépendant : la signature existait au plus tard à cet instant.': 'Time certified by an independent authority: the signature existed no later than this time.',
   'Date enregistrée par l’horloge de l’appareil, modifiable et non certifiée à elle seule.': 'Date recorded by the camera clock; it can be modified and is not independently certified.',
@@ -874,199 +893,246 @@ function ensurePresentationOptions() {
 ensurePresentationOptions();
 const originBadgeStyle = document.createElement('style');
 originBadgeStyle.textContent = `
-  /* Quatre pictogrammes homogènes : même position, même taille, même esprit filaire que le bouclier. */
-  @keyframes c2paOriginBadgeFade {
-    from { opacity: 0; transform: translateY(4px) scale(.96); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
+  /* Distinguo : 4 pictogrammes outline, même taille et même position. */
+  @keyframes afpDistinguoAppear {
+    from { opacity:0; transform:translateY(3px) scale(.95); }
+    to { opacity:1; transform:translateY(0) scale(1); }
   }
-  @keyframes c2paOriginBadgeJiggle {
-    0%,100% { transform: translateY(0) scale(1); }
-    20% { transform: translateY(-1px) scale(1.03); }
-    40% { transform: translateY(0) scale(1); }
-    60% { transform: translateY(-1.6px) scale(1.035); }
-    80% { transform: translateY(0) scale(1.01); }
-  }
-  #grid .demo-overlay.mode-origin-distinguo,
-  #lightbox #cr-badge.mode-origin-distinguo,
-  #grid .demo-overlay.mode-cr-official,
-  #lightbox #cr-badge.mode-cr-official {
-    display:flex!important;align-items:center!important;justify-content:center!important;
-    width:34px!important;height:34px!important;min-width:0!important;min-height:0!important;
-    padding:0!important;margin:0!important;
-    background:transparent!important;border:0!important;border-radius:0!important;
-    box-shadow:none!important;backdrop-filter:none!important;
-    -webkit-backdrop-filter:none!important;outline:0!important;
+  @keyframes afpDistinguoHop {
+    0%,100% { transform:translateY(0) scale(1); }
+    25% { transform:translateY(-2px) rotate(-3deg) scale(1.045); }
+    50% { transform:translateY(0) rotate(2deg) scale(1.02); }
+    75% { transform:translateY(-1px) rotate(-1.5deg) scale(1.04); }
   }
   #grid .demo-overlay.mode-origin-distinguo,
   #lightbox #cr-badge.mode-origin-distinguo {
-    right:12px!important;left:auto!important;top:auto!important;bottom:7px!important;
+    box-sizing:border-box!important;
+    display:grid!important;place-items:center!important;
+    position:absolute!important;
+    padding:0!important;margin:0!important;
+    width:42px!important;height:42px!important;min-width:0!important;min-height:0!important;
+    right:11px!important;bottom:7px!important;left:auto!important;top:auto!important;
+    background:transparent!important;border:0!important;border-radius:0!important;
+    outline:0!important;box-shadow:none!important;backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+    overflow:visible!important;
     opacity:0!important;visibility:hidden!important;pointer-events:none!important;
-    transform:translateY(4px) scale(.96)!important;
-    transition:opacity .28s ease, transform .28s ease, filter .22s ease!important;
+    transform:none!important;
+    transition:filter .2s ease!important;
     filter:none!important;
   }
   #lightbox #cr-badge.mode-origin-distinguo {
-    right:20px!important;bottom:10px!important;width:36px!important;height:36px!important;
+    width:46px!important;height:46px!important;
+    right:19px!important;bottom:9px!important;
   }
-  /* Couleur = statut C2PA. */
-  #grid .demo-overlay.mode-origin-distinguo.ok,
-  #lightbox #cr-badge.mode-origin-distinguo.ok {color:#35c979!important;}
-  #grid .demo-overlay.mode-origin-distinguo.warn,
-  #lightbox #cr-badge.mode-origin-distinguo.warn {color:#f6a928!important;}
-  #grid .demo-overlay.mode-origin-distinguo.bad,
-  #grid .demo-overlay.mode-origin-distinguo.error,
-  #lightbox #cr-badge.mode-origin-distinguo.bad,
-  #lightbox #cr-badge.mode-origin-distinguo.error {color:#f16b6b!important;}
-  #grid .demo-overlay.mode-origin-distinguo.neutral,
-  #grid .demo-overlay.mode-origin-distinguo.none,
-  #grid .demo-overlay.mode-origin-distinguo.loading,
-  #lightbox #cr-badge.mode-origin-distinguo.neutral,
-  #lightbox #cr-badge.mode-origin-distinguo.none,
-  #lightbox #cr-badge.mode-origin-distinguo.loading {color:#cad3df!important;}
-  /* Même taille visuelle que l'icône AI pour les 4 marquages. */
+  /* NE PAS atténuer la couleur à 50-65 %, surtout le blanc sur fond clair. */
+  #grid .demo-overlay.mode-origin-distinguo.origin-visible,
+  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible {
+    opacity:1!important;visibility:visible!important;pointer-events:auto!important;
+  }
+  /* Le double trait s'applique aux dessins et aux lettres, pas à une pastille. */
   #grid .demo-overlay.mode-origin-distinguo svg,
-  #lightbox #cr-badge.mode-origin-distinguo svg,
-  #grid .demo-overlay.mode-cr-official svg,
-  #lightbox #cr-badge.mode-cr-official svg {
-    display:block!important;width:24px!important;height:24px!important;
-    flex:none!important;overflow:visible!important;
-    fill:none!important;stroke:currentColor!important;stroke-width:1.75!important;
-    stroke-linecap:round!important;stroke-linejoin:round!important;
-    opacity:.9!important;
-    filter:drop-shadow(0 1px 1px rgba(0,0,0,.55))!important;
-    pointer-events:none;
-    transform-origin:50% 50%!important;
+  #lightbox #cr-badge.mode-origin-distinguo svg {
+    display:block!important;overflow:visible!important;flex:none!important;
+    width:35px!important;height:35px!important;
+    padding:0!important;margin:0!important;
+    fill:none!important;
+    stroke:none!important;
+    opacity:1!important;
+    transform-origin:center!important;
+    pointer-events:none!important;
+    filter:drop-shadow(0 0 2px rgba(255,255,255,.48)) drop-shadow(0 1px 2px rgba(0,0,0,.70))!important;
   }
-  /* +20 % uniquement sur les quatre icônes Distinguo (le CR officiel reste inchangé). */
-  #grid .demo-overlay.mode-origin-distinguo svg {width:28.8px!important;height:28.8px!important;}
-  #lightbox #cr-badge.mode-origin-distinguo svg {width:31.2px!important;height:31.2px!important;}
-  #lightbox #cr-badge.mode-cr-official svg {width:26px!important;height:26px!important;}
-  /* Lisibilité sur fonds noirs, blancs et colorés : double contour, sans pastille. */
+  #lightbox #cr-badge.mode-origin-distinguo svg {width:38px!important;height:38px!important;}
   #grid .demo-overlay.mode-origin-distinguo svg .origin-halo,
   #lightbox #cr-badge.mode-origin-distinguo svg .origin-halo {
-    fill:none!important;
-    stroke:rgba(10,16,25,.92)!important;
-    stroke-width:3.85!important;
+    fill:none!important;stroke:#111827!important;stroke-width:4.15!important;
     stroke-linecap:round!important;stroke-linejoin:round!important;
-    pointer-events:none;
+    opacity:.98!important;
   }
   #grid .demo-overlay.mode-origin-distinguo svg .origin-ink,
   #lightbox #cr-badge.mode-origin-distinguo svg .origin-ink {
-    fill:none!important;
-    stroke:currentColor!important;
-    stroke-width:1.95!important;
-    stroke-linecap:round!important;stroke-linejoin:round!important;
-    pointer-events:none;
-  }
-  /* 50 % -> 65 % d'opacité (+30 % de luminosité perçue au repos). */
-  #grid .demo-overlay.mode-origin-distinguo.origin-visible,
-  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible {
-    opacity:.65!important;visibility:visible!important;pointer-events:auto!important;
-    transform:translateY(0) scale(1)!important;
-  }
-  #grid .demo-overlay.mode-origin-distinguo.origin-visible:hover,
-  #grid .demo-overlay.mode-origin-distinguo.origin-visible:focus-visible,
-  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:hover,
-  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:focus-visible {
+    fill:none!important;stroke:var(--origin-foreground,#FFFFFF)!important;
+    stroke-width:2.30!important;stroke-linecap:round!important;stroke-linejoin:round!important;
     opacity:1!important;
-    filter:drop-shadow(0 0 8px currentColor)!important brightness(1.25);
   }
   #grid .demo-overlay.mode-origin-distinguo.origin-visible:hover svg,
   #grid .demo-overlay.mode-origin-distinguo.origin-visible:focus-visible svg,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:hover svg,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:focus-visible svg {
-    opacity:1!important;
-    filter:drop-shadow(0 0 8px currentColor)!important;
-    animation:c2paOriginBadgeJiggle .75s ease-in-out infinite;
+    filter:drop-shadow(0 0 4px var(--origin-foreground,#FFFFFF)) drop-shadow(0 0 7px var(--origin-foreground,#FFFFFF))!important;
+    animation:afpDistinguoHop .75s ease-in-out infinite!important;
   }
-  /* Même le '?' suit l’état C2PA : il n’est PAS forcé en gris. */
-  /* CR officiel : mode séparé, immédiat, en haut à droite. */
+  /* Toutes les origines, y compris '?', suivent la COULEUR de VALIDATION.
+     Aucune règle .origin-unknown ne peut imposer le gris. */
+  #grid .demo-overlay.mode-origin-distinguo::before,
+  #grid .demo-overlay.mode-origin-distinguo::after,
+  #lightbox #cr-badge.mode-origin-distinguo::before,
+  #lightbox #cr-badge.mode-origin-distinguo::after {display:none!important;}
+
+  /* CR officiel : mode autonome et immédiat, inchangé. */
   #grid .demo-overlay.mode-cr-official,
   #lightbox #cr-badge.mode-cr-official {
+    display:flex!important;align-items:center!important;justify-content:center!important;
+    width:34px!important;height:34px!important;
+    padding:0!important;margin:0!important;
+    background:transparent!important;border:0!important;border-radius:0!important;
+    box-shadow:none!important;outline:0!important;
     top:8px!important;right:8px!important;bottom:auto!important;left:auto!important;
     color:#E4EAF2!important;opacity:.89!important;
   }
   #lightbox #cr-badge.mode-cr-official {top:10px!important;right:10px!important;}
   #grid .demo-overlay.mode-cr-official svg,
-  #lightbox #cr-badge.mode-cr-official svg {width:31px!important;height:31px!important;}
-  #grid .demo-overlay.mode-cr-official:hover svg,
-  #lightbox #cr-badge.mode-cr-official:hover svg {opacity:1!important;}
-  /* Empêcher les pseudo-éléments d'autres modes de dessiner une pastille. */
-  .demo-overlay.mode-origin-distinguo::before,.demo-overlay.mode-origin-distinguo::after,
-  .demo-overlay.mode-cr-official::before,.demo-overlay.mode-cr-official::after,
-  #cr-badge.mode-origin-distinguo::before,#cr-badge.mode-origin-distinguo::after,
-  #cr-badge.mode-cr-official::before,#cr-badge.mode-cr-official::after {display:none!important;}
+  #lightbox #cr-badge.mode-cr-official svg {
+    display:block!important;width:31px!important;height:31px!important;
+    fill:none!important;stroke:currentColor!important;stroke-width:1.85!important;
+    stroke-linejoin:round!important;stroke-linecap:round!important;
+  }
+  #grid .demo-overlay.mode-cr-official::before,
+  #grid .demo-overlay.mode-cr-official::after,
+  #cr-badge.mode-cr-official::before,
+  #cr-badge.mode-cr-official::after {display:none!important;}
+  @media (prefers-reduced-motion:reduce) {
+    #grid .demo-overlay.mode-origin-distinguo svg,
+    #lightbox #cr-badge.mode-origin-distinguo svg {animation:none!important;}
+  }
 `;
 document.head.append(originBadgeStyle);
+
 function originStatusLevel(state) {
   return ['ok','warn','bad','error','none','loading','neutral'].includes(state) ? state : 'neutral';
 }
-function collectValuesForKeys(value, matcher, out = [], seen = new WeakSet(), depth = 0) {
-  if (value == null || depth > 8) return out;
-  if (typeof value === 'string') return out;
-  if (Array.isArray(value)) {
-    for (const item of value) collectValuesForKeys(item, matcher, out, seen, depth + 1);
-    return out;
+/* Unique source de vérité pour les pictogrammes ET le panneau.
+   On lit l'action C2PA du MANIFESTE ACTIF et pas le nom de l'application,
+   le fichier EXIF ni les ingrédients historiques. */
+function c2paActiveManifest(photo) {
+  if (photo?.active && typeof photo.active === 'object') return photo.active;
+  const store = photo?.store ?? {};
+  const key = store.active_manifest ?? store.activeManifest;
+  const m = store.manifests;
+  if (m && key && typeof m === 'object') {
+    return Array.isArray(m) ? m.find(x => [x?.label, x?.id].includes(key)) ?? null : m[key] ?? null;
   }
-  if (typeof value !== 'object') return out;
-  if (seen.has(value)) return out;
-  seen.add(value);
-  for (const [key, val] of Object.entries(value)) {
-    if (matcher.test(String(key)) && typeof val === 'string') out.push(val);
-    collectValuesForKeys(val, matcher, out, seen, depth + 1);
+  return null;
+}
+function c2paSourceDetails(photo) {
+  const manifest = c2paActiveManifest(photo);
+  const results = [];
+  if (!manifest) return { kind: 'unknown', raw: null, action: null, hasField: false };
+
+  function asObject(v) {
+    if (typeof v === 'string' && /^\s*[\[{]/.test(v)) {
+      try { return JSON.parse(v); } catch (_) { return null; }
+    }
+    return v;
   }
-  return out;
+  function collect(v, actionName = null, depth = 0) {
+    v = asObject(v);
+    if (!v || depth > 8) return;
+    if (Array.isArray(v)) { v.forEach(x => collect(x, actionName, depth + 1)); return; }
+    if (typeof v !== 'object') return;
+    const action = typeof v.action === 'string' ? v.action : actionName;
+    const source = v.digitalSourceType ?? v.digital_source_type ?? v['digital-source-type'];
+    if (typeof source === 'string' && source.trim()) {
+      results.push({ uri: source.trim(), action: action ?? null });
+    }
+    // Ces champs forment le conteneur de l'assertion actions ; ne pas suivre
+    // 'ingredients', 'thumbnail' ou tout autre manifeste d'ingredient.
+    for (const key of ['actions', 'data', 'value', 'payload']) {
+      if (v[key] != null) collect(v[key], action, depth + 1);
+    }
+  }
+  // Assertions de type c2pa.actions, qu'elles soient v1 ou v2.
+  const assertions = Array.isArray(manifest.assertions)
+    ? manifest.assertions
+    : Object.entries(manifest.assertions ?? {}).map(([label, data]) => ({ label, data }));
+  for (const assertion of assertions) {
+    if (/^c2pa\.actions(?:\.v\d+)?(?:__\d+)?$/i.test(String(assertion?.label ?? assertion?.type ?? ''))) {
+      collect(assertion?.data ?? assertion?.value ?? assertion);
+    }
+  }
+  // Certains SDK exposent l'assertion directement sur le manifeste actif.
+  if (results.length === 0) collect(manifest.actions);
+
+  // Les URIs officielles ne sont pas créées par notre interface.
+  const found = [...new Map(results.map(r => [r.uri + '\u0000' + (r.action ?? ''), r])).values()];
+  const names = found.map(r => r.uri.split(/[\/#]/).pop().toLowerCase());
+  const any = (...values) => names.some(name => values.includes(name));
+  let kind = 'unknown';
+  // Les composites explicites ont priorité sur les captures ou générations.
+  if (any('compositewithtrainedalgorithmicmedia', 'compositesynthetic',
+          'compositecapture', 'composite', 'virtualrecording') ||
+      (any('trainedalgorithmicmedia') && any('digitalcapture', 'computationalcapture'))) {
+    kind = 'composite';
+  } else if (any('trainedalgorithmicmedia')) {
+    kind = 'ai';
+  } else if (any('digitalcapture','computationalcapture')) {
+    kind = 'capture';
+  }
+  return {
+    kind,
+    raw: found.length ? found.map(r => r.uri).join(' ; ') : null,
+    action: found.length ? [...new Set(found.map(r => r.action).filter(Boolean))].join(' ; ') || null : null,
+    hasField: found.length > 0
+  };
 }
 function detectDeclaredOrigin(photo) {
-  const hints = [];
-  collectValuesForKeys(photo?.active, /digitalSourceType|digital_source_type|digital-source-type/i, hints);
-  collectValuesForKeys(photo?.store, /digitalSourceType|digital_source_type|digital-source-type/i, hints);
-  const text = hints.map(v => String(v).toLowerCase()).join(' | ');
-  if (!text) return null;
-  if (/compositewithtrainedalgorithmicmedia|composite[^|]*trainedalgorithmicmedia|trainedalgorithmicmedia[^|]*composite/.test(text)) return 'composite';
-  if (/trainedalgorithmicmedia|syntheticmedia|algorithmicmedia/.test(text)) return 'ai';
-  if (/digitalcapture|computationalcapture/.test(text)) return 'capture';
-  return null;
+  return c2paSourceDetails(photo).kind;
 }
 function originTitle(origin) {
   if (origin === 'capture') return tr('Prise du réel déclarée');
   if (origin === 'ai') return tr('Image générée par IA déclarée');
-  if (origin === 'composite') return tr('Image composite avec contenu IA déclaré');
+  if (origin === 'composite') return tr('Image composée déclarée');
   return tr('Origine non précisée');
 }
+
+/* La teinte du dessin représente le statut C2PA, PAS l'origine.
+   Ne jamais déduire la couleur de 'unknown' : un '?' peut être orange ou rouge. */
+const DISTINGUO_COLORS = Object.freeze({
+  ok: '#29EE86',     // vert net
+  warn: '#FFAF12',   // orange franc
+  bad: '#FF626F',    // rouge
+  error: '#FF626F',
+  none: '#FFFFFF',   // blanc franc, lisible grâce au contour sombre
+  neutral: '#FFFFFF',
+  loading: '#FFFFFF'
+});
 function appendOriginBadge(target, photo, state) {
   const origin = detectDeclaredOrigin(photo) || 'unknown';
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('class', `origin-icon origin-icon--${origin}`);
-  // Un seul jeu de dessins, reproduit en deux contours : liseré sombre de contraste,
-  // puis trait fin coloré (vert/orange/rouge/gris selon la validation C2PA).
-  // Même stroke et même gabarit pour les quatre pictogrammes.
+  const level = originStatusLevel(state);
+  const color = DISTINGUO_COLORS[level] || '#FFFFFF';
+  target.style.setProperty('--origin-foreground', color);
+  target.dataset.originStatus = level;
+  target.dataset.originKind = origin;
+  target.title = originTitle(origin);
+  target.setAttribute('aria-label', originTitle(origin) + ' — ' + (level === 'warn' ? tr('À vérifier') : level === 'bad' ? tr('Échec') : level === 'ok' ? tr('Validé') : 'Statut non confirmé'));
+  target.classList.add(level, 'origin-' + origin);
+
+  // Dessins optiquement équilibrés sur un cadre SVG 24 × 24 : appareil, AI, calques, ?.
+  // Un seul trait coloré fin + très fin contour sombre pour les fonds blancs / noirs.
   let iconPaths;
   if (origin === 'capture') {
-    // Appareil photo compact, objectif centré, optique équilibrée.
-    iconPaths = '<path d="M5.4 8h2.8l1.45-2h4.7l1.45 2h2.8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5.4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.35"/>';
+    iconPaths = '<path d="M5.4 8.1h2.4l1.6-2.2h5.2l1.6 2.2h2.4a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5.4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13.35" r="3.15"/><path d="M17.9 11.2h.02"/>';
   } else if (origin === 'ai') {
-    // AI en lettres vectorielles, sans encadrement : dessin net et géométrique.
-    iconPaths = '<path d="M3.4 18.7 8.4 5.3l5 13.4 M5.35 13.65h6.1"/><path d="M16.3 5.3h5 M18.8 5.3v13.4 M16.3 18.7h5"/>';
+    iconPaths = '<path d="M3.5 18.6 8.4 5.4l4.9 13.2 M5.2 14h6.35"/><path d="M17 5.4h4.1 M19.05 5.4v13.2 M17 18.6h4.1"/>';
   } else if (origin === 'composite') {
-    // Calques filaires, même largeur perçue que AI et l’appareil photo.
-    iconPaths = '<path d="M12 4.6 20.8 9.1 12 13.6 3.2 9.1Z"/><path d="m3.2 12.45 8.8 4.5 8.8-4.5"/><path d="m3.2 15.8 8.8 4.5 8.8-4.5"/>';
+    iconPaths = '<path d="M12 4.5 20.8 9.1 12 13.7 3.2 9.1Z"/><path d="m3.2 12.35 8.8 4.55 8.8-4.55"/><path d="m3.2 15.7 8.8 4.5 8.8-4.5"/>';
   } else {
-    // Point d’interrogation filaire sans cercle. Proportions adaptées au même cadre.
-    iconPaths = '<path d="M6.3 8.9c0-2.5 2.1-4.35 5.7-4.35s5.7 1.85 5.7 4.35c0 3.25-5.7 3.85-5.7 6.75"/><path d="M12 19.3v.15"/>';
+    iconPaths = '<path d="M7.3 9a4.75 4.75 0 1 1 7.85 3.6C13.2 14 12 14.9 12 16.2"/><path d="M12 19.25v.12"/>';
   }
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', `origin-icon origin-icon--${origin}`);
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable','false');
+  svg.style.setProperty('--origin-foreground',color);
   svg.innerHTML = `<g class="origin-halo">${iconPaths}</g><g class="origin-ink">${iconPaths}</g>`;
+  // Protection contre les anciennes déclarations CSS pouvant imposer le gris.
+  svg.querySelector('.origin-ink').style.setProperty('stroke', color, 'important');
   target.append(svg);
-  target.classList.add(originStatusLevel(state), 'origin-' + origin);
-  target.dataset.originKind = origin;
-  target.setAttribute('aria-label', originTitle(origin));
-  target.title = originTitle(origin);
 
-  // Miniatures : 2 secondes à partir de l'activation du mode (ou première apparition).
-  // Conserver l'échéance lorsque l'analyse C2PA rafraîchit la miniature.
+  // Miniatures : apparition après 2 s, sans redémarrer le timer à chaque analyse.
   if (target.id !== 'cr-badge') {
     const now = performance.now();
     if (!target._originRevealDeadline) target._originRevealDeadline = now + 2000;
@@ -1079,6 +1145,7 @@ function appendOriginBadge(target, photo, state) {
     }, Math.max(0, target._originRevealDeadline - now));
   }
 }
+
 function appendOfficialCr(target) {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns,'svg');
@@ -1438,6 +1505,9 @@ const C2PA_FIELD_HELP = {
   'Signature numérique': 'Vérifie que les informations de provenance n’ont pas été modifiées après leur signature.',
   'Signataire déclaré': 'Organisme ou entreprise identifié dans le certificat ayant signé la provenance.',
   'Générateur': 'Appareil ou logiciel ayant créé les informations C2PA.',
+  'Catégorie affichée': 'Interprétation simplifiée de digitalSourceType par cette galerie. Ce n’est pas un verdict sur la vérité de la scène.',
+  'digitalSourceType (IPTC)': 'Champ standard de la spécification C2PA, dont la valeur est un identifiant officiel IPTC. Une valeur absente ne prouve rien sur la génération IA.',
+  'Action C2PA': 'Action (par exemple c2pa.created) portant le digitalSourceType dans le manifeste actif.',
   'Auteur / photographe': 'Personne déclarée comme auteur de la photo ; cette identité n’est pas forcément vérifiée.',
   'Horodatage certifié (TSA)': 'Date attestée par un tiers indépendant : la signature existait au plus tard à cet instant.',
   'Date de prise de vue (EXIF)': 'Date enregistrée par l’horloge de l’appareil, modifiable et non certifiée à elle seule.'
@@ -1719,17 +1789,39 @@ function openLightbox(idx) {
   });
 }
 
+/* Même classification / même valeur IPTC pour le badge et la fiche.
+   "Inconnue" est NOTRE catégorie, et jamais un digitalSourceType inventé. */
+function originPanelSection(photo) {
+  const detail = c2paSourceDetails(photo);
+  const categories = { capture: 'Photo capturée', ai: 'Image générée par IA',
+                       composite: 'Image composée', unknown: 'Origine inconnue' };
+  const pending = photo.state === 'loading';
+  const missing = photo.state === 'none';
+  const error = photo.state === 'error';
+  const explanatory = detail.hasField
+    ? 'La catégorie résume le champ digitalSourceType déclaré dans le manifeste actif. Elle ne prouve pas la véracité de la scène.'
+    : 'Aucune valeur digitalSourceType utilisable : « inconnue » est une classification de cette interface, pas une valeur officielle C2PA.';
+  const raw = pending ? tr('Analyse en cours') : missing ? tr('Sans manifeste C2PA intégré')
+    : error ? tr('Lecture C2PA indisponible') : detail.raw ?? tr('Non renseigné dans le manifeste');
+  const rows = [
+    field('Catégorie affichée', tr(pending ? 'Analyse en cours' : categories[detail.kind]), 'neutral', tr(explanatory)),
+    field('digitalSourceType (IPTC)', raw, 'neutral'),
+    field('Action C2PA', detail.action ?? (pending ? tr('Analyse en cours') : tr('Non renseigné')), 'neutral')
+  ];
+  return section('Origine du contenu (C2PA)', rows);
+}
+
 /* ---------- Panneau Content Credentials (bouton logo AFP) ---------- */
 function fillDetails(photo) {
   if (photo.state === 'loading') {
     setStatusLine('loading', tr('Vérification C2PA en cours…'));
-    lbSummary.replaceChildren();
+    lbSummary.replaceChildren(originPanelSection(photo));
     lbJson.textContent = tr('Chargement…');
     return;
   }
   if (photo.state === 'error') {
     setStatusLine('error', (uiLanguage === 'en' ? 'C2PA analysis unavailable: ' : 'Analyse C2PA indisponible : ') + photo.error);
-    lbSummary.replaceChildren(section('Informations sur la photo', [
+    lbSummary.replaceChildren(originPanelSection(photo), section('Informations sur la photo', [
       field('Auteur / photographe', photo.exif?.artist || photo.exif?.copyright || null, 'neutral'),
       field('Date de prise de vue (EXIF)', photo.exifDate || null, 'neutral')
     ]));
@@ -1738,7 +1830,7 @@ function fillDetails(photo) {
   }
   if (photo.state === 'none') {
     setStatusLine('none', 'Aucun manifeste C2PA intégré détecté.');
-    lbSummary.replaceChildren(section('Informations sur la photo', [
+    lbSummary.replaceChildren(originPanelSection(photo), section('Informations sur la photo', [
       field('Auteur / photographe', photo.exif?.artist || photo.exif?.copyright || null, 'neutral'),
       field('Date de prise de vue (EXIF)', photo.exifDate || tr('Non disponible'), 'neutral')
     ]));
@@ -1827,6 +1919,7 @@ function fillDetails(photo) {
     ]), validationSection);
 
   lbSummary.replaceChildren(
+    originPanelSection(photo),
     ...(!levels.includes('bad') && (levels.includes('warn') || !entries.length || levels.includes('neutral')) ? [warningNotice] : []),
     section('Vérification C2PA', [
       field('Intégrité du fichier', integrityStatus, integrityLevel),

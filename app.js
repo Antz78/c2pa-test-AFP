@@ -281,6 +281,58 @@ function addFiles(files) {
   return true;
 }
 
+/* Lecture locale des dates EXIF JPEG (aucune date n'est inventée).
+   DateTimeOriginal 0x9003, OffsetTimeOriginal 0x9011 ; repli OffsetTime 0x9010. */
+async function readExifCaptureDate(blob) {
+  try {
+    const data = new DataView(await blob.arrayBuffer());
+    if (data.byteLength < 12 || data.getUint16(0) !== 0xffd8) return null;
+    let pos = 2;
+    while (pos + 4 <= data.byteLength) {
+      if (data.getUint8(pos) !== 0xff) break;
+      const marker = data.getUint8(pos + 1);
+      if (marker === 0xda || marker === 0xd9) break;
+      if (marker === 0x01 || marker >= 0xd0 && marker <= 0xd7) { pos += 2; continue; }
+      const length = data.getUint16(pos + 2);
+      if (length < 2 || pos + 2 + length > data.byteLength) break;
+      const base = pos + 4;
+      if (marker === 0xe1 && length >= 8 && [69,120,105,102,0,0].every((v,i) => data.getUint8(base+i) === v)) {
+        const tiff = base + 6;
+        const endian = data.getUint16(tiff);
+        if (endian !== 0x4949 && endian !== 0x4d4d) return null;
+        const le = endian === 0x4949;
+        const u16 = p => p >= tiff && p+2 <= data.byteLength ? data.getUint16(p,le) : null;
+        const u32 = p => p >= tiff && p+4 <= data.byteLength ? data.getUint32(p,le) : null;
+        if (u16(tiff+2) !== 42) return null;
+        function entries(offset) {
+          const start=tiff+offset, n=u16(start), result=new Map();
+          if (n === null || n > 1024 || start+2+n*12 > data.byteLength) return result;
+          for (let i=0;i<n;i++) {
+            const e=start+2+i*12, tag=u16(e), type=u16(e+2), count=u32(e+4);
+            if (tag === null || count === null) continue;
+            if (type === 2 && count > 0 && count <= 256) {
+              const at=count<=4 ? e+8 : tiff+u32(e+8);
+              if (at >= tiff && at+count <= data.byteLength) {
+                let str=''; for(let j=0;j<count;j++){const ch=data.getUint8(at+j);if(!ch)break;str+=String.fromCharCode(ch);}
+                result.set(tag,str.trim());
+              }
+            } else if (type === 4 && count === 1) result.set(tag,u32(e+8));
+          }
+          return result;
+        }
+        const root=entries(u32(tiff+4));
+        const exif=typeof root.get(0x8769)==='number' ? entries(root.get(0x8769)) : new Map();
+        const raw=exif.get(0x9003);
+        if (!/^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw||'')) return null;
+        const offset=exif.get(0x9011)||exif.get(0x9010)||'';
+        return `${raw.slice(8,10)}/${raw.slice(5,7)}/${raw.slice(0,4)} ${raw.slice(11)}${/^[+-]\d{2}:\d{2}$/.test(offset) ? ' (UTC'+offset+')' : ''}`;
+      }
+      pos += 2 + length;
+    }
+  } catch (err) { console.warn('Lecture EXIF',err); }
+  return null;
+}
+
 /* ---------- Analyse C2PA ---------- */
 async function ensureC2pa() {
   if (!c2paPromise) c2paPromise = createC2pa({ wasmSrc: WASM_URL }).catch(e => { c2paPromise = null; throw e; });
@@ -296,6 +348,7 @@ async function analyze(photo) {
   if (photo.state !== 'loading') return; // déjà analysée
   try {
     const blob = await getBlob(photo);
+    photo.exifDate = await readExifCaptureDate(blob);
     const engine = await ensureC2pa();
     const ext = photo.name.split('.').pop().toLowerCase();
     const reader = await Reader.fromBlob(engine, ext, blob);
@@ -772,7 +825,6 @@ function fillDetails(photo) {
   const sig = signatureOf(a);
   const generator = firstValue(a.claim_generator, a.claimGenerator, a.claim_generator_info?.[0]?.name, a.claimGeneratorInfo?.[0]?.name);
   const signer = firstValue(sig.name, sig.issuer, sig.organization, a.signer);
-  const date = firstValue(a.created_at, a.createdAt, sig.time, sig.timestamp);
   const manifest = firstValue(photo.store?.active_manifest, photo.store?.activeManifest);
   const signerLevel = levels.includes('bad') ? 'bad' : levels.includes('warn') || !entries.length ? 'warn' : present(signer);
   const validationSection = document.createElement('section'); validationSection.className = 'credential-section';
@@ -794,7 +846,8 @@ function fillDetails(photo) {
     section('Informations sur le contenu', [
       field('Titre', a.title, present(a.title)),
       field('Générateur', generator, present(generator)),
-      field('Date de création', date, present(date)),
+      field('Date de prise de vue (EXIF)', photo.exifDate ?? 'Non disponible', 'neutral', 'Date déclarée par l’appareil, non certifiée par un horodatage TSA.'),
+      field('Horodatage certifié (TSA)', 'Non vérifié', 'neutral', 'La présence et la validité d’un jeton TSA ne sont pas vérifiées par cette interface.'),
     ]),
     section('Signature et provenance', [
       field('Signataire déclaré', signer, signerLevel, signerLevel === 'warn' ? 'Le certificat du signataire n’est pas reconnu comme fiable.' : signerLevel === 'bad' ? 'Un problème de validation est signalé.' : ''),

@@ -31,6 +31,14 @@ const TRANSLATIONS = {
   'Certificat non reconnu comme fiable par ce vérificateur.': 'This verifier does not recognize the certificate as trusted.',
   'Nom déclaré, mais identité non confirmée par ce vérificateur.': 'Declared name, but this verifier has not confirmed the identity.',
   'Orange : confiance ou vérification non confirmée.': 'Amber: trust or verification not confirmed.',
+  'Gris : résultat non confirmé, donnée déclarative ou information absente. Ce n’est pas une preuve de falsification.': 'Grey: result not confirmed, declarative data or unavailable information. This is not evidence of tampering.',
+  'Vert : information renseignée ou contrôle C2PA réussi selon le champ. Cela ne prouve pas que la scène est vraie.': 'Green: information available or a successful C2PA check, depending on the field. This does not prove the scene is true.',
+  'Orange : une vérification reste incomplète ou le certificat du signataire n’est pas reconnu comme fiable. Cela ne signifie pas que l’image est fausse.': 'Amber: a check is incomplete or the signer’s certificate is not recognized as trusted. This does not mean the image is fake.',
+  'Rouge : un contrôle C2PA a échoué (par exemple une incohérence de signature ou d’intégrité). Examiner le détail avant de conclure.': 'Red: a C2PA check failed (for example a signature or integrity mismatch). Review details before drawing conclusions.',
+  'Rouge : le lecteur n’a pas pu analyser le fichier. Ce n’est pas une preuve que la photo a été modifiée.': 'Red: the reader could not analyze the file. This does not prove the photo was modified.',
+  'Gris : aucun manifeste C2PA intégré détecté dans cette photo. La photo peut néanmoins être affichée.': 'Grey: no embedded C2PA manifest was found in this photo. The photo can still be displayed.',
+  'Bleu : la vérification de la provenance est encore en cours.': 'Blue: provenance verification is still running.',
+  'Signification de cet indicateur': 'Meaning of this indicator',
   'Source non renseignée': 'Source not provided',
   'Source : ': 'Source: ',
   'Provenance': 'Provenance',
@@ -64,6 +72,7 @@ const TRANSLATIONS = {
   'Contrôles C2PA retournés sans problème signalé. Cela ne prouve pas la véracité de la scène.': 'C2PA checks reported no issue. This does not prove the scene is truthful.',
   'Information présente': 'Information available',
   'Information indisponible': 'Information unavailable',
+  'Image inaccessible : vérifier le fichier dans PHOTOS/': 'Image unavailable: check the file in PHOTOS/',
   'Problème détecté': 'Issue detected',
   'Que signifie': 'What does',
   'Voir la provenance': 'View provenance',
@@ -200,6 +209,7 @@ function updateStaticTranslations() {
 function changeLanguage(next) {
   if (!['fr','en'].includes(next) || next === uiLanguage) return;
   uiLanguage = next;
+  if (typeof hideColorHelp === 'function') hideColorHelp();
   try { localStorage.setItem('afp-c2pa-language', next); } catch (_) {}
   updateStaticTranslations();
   syncLanguageButtons();
@@ -488,6 +498,28 @@ async function fetchWithTimeout(url, options = {}, milliseconds = 8000) {
   }
 }
 
+/* Une image indexée peut avoir des espaces, accents, #, ?, % ou être rangée dans un sous-dossier.
+   Toujours encoder chaque segment du chemin AVANT de créer une URL DOM. */
+function photoUrl(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const path = raw.trim().replace(/\\/g, '/');
+  if (/^(?:blob:|data:)/i.test(path)) return path;
+  if (/^https?:\/\//i.test(path)) {
+    try { const u = new URL(path); return IMAGE_RE.test(u.pathname) ? u.href : null; }
+    catch (_) { return null; }
+  }
+  const parts = path.replace(/^\.\//, '').split('/').filter(Boolean);
+  if (!parts.length) return null;
+  const last = parts[parts.length - 1];
+  // Accepter aussi les caractères # et ? dans le nom réel, sans les traiter en paramètres d'URL.
+  if (!IMAGE_RE.test(safeDecode(last))) return null;
+  return './' + parts.map(s => encodeURIComponent(safeDecode(s))).join('/');
+}
+function safeDecode(value) { try { return decodeURIComponent(value); } catch (_) { return value; } }
+function photoKey(url) {
+  try { return new URL(url, location.href).pathname.toLowerCase(); } catch (_) { return String(url).toLowerCase(); }
+}
+
 /* ---------- Mode A : index photos.json (généré par CI) ---------- */
 /* Renvoie { state: 'ok' | 'missing' | 'empty', urls: string[] } */
 async function probeIndex() {
@@ -496,8 +528,7 @@ async function probeIndex() {
     if (!r.ok) return { state: 'missing', urls: [] };
     const data = await r.json();
     const list = Array.isArray(data) ? data : (Array.isArray(data?.photos) ? data.photos : []);
-    const urls = list.map(p => typeof p === 'string' ? p : p?.url)
-      .filter(u => typeof u === 'string' && IMAGE_RE.test(u.split(/[?#]/)[0]));
+    const urls = list.map(p => photoUrl(typeof p === 'string' ? p : p?.url)).filter(Boolean);
     return { state: urls.length ? 'ok' : 'empty', urls };
   } catch (_) {
     return { state: 'missing', urls: [] }; // file:// : fetch bloqué par le navigateur
@@ -522,17 +553,27 @@ function detectRepo() {
 async function githubApiList() {
   const repo = detectRepo();
   if (!repo) return [];
-  try {
-    // Pas de ref=main : certains dépôts publient depuis une branche différente.
-    const r = await fetchWithTimeout(`https://api.github.com/repos/${repo}/contents/PHOTOS`, { cache: 'no-store' }, 6500);
-    if (!r.ok) return [];
-    const items = await r.json();
-    if (!Array.isArray(items)) return [];
-    return items
-      .filter(i => i.type === 'file' && IMAGE_RE.test(i.name))
-      // Les noms PNG peuvent contenir espaces, #, accents, etc. : URL encodée.
-      .map(i => `./PHOTOS/${encodeURIComponent(i.name)}`);
-  } catch (_) { return []; }
+  const found = new Set();
+  const dirs = ['PHOTOS'];
+  // Le endpoint Contents n'est pas récursif : ne pas oublier les PNG des sous-dossiers.
+  for (let n = 0; dirs.length && n < 20; n++) {
+    const dir = dirs.shift();
+    try {
+      const path = dir.split('/').map(encodeURIComponent).join('/');
+      const r = await fetchWithTimeout(`https://api.github.com/repos/${repo}/contents/${path}`, { cache: 'no-store' }, 6500);
+      if (!r.ok) { console.warn('[C2PA AFP] GitHub Contents:', r.status, dir); continue; }
+      const items = await r.json();
+      if (!Array.isArray(items)) continue;
+      for (const item of items) {
+        if (item.type === 'dir') dirs.push(item.path);
+        if (item.type === 'file' && IMAGE_RE.test(item.name)) {
+          const url = photoUrl('./' + item.path);
+          if (url) found.add(url);
+        }
+      }
+    } catch (error) { console.warn('[C2PA AFP] Liste GitHub indisponible', dir, error); }
+  }
+  return [...found];
 }
 
 /* ---------- Mode B : glisser-déposer (fichiers ou dossier) ---------- */
@@ -723,7 +764,9 @@ async function getBlob(photo) {
   if (photo.blob) return photo.blob;
   const response = await fetchWithTimeout(photo.url, { cache: 'no-store' }, 30000);
   if (!response.ok) throw new Error('Photo inaccessible (HTTP ' + response.status + ')');
-  return response.blob();
+  const blob = await response.blob();
+  if (/text\/html/i.test(blob.type)) throw new Error('Le serveur a renvoyé une page HTML au lieu de la photo');
+  return blob;
 }
 
 async function analyze(photo) {
@@ -735,8 +778,14 @@ async function analyze(photo) {
       const blob = await getBlob(photo);
       photo.exif = await readExifMetadata(blob);
       photo.exifDate = photo.exif.date;
-      const engine = await ensureC2pa();
       const ext = photo.name.split('.').pop().toLowerCase();
+      if (ext === 'png') {
+        const header = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
+        if (!([137,80,78,71,13,10,26,10].every((v, i) => header[i] === v))) {
+          throw new Error('Fichier .png invalide ou image inaccessible (en-tête PNG absent)');
+        }
+      }
+      const engine = await ensureC2pa();
       // Utiliser le format du fichier avant le Content-Type HTTP, parfois générique.
       // Indispensable pour analyser correctement les PNG hébergés sur GitHub Pages.
       const mime = ({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',tif:'image/tiff',tiff:'image/tiff'})[ext] || blob.type;
@@ -753,7 +802,9 @@ async function analyze(photo) {
     } catch (error) {
       console.warn('C2PA', photo.name, error);
       photo.error = error?.message ?? String(error);
-      photo.state = 'error';
+      // Certains moteurs lancent une exception pour un PNG valide dépourvu de manifeste.
+      // Cela n'est ni une falsification, ni une erreur d'affichage de la photo.
+      photo.state = /no.?manifest|manifest.?not.?found|no.?c2pa.?manifest/i.test(photo.error) ? 'none' : 'error';
     } finally {
       if (reader) try { await reader.free(); } catch (_) {}
     }
@@ -871,6 +922,7 @@ function setCurlTheme(button){
   button.style.setProperty('--curl-shadow',light?'rgba(0,0,0,.27)':'rgba(0,0,0,.72)');
 }
 function addBadgeContent(target, mode, state) {
+  target.dataset.c2paStatus = state;
   target.replaceChildren();
   target.classList.add('mode-' + mode);
   if (mode === 'direct') return;
@@ -1047,8 +1099,15 @@ function cardEl(photo) {
   img.loading = 'lazy';
   img.src = photo.url;
   img.alt = photo.name.split('/').pop();
+  img.addEventListener('error', () => {
+    card.classList.add('photo-unavailable');
+    img.alt = tr('Image inaccessible : vérifier le fichier dans PHOTOS/');
+    console.warn('[C2PA AFP] Photo inaccessible ou illisible :', photo.url);
+  });
   const tag = document.createElement('span');
   tag.className = `tag ${photo.state}`;
+  tag.tabIndex = 0;
+  tag.title = tr(C2PA_STATUS_TIPS[photo.state] || C2PA_STATUS_TIPS.neutral);
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),
              document.createTextNode(statusLabel(photo.state)));
   const name = document.createElement('figcaption');
@@ -1074,6 +1133,7 @@ function renderCard(photo) {
   if (!card) return;
   const tag = card.querySelector('.tag');
   tag.className = `tag ${photo.state}`;
+  tag.title = tr(C2PA_STATUS_TIPS[photo.state] || C2PA_STATUS_TIPS.neutral);
   tag.textContent = '';
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),
              document.createTextNode(statusLabel(photo.state)));
@@ -1104,8 +1164,10 @@ function rebuildGrid() {
 }
 
 /* ---------- Lightbox plein écran ---------- */
-function setStatusLine(cls, text) {
+function setStatusLine(cls, text, semanticStatus = cls) {
   lbStatus.className = `status ${cls}`;
+  lbStatus.dataset.c2paStatus = semanticStatus;
+  lbStatus.title = tr(C2PA_STATUS_TIPS[semanticStatus] || C2PA_STATUS_TIPS.neutral);
   lbStatus.textContent = tr(text);
 }
 
@@ -1210,12 +1272,107 @@ document.addEventListener('click', event => {
   trigger.setAttribute('aria-expanded', String(!copy.hidden));
 });
 
+/* Légende des indicateurs de couleur : souris, clavier et toucher.
+   Une unique bulle flottante, hors des cellules (sinon elles se chevauchent).
+   Popover natif : la bulle reste visible au-dessus des panneaux et dialogs. */
+const C2PA_STATUS_TIPS = {
+  neutral: 'Gris : résultat non confirmé, donnée déclarative ou information absente. Ce n’est pas une preuve de falsification.',
+  ok: 'Vert : information renseignée ou contrôle C2PA réussi selon le champ. Cela ne prouve pas que la scène est vraie.',
+  warn: 'Orange : une vérification reste incomplète ou le certificat du signataire n’est pas reconnu comme fiable. Cela ne signifie pas que l’image est fausse.',
+  bad: 'Rouge : un contrôle C2PA a échoué (par exemple une incohérence de signature ou d’intégrité). Examiner le détail avant de conclure.',
+  error: 'Rouge : le lecteur n’a pas pu analyser le fichier. Ce n’est pas une preuve que la photo a été modifiée.',
+  none: 'Gris : aucun manifeste C2PA intégré détecté dans cette photo. La photo peut néanmoins être affichée.',
+  loading: 'Bleu : la vérification de la provenance est encore en cours.'
+};
+const colorHelp = document.createElement('div');
+colorHelp.className = 'c2pa-color-help';
+colorHelp.id = 'c2pa-color-help';
+colorHelp.setAttribute('role', 'tooltip');
+colorHelp.setAttribute('popover', 'manual');
+colorHelp.hidden = true;
+document.body.append(colorHelp);
+const colorHelpStyle = document.createElement('style');
+colorHelpStyle.textContent = `
+  .c2pa-color-help,
+  .c2pa-color-help:popover-open{
+    position:fixed;display:block;box-sizing:border-box;width:max-content;max-width:min(335px,calc(100vw - 24px));
+    margin:0;padding:11px 13px;border:1px solid #54657c;border-radius:11px;
+    background:#233348;color:#fff;box-shadow:0 10px 26px #0008;
+    font:500 13px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;
+    z-index:2147483647;pointer-events:none;white-space:normal;overflow-wrap:anywhere;
+  }
+  .c2pa-color-help[hidden]{display:none!important}
+  .credential-row .signal,.validation-item .signal,.tag,.demo-overlay .dot,.cr .dot{cursor:help}
+  .photo-unavailable img{min-height:90px;object-fit:contain}
+`;
+document.head.append(colorHelpStyle);
+let colorHelpTarget = null;
+function colorKey(el) {
+  if (!el) return null;
+  if (C2PA_STATUS_TIPS[el.dataset?.c2paStatus]) return el.dataset.c2paStatus;
+  const classes = el.classList;
+  for (const key of ['error','bad','warn','ok','none','neutral','loading']) if (classes.contains(key)) return key;
+  return null;
+}
+function colorTarget(node) {
+  if (!(node instanceof Element)) return null;
+  return node.closest('.credential-row > .signal, .validation-item > .signal, #grid .tag, #grid .demo-overlay, #cr-badge, #side-status, #lb-status, #bottom-status, #credentials .status');
+}
+function showColorHelp(target) {
+  if (!target) return;
+  const cls = colorKey(target) || colorKey(target.querySelector('.dot'));
+  if (!cls || !C2PA_STATUS_TIPS[cls]) return;
+  colorHelpTarget = target;
+  colorHelp.textContent = tr(C2PA_STATUS_TIPS[cls]);
+  colorHelp.hidden = false;
+  try { if (typeof colorHelp.showPopover === 'function' && !colorHelp.matches(':popover-open')) colorHelp.showPopover(); } catch (_) {}
+  // Clamp the explanation to the visible viewport.
+  const rect = target.getBoundingClientRect();
+  const vw = Math.min(window.innerWidth, window.visualViewport?.width || Infinity, document.documentElement.clientWidth || Infinity);
+  const vh = Math.min(window.innerHeight, window.visualViewport?.height || Infinity);
+  const width = Math.min(335, Math.max(160, vw - 24));
+  const left = Math.max(12, Math.min(vw - width - 12, rect.left));
+  colorHelp.style.width = width + 'px';
+  colorHelp.style.left = left + 'px';
+  const bubbleHeight = colorHelp.getBoundingClientRect().height || 85;
+  const below = rect.bottom + 9;
+  colorHelp.style.top = (below + bubbleHeight <= vh - 8 ? below : Math.max(8, rect.top - bubbleHeight - 9)) + 'px';
+}
+function hideColorHelp() {
+  colorHelpTarget = null;
+  try { if (typeof colorHelp.hidePopover === 'function' && colorHelp.matches(':popover-open')) colorHelp.hidePopover(); } catch (_) {}
+  colorHelp.hidden = true;
+}
+document.addEventListener('pointerover', e => {
+  if (e.pointerType === 'touch') return;
+  const target = colorTarget(e.target);
+  if (target && target !== colorHelpTarget) showColorHelp(target);
+});
+document.addEventListener('pointerout', e => {
+  if (e.pointerType === 'touch') return;
+  if (colorHelpTarget && !colorHelpTarget.contains(e.relatedTarget)) hideColorHelp();
+});
+document.addEventListener('focusin', e => { const target = colorTarget(e.target); if (target) showColorHelp(target); });
+document.addEventListener('focusout', e => { if (colorHelpTarget?.contains(e.target)) hideColorHelp(); });
+document.addEventListener('click', e => {
+  const target = colorTarget(e.target);
+  if (!target) { hideColorHelp(); return; }
+  if (matchMedia('(hover: none)').matches && (target.classList.contains('signal') || target.classList.contains('tag'))) {
+    e.stopPropagation(); e.preventDefault();
+    if (colorHelpTarget === target) hideColorHelp(); else showColorHelp(target);
+  }
+}, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideColorHelp(); });
+// Tooltip reste affichée jusqu'au prochain contact / clic / fermeture.
+window.addEventListener('resize', hideColorHelp);
 function field(label, value, level = 'ok', help = '') {
   const row = document.createElement('div'); row.className = 'credential-row';
   const marker = document.createElement('span'); marker.className = `signal ${level}`;
   marker.textContent = level === 'ok' ? '✓' : level === 'warn' ? '!' : level === 'bad' ? '×' : 'i';
   marker.setAttribute('aria-label', tr(level === 'ok' ? 'Information présente' : level === 'warn' ? 'À vérifier' : level === 'bad' ? 'Problème détecté' : 'Information indisponible'));
-  if (level === 'warn') marker.title = tr('Orange : confiance ou vérification non confirmée.');
+  marker.tabIndex = 0;
+  marker.setAttribute('aria-describedby', 'c2pa-color-help');
+  marker.title = tr(C2PA_STATUS_TIPS[level] || C2PA_STATUS_TIPS.neutral);
   const name = document.createElement('div'); name.className = 'field-label';
   const labelText = document.createElement('span'); labelText.textContent = tr(label);
   name.append(labelText);
@@ -1336,7 +1493,7 @@ function fillDetails(photo) {
   }
   const entries = photo.validation ?? [];
   const levels = entries.map(validationLevel);
-  if (levels.includes('bad')) setStatusLine('error', 'Manifeste présent, mais une ou plusieurs vérifications ont échoué.');
+  if (levels.includes('bad')) setStatusLine('error', 'Manifeste présent, mais une ou plusieurs vérifications ont échoué.', 'bad');
   else if (levels.includes('warn')) setStatusLine('warn', 'Manifeste présent, mais la confiance du signataire nécessite une vérification.');
   else if (!entries.length || levels.includes('neutral')) setStatusLine('warn', 'Manifeste présent, mais la validation complète ne peut pas être confirmée.');
   else setStatusLine('ok', 'Contrôles C2PA retournés sans problème signalé. Cela ne prouve pas la véracité de la scène.');
@@ -1392,6 +1549,8 @@ function fillDetails(photo) {
     const level = validationLevel(v);
     const marker = document.createElement('span'); marker.className = `signal ${level}`;
     marker.textContent = level === 'ok' ? '✓' : level === 'warn' ? '!' : level === 'bad' ? '×' : 'i';
+    marker.tabIndex = 0;
+    marker.title = tr(C2PA_STATUS_TIPS[level] || C2PA_STATUS_TIPS.neutral);
     const code = document.createElement('span'); code.textContent = validationText(v);
     const label = document.createElement('span'); label.className = `validation-pill ${level}`;
     label.textContent = tr(level === 'ok' ? 'Validé' : level === 'warn' ? 'À vérifier' : level === 'bad' ? 'Échec' : 'Indéterminé');
@@ -1440,6 +1599,7 @@ function refreshSidePanel(photo) {
   fillDetails(photo);
   const status = document.querySelector('#side-status');
   status.className = lbStatus.className;
+  status.dataset.c2paStatus = lbStatus.dataset.c2paStatus;
   status.textContent = lbStatus.textContent;
   document.querySelector('#side-summary').replaceChildren(...[...lbSummary.childNodes].map(n => n.cloneNode(true)));
   document.querySelector('#side-json').textContent = lbJson.textContent;
@@ -1537,20 +1697,18 @@ document.querySelector('#pick-folder').addEventListener('click', () => fileFolde
 filePhotos.addEventListener('change', () => { if (addFiles(filePhotos.files)) emptyBox.hidden = true; filePhotos.value = ''; });
 fileFolder.addEventListener('change', () => { if (addFiles(fileFolder.files)) emptyBox.hidden = true; fileFolder.value = ''; });
 
-// Dédupliquer les URLs du JSON et de l'API (dont les noms parfois encodés).
+// Fusionner l'index et l'API, sans doublons, même en présence de noms encodés.
 function addRemotePhotos(urls) {
-  const normalized = url => {
-    try { return decodeURIComponent(new URL(url, location.href).pathname); }
-    catch (_) { return String(url); }
-  };
-  const known = new Set(photos.map(p => normalized(p.url)));
+  const known = new Set(photos.map(p => photoKey(p.url)));
   let added = 0;
-  for (const url of urls) {
-    if (typeof url !== 'string' || !IMAGE_RE.test(url.split(/[?#]/)[0])) continue;
-    const key = normalized(url);
+  for (const raw of urls) {
+    const url = photoUrl(raw);
+    if (!url) continue;
+    const key = photoKey(url);
     if (known.has(key)) continue;
     known.add(key);
-    photos.push({ url, name: decodeURIComponent(url), idx: photos.length, state: 'loading' });
+    const name = safeDecode(url.replace(/^\.\//, ''));
+    photos.push({ url, name, idx: photos.length, state: 'loading' });
     added++;
   }
   if (added) {
@@ -1560,6 +1718,7 @@ function addRemotePhotos(urls) {
   }
   return added;
 }
+
 async function start() {
   const { state, urls } = await probeIndex();
   if (state === 'ok') {
@@ -1599,7 +1758,7 @@ function refreshBottomSheet(photo){
   if(bottomSheet.hidden || bottomPhoto!==photo) return;
   fillDetails(photo);
   const s=document.querySelector('#bottom-status');
-  s.className=lbStatus.className; s.textContent=lbStatus.textContent;
+  s.className=lbStatus.className; s.dataset.c2paStatus=lbStatus.dataset.c2paStatus; s.textContent=lbStatus.textContent;
   document.querySelector('#bottom-summary').replaceChildren(...[...lbSummary.childNodes].map(n=>n.cloneNode(true)));
   document.querySelector('#bottom-json').textContent=lbJson.textContent;
 }

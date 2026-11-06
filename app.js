@@ -281,56 +281,70 @@ function addFiles(files) {
   return true;
 }
 
-/* Lecture locale des dates EXIF JPEG (aucune date n'est inventée).
-   DateTimeOriginal 0x9003, OffsetTimeOriginal 0x9011 ; repli OffsetTime 0x9010. */
-async function readExifCaptureDate(blob) {
+/* Métadonnées EXIF JPEG lues localement depuis le fichier original.
+   Copyright (0x8298) est un crédit/droit, pas une preuve d'identité.
+   Artist (0x013B) est prioritaire ; DateTimeOriginal (0x9003) est déclarative. */
+async function readExifMetadata(blob) {
+  const result = { date: null, artist: null, copyright: null };
   try {
     const data = new DataView(await blob.arrayBuffer());
-    if (data.byteLength < 12 || data.getUint16(0) !== 0xffd8) return null;
+    if (data.byteLength < 12 || data.getUint16(0) !== 0xffd8) return result;
     let pos = 2;
     while (pos + 4 <= data.byteLength) {
       if (data.getUint8(pos) !== 0xff) break;
       const marker = data.getUint8(pos + 1);
       if (marker === 0xda || marker === 0xd9) break;
-      if (marker === 0x01 || marker >= 0xd0 && marker <= 0xd7) { pos += 2; continue; }
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { pos += 2; continue; }
       const length = data.getUint16(pos + 2);
       if (length < 2 || pos + 2 + length > data.byteLength) break;
       const base = pos + 4;
       if (marker === 0xe1 && length >= 8 && [69,120,105,102,0,0].every((v,i) => data.getUint8(base+i) === v)) {
         const tiff = base + 6;
+        if (tiff + 8 > data.byteLength) break;
         const endian = data.getUint16(tiff);
-        if (endian !== 0x4949 && endian !== 0x4d4d) return null;
+        if (endian !== 0x4949 && endian !== 0x4d4d) break;
         const le = endian === 0x4949;
-        const u16 = p => p >= tiff && p+2 <= data.byteLength ? data.getUint16(p,le) : null;
-        const u32 = p => p >= tiff && p+4 <= data.byteLength ? data.getUint32(p,le) : null;
-        if (u16(tiff+2) !== 42) return null;
+        const u16 = p => p >= tiff && p + 2 <= data.byteLength ? data.getUint16(p,le) : null;
+        const u32 = p => p >= tiff && p + 4 <= data.byteLength ? data.getUint32(p,le) : null;
+        if (u16(tiff + 2) !== 42) break;
         function entries(offset) {
-          const start=tiff+offset, n=u16(start), result=new Map();
-          if (n === null || n > 1024 || start+2+n*12 > data.byteLength) return result;
-          for (let i=0;i<n;i++) {
-            const e=start+2+i*12, tag=u16(e), type=u16(e+2), count=u32(e+4);
+          const out = new Map();
+          if (!Number.isInteger(offset) || offset < 0) return out;
+          const start = tiff + offset, n = u16(start);
+          if (n === null || n > 1024 || start + 2 + n * 12 > data.byteLength) return out;
+          for (let i = 0; i < n; i++) {
+            const e = start + 2 + i * 12;
+            const tag = u16(e), type = u16(e + 2), count = u32(e + 4);
             if (tag === null || count === null) continue;
-            if (type === 2 && count > 0 && count <= 256) {
-              const at=count<=4 ? e+8 : tiff+u32(e+8);
-              if (at >= tiff && at+count <= data.byteLength) {
-                let str=''; for(let j=0;j<count;j++){const ch=data.getUint8(at+j);if(!ch)break;str+=String.fromCharCode(ch);}
-                result.set(tag,str.trim());
+            if (type === 2 && count > 0 && count <= 4096) {
+              const offsetValue = u32(e + 8);
+              const at = count <= 4 ? e + 8 : tiff + offsetValue;
+              if (at >= tiff && at + count <= data.byteLength) {
+                const bytes = new Uint8Array(data.buffer, data.byteOffset + at, count);
+                const zero = bytes.indexOf(0);
+                const raw = bytes.subarray(0, zero < 0 ? count : zero);
+                const str = new TextDecoder('latin1').decode(raw).trim();
+                if (str) out.set(tag, str);
               }
-            } else if (type === 4 && count === 1) result.set(tag,u32(e+8));
+            } else if (type === 4 && count === 1) out.set(tag, u32(e + 8));
           }
-          return result;
+          return out;
         }
-        const root=entries(u32(tiff+4));
-        const exif=typeof root.get(0x8769)==='number' ? entries(root.get(0x8769)) : new Map();
-        const raw=exif.get(0x9003);
-        if (!/^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw||'')) return null;
-        const offset=exif.get(0x9011)||exif.get(0x9010)||'';
-        return `${raw.slice(8,10)}/${raw.slice(5,7)}/${raw.slice(0,4)} ${raw.slice(11)}${/^[+-]\d{2}:\d{2}$/.test(offset) ? ' (UTC'+offset+')' : ''}`;
+        const root = entries(u32(tiff + 4));
+        const exif = typeof root.get(0x8769) === 'number' ? entries(root.get(0x8769)) : new Map();
+        result.artist = root.get(0x013b) || null;
+        result.copyright = root.get(0x8298) || null;
+        const raw = exif.get(0x9003) || root.get(0x0132);
+        if (/^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw || '')) {
+          const offset = exif.get(0x9011) || exif.get(0x9010) || '';
+          result.date = `${raw.slice(8,10)}/${raw.slice(5,7)}/${raw.slice(0,4)} ${raw.slice(11)}${/^[+-]\d{2}:\d{2}$/.test(offset) ? ' (UTC' + offset + ')' : ''}`;
+        }
+        return result;
       }
       pos += 2 + length;
     }
-  } catch (err) { console.warn('Lecture EXIF',err); }
-  return null;
+  } catch (err) { console.warn('Lecture EXIF', err); }
+  return result;
 }
 
 /* ---------- Analyse C2PA ---------- */
@@ -348,7 +362,8 @@ async function analyze(photo) {
   if (photo.state !== 'loading') return; // déjà analysée
   try {
     const blob = await getBlob(photo);
-    photo.exifDate = await readExifCaptureDate(blob);
+    photo.exif = await readExifMetadata(blob);
+    photo.exifDate = photo.exif.date;
     const engine = await ensureC2pa();
     const ext = photo.name.split('.').pop().toLowerCase();
     const reader = await Reader.fromBlob(engine, ext, blob);
@@ -843,7 +858,10 @@ function fillDetails(photo) {
   }
   if (photo.state === 'none') {
     setStatusLine('none', 'Aucun manifeste C2PA intégré détecté.');
-    lbSummary.replaceChildren();
+    lbSummary.replaceChildren(section('Informations sur la photo', [
+      field('Auteur / photographe', photo.exif?.artist || photo.exif?.copyright || null, 'neutral'),
+      field('Date de prise de vue (EXIF)', photo.exifDate || 'Non disponible', 'neutral')
+    ]));
     lbJson.textContent = 'Aucun manifeste trouvé.';
     return;
   }
@@ -881,7 +899,9 @@ function fillDetails(photo) {
     if (v && typeof v === 'object') return firstValue(v.name, v['@id']);
     return null;
   }
-  const author = authorName(authorValue);
+  const c2paAuthor = authorName(authorValue);
+  const author = firstValue(c2paAuthor, photo.exif?.artist, photo.exif?.copyright);
+  const authorSource = c2paAuthor ? 'C2PA' : photo.exif?.artist ? 'EXIF Artist' : photo.exif?.copyright ? 'EXIF Copyright (crédit déclaré)' : null;
 
   const validationSection = document.createElement('section'); validationSection.className = 'credential-section';
   const vh = document.createElement('h3'); vh.textContent = 'Résultats techniques de validation';
@@ -920,7 +940,7 @@ function fillDetails(photo) {
       field('Générateur', generator, present(generator)),
     ]),
     section('Informations sur la photo', [
-      field('Auteur / photographe', author, 'neutral'),
+      field('Auteur / photographe', author ? `${author}${authorSource ? ' — ' + authorSource : ''}` : null, 'neutral'),
       field('Horodatage certifié (TSA)', 'Non vérifié', 'neutral'),
       field('Date de prise de vue (EXIF)', photo.exifDate ?? 'Non disponible', 'neutral'),
     ]),
@@ -1264,39 +1284,40 @@ function afpLocalizeNode(node) {
   }
   for (const child of node.childNodes) afpLocalizeNode(child);
 }
-let afpTranslationBusy = false;
+// Translate the full page only when the user switches languages.
+// Never observe our own text edits: doing so can freeze large galleries.
+const afpTranslationObserver = new MutationObserver(mutations => {
+  if (afpLanguage !== 'en') return;
+  afpTranslationObserver.disconnect();
+  try {
+    for (const mutation of mutations) {
+      if (mutation.type === 'childList') {
+        for (const node of mutation.addedNodes) afpLocalizeNode(node);
+      } else if (mutation.type === 'characterData') {
+        // Text updated by the gallery itself: treat it as new source text.
+        AFP_TEXT_ORIGINAL.set(mutation.target, mutation.target.nodeValue);
+        afpLocalizeNode(mutation.target);
+      }
+    }
+  } finally {
+    afpTranslationObserver.observe(document.body, {subtree:true,childList:true,characterData:true});
+  }
+});
 function afpApplyLanguage() {
-  if (afpTranslationBusy) return;
-  afpTranslationBusy = true;
-  afpLocalizeNode(document.body);
-  document.documentElement.lang = afpLanguage;
-  afpLangBtn.textContent = afpLanguage === 'en' ? 'FR' : 'EN';
-  afpLangBtn.title = afpLanguage === 'en' ? 'Français' : 'English';
-  afpLangBtn.setAttribute('aria-label', afpLanguage === 'en' ? 'Passer en français' : 'Switch language to English');
-  afpTranslationBusy = false;
+  afpTranslationObserver.disconnect();
+  try {
+    afpLocalizeNode(document.body);
+    document.documentElement.lang = afpLanguage;
+    afpLangBtn.textContent = afpLanguage === 'en' ? 'FR' : 'EN';
+    afpLangBtn.title = afpLanguage === 'en' ? 'Français' : 'English';
+    afpLangBtn.setAttribute('aria-label', afpLanguage === 'en' ? 'Passer en français' : 'Switch language to English');
+  } finally {
+    afpTranslationObserver.observe(document.body, {subtree:true,childList:true,characterData:true});
+  }
 }
 afpLangBtn.addEventListener('click', () => {
   afpLanguage = afpLanguage === 'fr' ? 'en' : 'fr';
   afpApplyLanguage();
 });
-const afpTranslationObserver = new MutationObserver(mutations => {
-  if (afpTranslationBusy) return;
-  // Application updates may replace text on existing nodes; track their new French source.
-  for (const m of mutations) {
-    if (m.type === 'characterData') {
-      const n = m.target;
-      const original = AFP_TEXT_ORIGINAL.get(n);
-      if (original !== undefined && n.nodeValue !== original && n.nodeValue !== afpTranslate(original)) AFP_TEXT_ORIGINAL.set(n,n.nodeValue);
-    }
-    if (m.type === 'attributes' && m.attributeName && m.target !== afpLangBtn) {
-      const record = AFP_ATTR_ORIGINAL.get(m.target);
-      if (record && m.attributeName in record) {
-        const current = m.target.getAttribute(m.attributeName);
-        if (current !== record[m.attributeName] && current !== afpTranslate(record[m.attributeName])) record[m.attributeName] = current;
-      }
-    }
-  }
-  afpApplyLanguage();
-});
-afpTranslationObserver.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['title','aria-label','placeholder']});
-afpApplyLanguage();
+// Initial French page is already rendered in French: no expensive full scan.
+afpTranslationObserver.observe(document.body, {subtree:true,childList:true,characterData:true});

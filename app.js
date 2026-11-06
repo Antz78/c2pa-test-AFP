@@ -25,8 +25,12 @@ const TRANSLATIONS = {
   'Non vérifié': 'Not verified',
   'Non confirmé séparément': 'Not independently confirmed',
   'Confiance à vérifier': 'Trust not established',
+  'Certificat expiré : confiance à vérifier': 'Expired certificate: trust requires review',
+  'Certificat expiré : vérifier la validité historique avec un horodatage de confiance.': 'Expired certificate: check historical validity using a trusted timestamp.',
+  'Un certificat expiré ne signifie pas que la photo a été modifiée. Sa validité à la date de signature dépend notamment d’un horodatage de confiance.': 'An expired certificate does not mean the photo was modified. Its validity at signing time depends in particular on a trusted timestamp.',
   'Pourquoi ces indicateurs orange ?': 'Why are these indicators amber?',
   'Le certificat du signataire n’est pas reconnu comme fiable : son identité reste à confirmer. Cela ne signifie pas que la photo est fausse ou modifiée.': 'The signer’s certificate is not recognized as trusted, so their identity remains unconfirmed. This does not mean the photo is fake or altered.',
+  'Le certificat du signataire est expiré et sa confiance n’est pas établie. Un horodatage de confiance peut permettre de valider une signature ancienne. Cela ne prouve pas que la photo a été modifiée.': 'The signing certificate has expired and its trust is not established. A trusted timestamp may allow an earlier signature to be validated. This does not prove the photo was altered.',
   'Certaines vérifications n’ont pas pu être confirmées par cet outil. Les informations restent à examiner : un indicateur orange ne prouve pas que la photo a été falsifiée.': 'This tool could not confirm some checks. The information needs further review: an amber indicator does not prove the photo was manipulated.',
   'Certificat non reconnu comme fiable par ce vérificateur.': 'This verifier does not recognize the certificate as trusted.',
   'Nom déclaré, mais identité non confirmée par ce vérificateur.': 'Declared name, but this verifier has not confirmed the identity.',
@@ -49,6 +53,19 @@ const TRANSLATIONS = {
   'Signature numérique': 'Digital signature',
   'Signataire déclaré': 'Declared signer',
   'Générateur': 'Generator',
+  'Origine déclarée (C2PA)': 'Declared origin (C2PA)',
+  'Capture photographique': 'Photographic capture',
+  'Générée par IA': 'AI-generated',
+  'Contenu IA intégré': 'Contains AI-generated content',
+  'Origine non précisée': 'Origin not specified',
+  'Capture': 'Captured',
+  'IA générée': 'AI-generated',
+  'IA intégrée': 'AI content',
+  'Type de création indiqué par le champ digitalSourceType du manifeste C2PA. Ce champ est déclaratif : sa fiabilité dépend des contrôles C2PA. Une capture ne prouve pas la véracité de la scène.': 'Creation type recorded in the C2PA manifest digitalSourceType field. This field is declarative: reliability depends on C2PA checks. A capture does not prove the scene is truthful.',
+  'Image créée par IA générative selon le manifeste C2PA.': 'Image created using generative AI, as declared in the C2PA manifest.',
+  'Image contenant du contenu généré par IA selon le manifeste C2PA.': 'Image includes AI-generated content, as declared in the C2PA manifest.',
+  'Capture photographique déclarée dans le manifeste C2PA.': 'Photographic capture declared in the C2PA manifest.',
+  'Le manifeste C2PA ne précise pas suffisamment le type d’origine.': 'The C2PA manifest does not specify the origin type clearly enough.',
   'Auteur / photographe': 'Author / photographer',
   'Horodatage certifié (TSA)': 'Trusted timestamp (TSA)',
   'Date de prise de vue (EXIF)': 'Date taken (EXIF)',
@@ -220,6 +237,16 @@ function changeLanguage(next) {
     const tag = card.querySelector('.tag');
     const textNode = tag?.lastChild;
     if (textNode?.nodeType === Node.TEXT_NODE) textNode.textContent = statusLabel(photo.state);
+    updateOriginBadge(photo, card);
+  }
+  const largeMark = lbPhoto.parentElement?.querySelector(':scope > .c2pa-origin-mark');
+  if (largeMark && currentIdx >= 0) {
+    const config = ORIGIN_BADGES[photos[currentIdx]?.origin?.kind];
+    if (config) {
+      largeMark.dataset.hint = tr(config.help);
+      largeMark.title = tr(config.help);
+      largeMark.setAttribute('aria-label', tr(config.full) + ' — ' + tr(config.help));
+    }
   }
   const overlays = document.querySelectorAll('.demo-overlay, #cr-badge');
   for (const overlay of overlays) {
@@ -797,6 +824,7 @@ async function analyze(photo) {
       const list = Array.isArray(entries) ? entries : [];
       photo.validation = list;
       photo.active = await reader.activeManifest().catch(() => null);
+      photo.origin = classifyDeclaredOrigin(photo.active);
       const levels = list.map(validationLevel);
       photo.state = !store ? 'none' : levels.includes('bad') ? 'bad' : levels.includes('warn') ? 'warn' : levels.includes('neutral') || !list.length ? 'warn' : 'ok';
     } catch (error) {
@@ -840,6 +868,206 @@ async function analyzeAll() {
   } finally {
     analysisRunning = false;
   }
+}
+
+/* ---------- Nature de l'image : catégorie DISTINCTE du statut de validation C2PA ----------
+   IMPORTANT : c2pa.created signifie seulement « fichier créé », pas « généré par IA ».
+   On classe uniquement les digitalSourceType explicitement déclarés dans les
+   actions du MANIFESTE ACTIF. Un générateur Google/Adobe/Photoshop ne suffit pas.
+   Les manifestes invalides peuvent toujours *déclarer* une origine : le badge
+   ne constitue donc pas une preuve indépendante de capture ou de génération. */
+function declaredDigitalSourceTypes(active) {
+  if (!active || typeof active !== 'object') return [];
+  const actions = [];
+  const addActions = (value) => {
+    if (Array.isArray(value)) { actions.push(...value); return; }
+    if (value && typeof value === 'object' && Array.isArray(value.actions)) actions.push(...value.actions);
+  };
+  addActions(active.actions);
+  for (const assertion of Array.isArray(active.assertions) ? active.assertions : []) {
+    const label = String(assertion?.label ?? assertion?.type ?? '');
+    // c2pa.actions / c2pa.actions.v2 / c2pa.actions.v3 et instances __N.
+    if (!/c2pa\.actions(?:\.v\d+)?/i.test(label)) continue;
+    addActions(assertion.data);
+    addActions(assertion.data?.data);
+    addActions(assertion.actions);
+  }
+  return actions.flatMap(action => {
+    if (!action || typeof action !== 'object') return [];
+    const source = action.digitalSourceType ?? action.digital_source_type;
+    if (typeof source === 'string') return [source.trim()];
+    if (source && typeof source === 'object') {
+      const id = source['@id'] ?? source.id ?? source.uri;
+      return typeof id === 'string' ? [id.trim()] : [];
+    }
+    return [];
+  }).filter(Boolean);
+}
+function classifyDeclaredOrigin(active) {
+  const values = declaredDigitalSourceTypes(active);
+  const terms = values.map(v => v.split('/').pop().split('#').pop().toLowerCase());
+  const has = term => terms.includes(term.toLowerCase());
+  // Ces codes viennent du vocabulaire IPTC Digital Source Type.
+  const iaCreated = has('trainedAlgorithmicMedia');
+  const iaComposite = has('compositeWithTrainedAlgorithmicMedia') || has('compositeSynthetic');
+  const capture = has('digitalCapture') || has('computationalCapture');
+  // Une chaîne déclarant capture ET génération doit être présentée comme mixte.
+  if (iaComposite || (iaCreated && capture)) return {kind:'mixed', values};
+  if (iaCreated) return {kind:'ai', values};
+  if (capture) return {kind:'capture', values};
+  return {kind:'unknown', values};
+}
+const ORIGIN_BADGES = {
+  // Icônes vectorielles légères (même esprit que caméra / étincelles / calques).
+  ai:      {label:'IA générée', full:'Générée par IA', help:'Image créée par IA générative selon le manifeste C2PA.',
+            svg:'<path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z"/><path d="m19 17 .6 1.4L21 19l-1.4.6L19 21l-.6-1.4L17 19l1.4-.6L19 17ZM5 2l.5 1.5L7 4l-1.5.5L5 6l-.5-1.5L3 4l1.5-.5L5 2Z"/>'},
+  mixed:   {label:'IA intégrée', full:'Contenu IA intégré', help:'Image contenant du contenu généré par IA selon le manifeste C2PA.',
+            svg:'<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/>'},
+  capture: {label:'Capture', full:'Capture photographique', help:'Capture photographique déclarée dans le manifeste C2PA.',
+            svg:'<path d="M14.5 4h-5L7.6 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.6z"/><circle cx="12" cy="13" r="3"/>'}
+};
+const originBadgeStyles = document.createElement('style');
+originBadgeStyles.textContent = `
+  /* Pictogramme d'ORIGINE, indépendant du code couleur de VALIDATION C2PA. */
+  #grid .card, #lightbox .lb-frame{position:relative}
+  .c2pa-origin-mark{
+    position:absolute;z-index:39;display:grid;place-items:center;
+    width:34px;height:34px;min-width:34px;min-height:34px;
+    box-sizing:border-box;margin:0;padding:7px;
+    border:1px solid rgba(255,255,255,.80);border-radius:50%;
+    color:#fff;cursor:pointer;
+    box-shadow:0 3px 12px rgba(0,0,0,.45);backdrop-filter:blur(5px);
+    opacity:0;visibility:hidden;pointer-events:none;
+    transform:translateY(7px) scale(.9);
+    transition:opacity .3s ease,transform .3s ease,visibility .3s;
+  }
+  .c2pa-origin-mark.is-visible{opacity:.94;visibility:visible;pointer-events:auto;transform:none}
+  .c2pa-origin-mark.is-visible:hover,.c2pa-origin-mark.is-visible:focus-visible{
+    opacity:1;transform:scale(1.09);outline-offset:3px;
+  }
+  .c2pa-origin-mark.origin-capture{background:rgba(12,105,112,.91)}
+  .c2pa-origin-mark.origin-ai{background:rgba(113,55,165,.94)}
+  .c2pa-origin-mark.origin-mixed{background:rgba(153,89,39,.93)}
+  .c2pa-origin-mark svg{width:20px;height:20px;display:block;stroke:currentColor;stroke-width:1.9;
+    fill:none;stroke-linejoin:round;stroke-linecap:round;pointer-events:none}
+  /* Aide courte sur ordinateur. Sur téléphone, le tap ouvre la fiche C2PA. */
+  .c2pa-origin-mark::after{
+    content:attr(data-hint);position:absolute;right:0;bottom:calc(100% + 8px);
+    width:max-content;max-width:min(240px,75vw);box-sizing:border-box;
+    padding:7px 9px;border-radius:7px;border:1px solid #64748b;
+    background:#152332;color:#fff;font:600 12px/1.35 system-ui,-apple-system,sans-serif;
+    box-shadow:0 6px 18px #0009;opacity:0;visibility:hidden;pointer-events:none;
+    white-space:normal;text-align:right;
+  }
+  .c2pa-origin-mark:hover::after,.c2pa-origin-mark:focus-visible::after{opacity:1;visibility:visible}
+  #lightbox .c2pa-origin-mark{width:40px;height:40px;min-width:40px;min-height:40px;padding:8px}
+  #lightbox .c2pa-origin-mark svg{width:24px;height:24px}
+  @media(max-width:480px){#grid .c2pa-origin-mark{width:31px;height:31px;min-width:31px;min-height:31px;padding:6px}}
+  @media(prefers-reduced-motion:reduce){.c2pa-origin-mark{transition:none}}
+`;
+document.head.append(originBadgeStyles);
+
+// L'image et la vignette n'ont pas la même hauteur à cause de la légende.
+// On positionne donc le logo sur la PHOTO, pas sur le bas de la carte.
+// Et on le déplace légèrement pour éviter le contrôle C2PA déjà présent.
+function positionOriginMark(mark, img, blocker) {
+  if (!mark?.isConnected || !img?.isConnected) return;
+  const frame = mark.offsetParent;
+  if (!frame) return;
+  const parent = frame.getBoundingClientRect();
+  const r = img.getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  const w = mark.offsetWidth || 34, h = mark.offsetHeight || 34;
+  const pad = 9;
+  let x = r.right - parent.left - w - pad;
+  let y = r.bottom - parent.top - h - pad;
+  const b = blocker?.getBoundingClientRect();
+  if (b && b.width && b.height && x + w + parent.left > b.left - 5 &&
+      x + parent.left < b.right + 5 && y + h + parent.top > b.top - 5 &&
+      y + parent.top < b.bottom + 5) {
+    // Le logo reste près du coin, MAIS ne masque ni le repli, ni le logo AFP.
+    const left = b.left - parent.left - w - 10;
+    if (left >= r.left - parent.left + pad && left >= r.right - parent.left - r.width * .53)
+      x = left;
+    else y = b.top - parent.top - h - 9;
+  }
+  x = Math.max(r.left - parent.left + 5, x);
+  y = Math.max(r.top - parent.top + 5, y);
+  mark.style.left = `${Math.round(x)}px`;
+  mark.style.top = `${Math.round(y)}px`;
+}
+const originMarkObserver = new ResizeObserver(entries => {
+  for (const {target:img} of entries) {
+    const frame = img.parentElement;
+    const mark = frame?.querySelector(':scope > .c2pa-origin-mark');
+    if (mark) positionOriginMark(mark, img, frame.querySelector('.demo-overlay, #cr-badge'));
+  }
+});
+function createOriginMark(kind, onClick) {
+  const config = ORIGIN_BADGES[kind];
+  if (!config) return null;
+  const mark = document.createElement('button');
+  mark.type = 'button';
+  mark.className = 'c2pa-origin-mark origin-' + kind;
+  mark.dataset.kind = kind;
+  mark.dataset.hint = tr(config.help);
+  mark.setAttribute('aria-label', tr(config.full) + ' — ' + tr(config.help));
+  mark.title = tr(config.help);
+  // SVG statique : les chemins viennent du code, pas des métadonnées non fiables.
+  mark.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${config.svg}</svg>`;
+  mark.addEventListener('click', event => { event.stopPropagation(); onClick(); });
+  mark._originTimeout = setTimeout(() => {
+    if (mark.isConnected) mark.classList.add('is-visible');
+  }, 2000);
+  return mark;
+}
+function updateOriginBadge(photo, card) {
+  if (!card) return;
+  let mark = card.querySelector(':scope > .c2pa-origin-mark');
+  const kind = photo.origin?.kind;
+  const config = ORIGIN_BADGES[kind];
+  if (!config) {
+    if (mark) { clearTimeout(mark._originTimeout); mark.remove(); }
+    return;
+  }
+  // Ne pas relancer le délai lors d'une traduction ou d'un nouveau rendu.
+  if (mark && mark.dataset.kind !== kind) {
+    clearTimeout(mark._originTimeout); mark.remove(); mark = null;
+  }
+  if (!mark) {
+    mark = createOriginMark(kind, () => {
+      openLightbox(photo.idx);
+      openSidePanel(photo);
+    });
+    card.append(mark);
+  }
+  mark.dataset.hint = tr(config.help);
+  mark.setAttribute('aria-label', tr(config.full) + ' — ' + tr(config.help));
+  mark.title = tr(config.help);
+  const img = card.querySelector(':scope > img');
+  if (img) {
+    originMarkObserver.observe(img);
+    requestAnimationFrame(() => positionOriginMark(mark, img, card.querySelector('.demo-overlay')));
+  }
+}
+function updateLightboxOriginBadge(photo) {
+  const frame = lbPhoto.parentElement;
+  let mark = frame?.querySelector(':scope > .c2pa-origin-mark');
+  if (mark) { clearTimeout(mark._originTimeout); mark.remove(); }
+  const kind = photo.origin?.kind;
+  if (!frame || !ORIGIN_BADGES[kind]) return;
+  mark = createOriginMark(kind, () => openSidePanel(photo));
+  frame.append(mark);
+  originMarkObserver.observe(lbPhoto);
+  requestAnimationFrame(() => positionOriginMark(mark, lbPhoto, crBadge));
+}
+function clearLightboxOriginBadge() {
+  const mark = lbPhoto.parentElement?.querySelector(':scope > .c2pa-origin-mark');
+  if (mark) { clearTimeout(mark._originTimeout); mark.remove(); }
+}
+function originDescription(photo) {
+  const config = ORIGIN_BADGES[photo.origin?.kind];
+  return config ? tr(config.full) : tr('Origine non précisée');
 }
 
 /* ---------- Rendu ---------- */
@@ -1123,6 +1351,7 @@ function cardEl(photo) {
   source.className='caption-source';source.hidden=true;
   source.addEventListener('click',e=>{e.stopPropagation();openLightbox(photo.idx);openSidePanel(photo);});
   card.append(source);
+  updateOriginBadge(photo, card);
   updateCaption(card,photo);
   card.addEventListener('click', () => openLightbox(photo.idx));
   return card;
@@ -1142,6 +1371,7 @@ function renderCard(photo) {
   updateCaption(card,photo);
   const overlayDot = card.querySelector('.demo-overlay .dot');
   if (overlayDot) overlayDot.className = `dot ${photo.state}`;
+  updateOriginBadge(photo, card);
   applyFilterToCard(card, photo);
 }
 
@@ -1158,6 +1388,9 @@ function updateCount() {
 }
 
 function rebuildGrid() {
+  originMarkObserver.disconnect();
+  // Une lightbox déjà ouverte doit rester sensible au redimensionnement.
+  if (lightbox.open) originMarkObserver.observe(lbPhoto);
   grid.replaceChildren(...photos.map(cardEl));
   photos.forEach(renderCard);
   updateCount();
@@ -1184,6 +1417,7 @@ const C2PA_FIELD_HELP = {
   'Signature numérique': 'Vérifie que les informations de provenance n’ont pas été modifiées après leur signature.',
   'Signataire déclaré': 'Nom indiqué dans le certificat C2PA. Le vert confirme seulement sa présence, pas que le certificat est reconnu comme fiable.',
   'Générateur': 'Appareil ou logiciel ayant créé les informations C2PA.',
+  'Origine déclarée (C2PA)': 'Type de création indiqué par le champ digitalSourceType du manifeste C2PA. Ce champ est déclaratif : sa fiabilité dépend des contrôles C2PA. Une capture ne prouve pas la véracité de la scène.',
   'Auteur / photographe': 'Personne déclarée comme auteur de la photo ; cette identité n’est pas forcément vérifiée.',
   'Horodatage certifié (TSA)': 'Date attestée par un tiers indépendant : la signature existait au plus tard à cet instant.',
   'Date de prise de vue (EXIF)': 'Date enregistrée par l’horloge de l’appareil, modifiable et non certifiée à elle seule.'
@@ -1401,6 +1635,10 @@ function section(title, rows) {
 function present(value) { return value === null || value === undefined || value === '' ? 'neutral' : 'ok'; }
 function validationLevel(v) {
   const code = String(typeof v === 'string' ? v : v?.code ?? v?.status ?? '').toLowerCase();
+  // Un certificat Pixel Camera arrivé à expiration n'est pas une preuve de falsification :
+  // la signature peut rester valable historiquement avec un horodatage de confiance.
+  // Afficher en orange (confiance non établie), mais conserver le code brut dans les détails.
+  if (/^signingcredential\.expired$/.test(code)) return 'warn';
   if (/mismatch|invalid|tamper|failure|error|revoked|expired/.test(code)) return 'bad';
   if (/untrusted|unknown|unsupported|warning|not.?trusted/.test(code)) return 'warn';
   if (/success|valid|trusted|match/.test(code)) return 'ok';
@@ -1428,6 +1666,7 @@ function openLightbox(idx) {
   hideTapReveal();
   crBadge.className=`cr ${photo.state}`;
   addBadgeContent(crBadge,mode,photo.state);
+  updateLightboxOriginBadge(photo);
   const curl = crBadge._curl;
   if (curl) curl.updatePhoto(lbPhoto, makeProvenanceCard(photo));
   scheduleDelayedBadge(mode);
@@ -1454,6 +1693,9 @@ function openLightbox(idx) {
       if(['delayed','shield-delayed'].includes(presentationFor(photo)) && delayedRevealReady) crBadge.classList.add('delayed-visible');
       if (!bottomSheet.hidden && bottomPhoto === photo) refreshBottomSheet(photo);
       if (!sidePanel.hidden) refreshSidePanel(photo);
+      // Si la classification n'était pas encore disponible à l'ouverture.
+      if (!lbPhoto.parentElement.querySelector(':scope > .c2pa-origin-mark') && ORIGIN_BADGES[photo.origin?.kind])
+        updateLightboxOriginBadge(photo);
       if (credentials.open) fillDetails(photo); // rafraîchir le panneau déjà ouvert
       renderCard(photo);
       if (presentationFor(photo)==='caption') {
@@ -1499,13 +1741,18 @@ function fillDetails(photo) {
   else setStatusLine('ok', 'Contrôles C2PA retournés sans problème signalé. Cela ne prouve pas la véracité de la scène.');
   const codesForWarning = entries.map(v => String(typeof v === 'string' ? v : v?.code ?? v?.status ?? '').toLowerCase());
   const hasUntrustedSignerWarning = codesForWarning.some(c => /signingcredential\.(untrusted|unknown)|signer\.untrusted/.test(c));
+  const hasExpiredSignerWarning = codesForWarning.some(c => /^signingcredential\.expired$/.test(c));
   const warningNotice = document.createElement('div');
   warningNotice.className = 'c2pa-warning-explainer';
   warningNotice.setAttribute('role', 'note');
   const warningTitle = document.createElement('strong');
   warningTitle.textContent = tr('Pourquoi ces indicateurs orange ?');
   const warningBody = document.createElement('p');
-  warningBody.textContent = tr(hasUntrustedSignerWarning
+  warningBody.textContent = tr(hasExpiredSignerWarning && hasUntrustedSignerWarning
+    ? 'Le certificat du signataire est expiré et sa confiance n’est pas établie. Un horodatage de confiance peut permettre de valider une signature ancienne. Cela ne prouve pas que la photo a été modifiée.'
+    : hasExpiredSignerWarning
+    ? 'Un certificat expiré ne signifie pas que la photo a été modifiée. Sa validité à la date de signature dépend notamment d’un horodatage de confiance.'
+    : hasUntrustedSignerWarning
     ? 'Le certificat du signataire n’est pas reconnu comme fiable : son identité reste à confirmer. Cela ne signifie pas que la photo est fausse ou modifiée.'
     : 'Certaines vérifications n’ont pas pu être confirmées par cet outil. Les informations restent à examiner : un indicateur orange ne prouve pas que la photo a été falsifiée.');
   warningNotice.append(warningTitle, warningBody);
@@ -1522,11 +1769,12 @@ function fillDetails(photo) {
   const hasIntegrityFailure = codes.some(c => /assertion\.datahash\.mismatch|assertion\.bmffhash\.mismatch|assertion\.hasheduri\.mismatch|assertion\.boxhash\.mismatch|hash\.mismatch/.test(c));
   const hasSignatureFailure = codes.some(c => /claimsignature\.mismatch|claimsignature\.invalid|signature\.invalid/.test(c));
   const hasUntrustedSigner = codes.some(c => /signingcredential\.untrusted|signingcredential\.unknown/.test(c));
+  const hasExpiredSigner = codes.some(c => /^signingcredential\.expired$/.test(c));
   // Un statut global positif sans détail ne prouve pas individuellement ces contrôles.
   const integrityStatus = tr(hasIntegrityFailure ? 'Échec' : 'Non confirmé séparément');
-  const signatureStatus = tr(hasSignatureFailure ? 'Échec' : hasUntrustedSigner ? 'Confiance à vérifier' : 'Non confirmé séparément');
+  const signatureStatus = tr(hasSignatureFailure ? 'Échec' : hasExpiredSigner ? 'Certificat expiré : confiance à vérifier' : hasUntrustedSigner ? 'Confiance à vérifier' : 'Non confirmé séparément');
   const integrityLevel = hasIntegrityFailure ? 'bad' : 'neutral';
-  const signatureLevel = hasSignatureFailure ? 'bad' : hasUntrustedSigner ? 'warn' : 'neutral';
+  const signatureLevel = hasSignatureFailure ? 'bad' : (hasUntrustedSigner || hasExpiredSigner) ? 'warn' : 'neutral';
 
   // Auteur : seulement une déclaration explicite dans les métadonnées C2PA.
   const assertions = Array.isArray(a.assertions) ? a.assertions : [];
@@ -1574,13 +1822,20 @@ function fillDetails(photo) {
       field('Certificat / signataire déclaré', signer, signerLevel),
     ]), validationSection);
 
+  const trueFailures = entries.filter(v => validationLevel(v) === 'bad').map(validationText);
+  const failureNotice = document.createElement('p');
+  failureNotice.style.cssText = 'margin:0 0 12px;color:#ffb4b4;font-size:12px;line-height:1.45;overflow-wrap:anywhere';
+  failureNotice.textContent = (uiLanguage === 'en' ? 'Reason for red status: ' : 'Motif du statut rouge : ') + trueFailures.join(', ');
   lbSummary.replaceChildren(
+    ...(trueFailures.length ? [failureNotice] : []),
     ...(!levels.includes('bad') && (levels.includes('warn') || !entries.length || levels.includes('neutral')) ? [warningNotice] : []),
     section('Vérification C2PA', [
       field('Intégrité du fichier', integrityStatus, integrityLevel),
-      field('Signature numérique', signatureStatus, signatureLevel, hasUntrustedSignerWarning && signatureLevel === 'warn' ? tr('Certificat non reconnu comme fiable par ce vérificateur.') : ''),
+      field('Signature numérique', signatureStatus, signatureLevel, hasExpiredSigner ? tr('Certificat expiré : vérifier la validité historique avec un horodatage de confiance.') : hasUntrustedSignerWarning && signatureLevel === 'warn' ? tr('Certificat non reconnu comme fiable par ce vérificateur.') : ''),
       field('Signataire déclaré', signer, signerLevel, hasUntrustedSignerWarning ? tr('Nom déclaré, mais identité non confirmée par ce vérificateur.') : ''),
       field('Générateur', generator, present(generator)),
+      field('Origine déclarée (C2PA)', originDescription(photo), 'neutral',
+        photo.origin?.values?.length ? photo.origin.values.join(' · ') : tr('Le manifeste C2PA ne précise pas suffisamment le type d’origine.')),
     ]),
     section('Informations sur la photo', [
       field('Auteur / photographe', author ? `${author}${authorSource ? ' — ' + authorSource : ''}` : null, 'neutral'),
@@ -1637,7 +1892,11 @@ function step(dir) {
 document.querySelector('#lb-close').addEventListener('click', () => lightbox.close());
 document.querySelector('#lb-prev').addEventListener('click', () => step(-1));
 document.querySelector('#lb-next').addEventListener('click', () => step(1));
-lightbox.addEventListener('close', () => { currentIdx = -1; if (credentials.open) credentials.close(); });
+lightbox.addEventListener('close', () => {
+  clearLightboxOriginBadge();
+  currentIdx = -1;
+  if (credentials.open) credentials.close();
+});
 window.addEventListener('keydown', e => {
   if (!lightbox.open || credentials.open) return;
   if (e.key === 'ArrowLeft') step(-1);

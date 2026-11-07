@@ -89,7 +89,14 @@ const TRANSLATIONS = {
   'Catégorie affichée': 'Displayed category',
   'digitalSourceType (IPTC)': 'digitalSourceType (IPTC)',
   'Action C2PA': 'C2PA action',
+  'Emplacement de la déclaration': 'Declaration location',
+  'Origine retrouvée dans un manifeste parent ou un ingrédient parentOf signé, sous réserve de validation C2PA.': 'Origin found in a parent manifest or signed parentOf ingredient, subject to C2PA validation.',
   'Photo capturée': 'Captured photo',
+  'Photo capturée (inférence C2PA)': 'Captured photo (C2PA inference)',
+  'Capture déduite de la provenance C2PA du boîtier (non déclarée par digitalSourceType)': 'Capture inferred from the camera’s C2PA provenance (not declared by digitalSourceType)',
+  'Fondement de l’inférence': 'Basis for inference',
+  'Boîtier déclaré (EXIF signé)': 'Declared camera (signed EXIF)',
+  'Générateur déclaré': 'Declared generator',
   'Image générée par IA': 'AI-generated image',
   'Image composée': 'Composite image',
   'Origine inconnue': 'Unknown origin',
@@ -118,7 +125,7 @@ const TRANSLATIONS = {
   'Appareil ou logiciel ayant créé les informations C2PA.': 'Camera or software that created the C2PA information.',
   'Interprétation simplifiée de digitalSourceType par cette galerie. Ce n’est pas un verdict sur la vérité de la scène.': 'Simplified interpretation of digitalSourceType by this gallery. It is not a verdict about the scene.',
   'Champ standard de la spécification C2PA, dont la valeur est un identifiant officiel IPTC. Une valeur absente ne prouve rien sur la génération IA.': 'A field defined by C2PA using an official IPTC identifier. A missing value proves nothing about AI generation.',
-  'Action (par exemple c2pa.created) portant le digitalSourceType dans le manifeste actif.': 'The action (for example c2pa.created) carrying digitalSourceType in the active manifest.',
+  'Action (par exemple c2pa.created) portant le digitalSourceType dans le manifeste actif.': 'The action (for example c2pa.created) carrying digitalSourceType in the manifest.',
   'Personne déclarée comme auteur de la photo ; cette identité n’est pas forcément vérifiée.': 'Person named as the photo author; their identity is not necessarily verified.',
   'Date attestée par un tiers indépendant : la signature existait au plus tard à cet instant.': 'Time certified by an independent authority: the signature existed no later than this time.',
   'Date enregistrée par l’horloge de l’appareil, modifiable et non certifiée à elle seule.': 'Date recorded by the camera clock; it can be modified and is not independently certified.',
@@ -1006,66 +1013,218 @@ function c2paActiveManifest(photo) {
   }
   return null;
 }
+/* Lecture multi-emplacements des déclarations de source C2PA.
+   Priorité : c2pa.actions v1/v2 (avec templates), puis c2pa.metadata / IPTC,
+   puis parentOf uniquement si le manifeste actif n'a aucune déclaration.
+   Les indices EXIF, le fabricant, et le simple c2pa.created ne suffisent jamais à
+   inventer un digitalSourceType. La confiance cryptographique reste indépendante. */
 function c2paSourceDetails(photo) {
   const manifest = c2paActiveManifest(photo);
-  const results = [];
-  if (!manifest) return { kind: 'unknown', raw: null, action: null, hasField: false };
-
-  function asObject(v) {
+  const unknown = { kind:'unknown', raw:null, action:null, source:null, hasField:false,
+    declared:false, inherited:false, note:null };
+  if (!manifest) return unknown;
+  const store = photo?.store ?? {};
+  const all = store.manifests ?? {};
+  const byLabel = new Map();
+  if (Array.isArray(all)) {
+    for (const m of all) if (m && typeof m === 'object') {
+      for (const k of [m.label,m.id,m.instanceID,m.instance_id]) if (k) byLabel.set(String(k), m);
+    }
+  } else {
+    for (const [key,m] of Object.entries(all)) if (m && typeof m === 'object') {
+      byLabel.set(key,m);
+      for (const k of [m.label,m.id,m.instanceID,m.instance_id]) if (k) byLabel.set(String(k),m);
+    }
+  }
+  function obj(v) {
     if (typeof v === 'string' && /^\s*[\[{]/.test(v)) {
-      try { return JSON.parse(v); } catch (_) { return null; }
+      try { return JSON.parse(v); } catch (_) { return v; }
     }
     return v;
   }
-  function collect(v, actionName = null, depth = 0) {
-    v = asObject(v);
-    if (!v || depth > 8) return;
-    if (Array.isArray(v)) { v.forEach(x => collect(x, actionName, depth + 1)); return; }
-    if (typeof v !== 'object') return;
-    const action = typeof v.action === 'string' ? v.action : actionName;
-    const source = v.digitalSourceType ?? v.digital_source_type ?? v['digital-source-type'];
-    if (typeof source === 'string' && source.trim()) {
-      results.push({ uri: source.trim(), action: action ?? null });
-    }
-    // Ces champs forment le conteneur de l'assertion actions ; ne pas suivre
-    // 'ingredients', 'thumbnail' ou tout autre manifeste d'ingredient.
-    for (const key of ['actions', 'data', 'value', 'payload']) {
-      if (v[key] != null) collect(v[key], action, depth + 1);
-    }
+  function sourceValue(v) {
+    v=obj(v);
+    if (typeof v === 'string') return v.trim() || null;
+    if (v && typeof v === 'object') return sourceValue(v['@id'] ?? v.uri ?? v.url ?? v.value ?? v['rdf:resource'] ?? v.label ?? v.id);
+    return null;
   }
-  // Assertions de type c2pa.actions, qu'elles soient v1 ou v2.
-  const assertions = Array.isArray(manifest.assertions)
-    ? manifest.assertions
-    : Object.entries(manifest.assertions ?? {}).map(([label, data]) => ({ label, data }));
-  for (const assertion of assertions) {
-    if (/^c2pa\.actions(?:\.v\d+)?(?:__\d+)?$/i.test(String(assertion?.label ?? assertion?.type ?? ''))) {
-      collect(assertion?.data ?? assertion?.value ?? assertion);
+  function sourceEntries(node, originLabel, maxDepth=5) {
+    const seen=new WeakSet(), items=[];
+    function visit(v,location,depth) {
+      v=obj(v);
+      if (!v || depth>maxDepth || typeof v !== 'object') return;
+      if (seen.has(v)) return;
+      seen.add(v);
+      if (Array.isArray(v)) { v.forEach((part,i)=>visit(part,location+'['+i+']',depth+1)); return; }
+      for (const [k,value] of Object.entries(v)) {
+        // Ne pas confondre la déclaration d'un ingrédient non-parent avec celle du fichier.
+        const simple = String(k).split(':').pop().toLowerCase();
+        if (simple === 'digitalsourcetype' || simple === 'digital_source_type' || simple === 'digital-source-type') {
+          const raw=sourceValue(value);
+          if (raw) items.push({raw,source:location+'.'+k,action:null});
+        } else if (!/^(ingredients?|thumbnails?|manifests?|claim|signature|thumbnail)$/i.test(k)) {
+          visit(value,location+'.'+k,depth+1);
+        }
+      }
     }
+    visit(node,originLabel,0);
+    return items;
   }
-  // Certains SDK exposent l'assertion directement sur le manifeste actif.
-  if (results.length === 0) collect(manifest.actions);
+  function assertionsOf(m) {
+    const a=obj(m?.assertions);
+    if (Array.isArray(a)) return a;
+    if (a && typeof a === 'object') return Object.entries(a).map(([label,data])=>({label,data}));
+    return [];
+  }
+  function labelOf(a) { return String(a?.label ?? a?.type ?? a?.name ?? ''); }
+  function payloadOf(a) { return obj(a?.data ?? a?.value ?? a?.payload ?? a); }
+  function normKind(raw) {
+    const name=String(raw).split(/[\/#]/).pop().toLowerCase();
+    if (['compositewithtrainedalgorithmicmedia','compositesynthetic','compositecapture'].includes(name)) return 'composite';
+    if (['trainedalgorithmicmedia','trainedalgorithmicdata','syntheticmedia'].includes(name)) return 'ai';
+    if (['digitalcapture','computationalcapture','negativefilm','positivefilm','print'].includes(name)) return 'capture';
+    // Ne pas affirmer "capture" pour humanEdits, algorithmicallyEnhanced, empty, etc.
+    return 'unknown';
+  }
+  function ownDeclarations(m) {
+    const results=[];
+    const allAssertions=assertionsOf(m);
+    function add(raw,source,action) { if (sourceValue(raw)) results.push({raw:sourceValue(raw),source,action:action||null}); }
+    function parseActions(p,origin) {
+      p=obj(p);
+      if (!p || typeof p !== 'object') return;
+      const actions=Array.isArray(p) ? p : p.actions;
+      const templates=Array.isArray(p.templates) ? p.templates : [];
+      if (!Array.isArray(actions)) return;
+      actions.forEach((event,i)=>{
+        event=obj(event);
+        if (!event || typeof event !== 'object') return;
+        const action=String(event.action ?? event.name ?? '');
+        // La déclaration de l'action prime sur le modèle ; '*' est le modèle générique v2.
+        const template=templates.find(t=>t?.action===action) ?? templates.find(t=>t?.action==='*');
+        const value=event.digitalSourceType ?? event.digital_source_type ?? event['digital-source-type']
+          ?? template?.digitalSourceType ?? template?.digital_source_type;
+        add(value,origin+'.actions['+i+']',action);
+      });
+    }
+    for (const assertion of allAssertions) {
+      const name=labelOf(assertion);
+      const data=payloadOf(assertion);
+      if (/^(?:c2pa\.)?actions(?:\.v\d+)?(?:__\d+)?$/i.test(name)) {
+        parseActions(data,name);
+      } else if (/^(?:c2pa\.)?metadata(?:\.v\d+)?(?:__\d+)?$|iptc|exif/i.test(name)) {
+        for (const x of sourceEntries(data,name)) add(x.raw,x.source,null);
+      }
+    }
+    // Compatibilité SDK : certaines versions exposent l'assertion directement.
+    if (results.length===0) parseActions(m?.actions,'manifest.actions');
+    // Une forme SDK peut fournir une liste de métadonnées signées hors de "assertions".
+    if (results.length===0 && m?.metadata) {
+      for (const x of sourceEntries(m.metadata,'manifest.metadata')) add(x.raw,x.source,null);
+    }
+    return results;
+  }
+  function chosen(entries,inherited=false) {
+    if (!entries.length) return null;
+    // Valeurs explicites composites > IA > capture ; inconnu si URI non reconnue.
+    const kindOf=entry=>normKind(entry.raw);
+    const matched = entries.find(x=>kindOf(x)==='composite') ?? entries.find(x=>kindOf(x)==='ai')
+        ?? entries.find(x=>kindOf(x)==='capture') ?? entries[0];
+    const kind=kindOf(matched);
+    return {kind,raw:[...new Set(entries.map(x=>x.raw))].join(' ; '),
+      action:matched.action,source:matched.source,hasField:true,
+      declared:kind!=='unknown',inherited,note:null};
+  }
+  // Le SDK peut retourner un manifeste actif partiel ; le manifestStore contient
+  // parfois les assertions complètes (notamment c2pa.metadata et c2pa.actions.v2).
+  const activeKey=store.active_manifest ?? store.activeManifest;
+  const storedActive=activeKey ? byLabel.get(String(activeKey)) : null;
+  const activeCandidates=[manifest,...(storedActive && storedActive!==manifest ? [storedActive] : [])];
+  const explicit=activeCandidates.flatMap(ownDeclarations);
+  const direct=chosen(explicit);
+  if (direct?.declared) return direct;
 
-  // Les URIs officielles ne sont pas créées par notre interface.
-  const found = [...new Map(results.map(r => [r.uri + '\u0000' + (r.action ?? ''), r])).values()];
-  const names = found.map(r => r.uri.split(/[\/#]/).pop().toLowerCase());
-  const any = (...values) => names.some(name => values.includes(name));
-  let kind = 'unknown';
-  // Les composites explicites ont priorité sur les captures ou générations.
-  if (any('compositewithtrainedalgorithmicmedia', 'compositesynthetic',
-          'compositecapture', 'composite', 'virtualrecording') ||
-      (any('trainedalgorithmicmedia') && any('digitalcapture', 'computationalcapture'))) {
-    kind = 'composite';
-  } else if (any('trainedalgorithmicmedia')) {
-    kind = 'ai';
-  } else if (any('digitalcapture','computationalcapture')) {
-    kind = 'capture';
+  /* Les ingrédients composant l'image ne définissent PAS l'origine globale.
+     On ne suit que parentOf (ou parent_declaration explicite). */
+  function parentRefs(m) {
+    const refs=[];
+    for (const x of [...(Array.isArray(m?.ingredients)?m.ingredients:[]),
+       ...assertionsOf(m).filter(x=>/c2pa\.ingredient/i.test(labelOf(x))).map(payloadOf)]) {
+      const p=obj(x);
+      if (!p || typeof p!=='object') continue;
+      const relation=String(p.relationship ?? p.relation ?? p['dc:relation'] ?? '').toLowerCase();
+      if (!/parentof|parent_of|parent-of/.test(relation)) continue;
+      const uri=sourceValue(p.digitalSourceType ?? p.digital_source_type ?? p['digital-source-type']);
+      if (uri) refs.push({direct:uri});
+      for (const val of [p.activeManifest,p.active_manifest,p.manifest,p.manifestLabel,p.c2pa_manifest,p.instanceID,p.instance_id]) {
+        const ref=sourceValue(val);
+        if (ref) refs.push({ref});
+      }
+      for (const path of [p.validationStatus?.activeManifest,p.validation_status?.active_manifest]) {
+        const ref=sourceValue(path);
+        if (ref) refs.push({ref});
+      }
+    }
+    return refs;
   }
-  return {
-    kind,
-    raw: found.length ? found.map(r => r.uri).join(' ; ') : null,
-    action: found.length ? [...new Set(found.map(r => r.action).filter(Boolean))].join(' ; ') || null : null,
-    hasField: found.length > 0
-  };
+  const visited=new Set([manifest]);
+  const queue=activeCandidates.flatMap(parentRefs).map(x=>({x,depth:1}));
+  while (queue.length) {
+    const {x,depth}=queue.shift();
+    if (depth>5) continue;
+    if (x.direct) {
+      const found=chosen([{raw:x.direct,source:'parentOf ingredient.digitalSourceType',action:null}],true);
+      if (found?.declared) {found.note='Parent déclaré dans un ingrédient C2PA';return found;}
+      continue;
+    }
+    const parent=byLabel.get(x.ref);
+    if (!parent || visited.has(parent)) continue;
+    visited.add(parent);
+    const inherited=chosen(ownDeclarations(parent),true);
+    if (inherited?.declared) {inherited.note='Manifeste parent de la chaîne C2PA';return inherited;}
+    queue.push(...parentRefs(parent).map(x=>({x,depth:depth+1})));
+  }
+  /* Fallback prudent pour certaines photos signées dans l'appareil.
+     Canon EOS R1 et Nikon Z6 III fournissent c2pa.created et une assertion
+     stds.exif signée indiquant le boîtier, sans digitalSourceType.
+     Il s'agit d'une INFERENCE étayée, jamais d'un digitalCapture officiel.
+     Ne pas l'utiliser si un contrôle C2PA a réellement échoué. */
+  function captureFromSignedCameraEvidence(m) {
+    if (!m || ['bad','error','none','loading'].includes(photo?.state)) return null;
+    const claims=assertionsOf(m);
+    const actions=claims.filter(x=>/^(?:c2pa\.)?actions(?:\.v\d+)?(?:__\d+)?$/i.test(labelOf(x)));
+    const events=[];
+    for (const a of actions) {
+      const p=payloadOf(a);
+      const list=Array.isArray(p) ? p : p?.actions;
+      if (Array.isArray(list)) events.push(...list.map(x=>obj(x)?.action).filter(Boolean));
+    }
+    if (!events.includes('c2pa.created') || events.some(x=>/edited|opened|placed|removed|repackaged|transcoded/i.test(x))) return null;
+    const exif=claims.filter(x=>/^stds\.exif(?:__\d+)?$/i.test(labelOf(x)));
+    if (!exif.length) return null;
+    const candidate=exif.map(x=>payloadOf(x)).find(v=>v && typeof v==='object' && !Array.isArray(v) &&
+      (v['tiff:Make'] || v['tiff:Model'] || v['tiff']?.Make || v['tiff']?.Model));
+    if (!candidate) return null;
+    const make=String(candidate['tiff:Make'] ?? candidate['tiff']?.Make ?? '').trim();
+    const model=String(candidate['tiff:Model'] ?? candidate['tiff']?.Model ?? '').trim();
+    const generator=String(m.claim_generator ?? m.claimGenerator ??
+      m.claim_generator_info?.[0]?.name ?? m.claimGeneratorInfo?.[0]?.name ?? '').trim();
+    const canon=/^canon$/i.test(make) && /^canon\s+eos\s+r\d+/i.test(model) &&
+      /^Canon EOS R\d+/i.test(generator);
+    const nikon=/^nikon(?: corporation)?$/i.test(make) && /^(?:nikon\s+)?z[0-9a-z_]+/i.test(model) &&
+      (/^z[0-9a-z_]+_ver\./i.test(generator) || /^Nikon\s+Z/i.test(generator));
+    if (!canon && !nikon) return null;
+    return {kind:'capture', raw:null,action:'c2pa.created',
+      source:'c2pa.actions + stds.exif + claim_generator', hasField:false,
+      declared:false, inherited:false, inferred:true,
+      cameraModel:model, cameraMake:make, generator,
+      note:'Capture déduite de la création C2PA et du boîtier décrit dans une assertion EXIF signée. Aucun digitalSourceType déclaré.'};
+  }
+  for (const candidate of activeCandidates) {
+    const fallback=captureFromSignedCameraEvidence(candidate);
+    if (fallback) return fallback;
+  }
+  return direct ?? unknown;
 }
 function detectDeclaredOrigin(photo) {
   return c2paSourceDetails(photo).kind;
@@ -1089,14 +1248,16 @@ const DISTINGUO_COLORS = Object.freeze({
   loading: '#C7D0DA'
 });
 function appendOriginBadge(target, photo, state) {
-  const origin = detectDeclaredOrigin(photo) || 'unknown';
+  const originDetail = c2paSourceDetails(photo);
+  const origin = originDetail.kind || 'unknown';
   const level = originStatusLevel(state);
   const color = DISTINGUO_COLORS[level] || '#FFFFFF';
   target.style.setProperty('--origin-foreground', color);
   target.dataset.originStatus = level;
   target.dataset.originKind = origin;
-  target.title = originTitle(origin);
-  target.setAttribute('aria-label', originTitle(origin) + ' — ' + (level === 'warn' ? tr('À vérifier') : level === 'bad' ? tr('Échec') : level === 'ok' ? tr('Validé') : tr('Indéterminé')));
+  const originDescription = originDetail.inferred ? tr('Capture déduite de la provenance C2PA du boîtier (non déclarée par digitalSourceType)') : originTitle(origin);
+  target.title = originDescription;
+  target.setAttribute('aria-label', originDescription + ' — ' + (level === 'warn' ? tr('À vérifier') : level === 'bad' ? tr('Échec') : level === 'ok' ? tr('Validé') : tr('Indéterminé')));
   target.classList.add(level, 'origin-' + origin);
 
   // Dessins optiquement équilibrés sur un cadre SVG 24 × 24 : appareil, AI, calques, ?.
@@ -1499,6 +1660,7 @@ const C2PA_FIELD_HELP = {
   'Catégorie affichée': 'Interprétation simplifiée de digitalSourceType par cette galerie. Ce n’est pas un verdict sur la vérité de la scène.',
   'digitalSourceType (IPTC)': 'Champ standard de la spécification C2PA, dont la valeur est un identifiant officiel IPTC. Une valeur absente ne prouve rien sur la génération IA.',
   'Action C2PA': 'Action (par exemple c2pa.created) portant le digitalSourceType dans le manifeste actif.',
+  'Emplacement de la déclaration': 'Assertion C2PA ou manifeste parent à l’origine de la classification.',
   'Auteur / photographe': 'Personne déclarée comme auteur de la photo ; cette identité n’est pas forcément vérifiée.',
   'Horodatage certifié (TSA)': 'Date attestée par un tiers indépendant : la signature existait au plus tard à cet instant.',
   'Date de prise de vue (EXIF)': 'Date enregistrée par l’horloge de l’appareil, modifiable et non certifiée à elle seule.'
@@ -1789,15 +1951,20 @@ function originPanelSection(photo) {
   const pending = photo.state === 'loading';
   const missing = photo.state === 'none';
   const error = photo.state === 'error';
-  const explanatory = detail.hasField
-    ? 'La catégorie résume le champ digitalSourceType déclaré dans le manifeste actif. Elle ne prouve pas la véracité de la scène.'
-    : 'Aucune valeur digitalSourceType utilisable : « inconnue » est une classification de cette interface, pas une valeur officielle C2PA.';
+  const explanatory = detail.inferred
+    ? 'Capture déduite de la provenance C2PA du boîtier (non déclarée par digitalSourceType)'
+    : detail.hasField
+      ? (detail.inherited ? 'Origine retrouvée dans un manifeste parent ou un ingrédient parentOf signé, sous réserve de validation C2PA.' : 'La catégorie résume le champ digitalSourceType déclaré dans le manifeste actif. Elle ne prouve pas la véracité de la scène.')
+      : 'Aucune valeur digitalSourceType utilisable : « inconnue » est une classification de cette interface, pas une valeur officielle C2PA.';
   const raw = pending ? tr('Analyse en cours') : missing ? tr('Sans manifeste C2PA intégré')
     : error ? tr('Lecture C2PA indisponible') : detail.raw ?? tr('Non renseigné dans le manifeste');
   const rows = [
-    field('Catégorie affichée', tr(pending ? 'Analyse en cours' : categories[detail.kind]), 'neutral', tr(explanatory)),
+    field('Catégorie affichée', tr(pending ? 'Analyse en cours' : (detail.inferred ? 'Photo capturée (inférence C2PA)' : categories[detail.kind])), 'neutral', tr(explanatory)),
     field('digitalSourceType (IPTC)', raw, 'neutral'),
-    field('Action C2PA', detail.action ?? (pending ? tr('Analyse en cours') : tr('Non renseigné')), 'neutral')
+    field('Action C2PA', detail.action ?? (pending ? tr('Analyse en cours') : tr('Non renseigné')), 'neutral'),
+    field(detail.inferred ? 'Fondement de l’inférence' : 'Emplacement de la déclaration', detail.source ?? tr('Non renseigné dans le manifeste'), 'neutral'),
+    ...(detail.inferred ? [field('Boîtier déclaré (EXIF signé)',detail.cameraModel,'neutral'),
+                          field('Générateur déclaré',detail.generator,'neutral')] : [])
   ];
   return section('Origine du contenu (C2PA)', rows);
 }

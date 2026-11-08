@@ -8,7 +8,7 @@ console.info('[C2PA AFP] Version filtres v3 chargée — badges À vérifier');
 // Le SDK C2PA est chargé à la demande : une panne du CDN ne bloque PLUS la galerie.
 const SDK_URL = 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.15.4/+esm';
 let C2paReader = null;
-let sdkFailure = null;
+let sdkFailure = null; // dernière panne temporaire, jamais mémorisée définitivement
 
 /* ===== Interface FR / EN : sans MutationObserver, sans analyse C2PA supplémentaire =====
    Seuls les libellés changent. Les données brutes de provenance restent intactes. */
@@ -21,6 +21,11 @@ const TRANSLATIONS = {
   'Échec': 'Failed',
   'Sans C2PA': 'No C2PA',
   'Analyse indisponible': 'Analysis unavailable',
+  'Résultat mémorisé': 'Saved result',
+  'Dernière analyse enregistrée': 'Last saved analysis',
+  'Résultat d’une analyse précédente, non vérifié à nouveau pendant cette visite.': 'Result of an earlier analysis, not yet reverified during this visit.',
+  'Nouvelle vérification en cours.': 'New verification in progress.',
+  'Les couleurs correspondent à la dernière analyse mémorisée, pas à une nouvelle vérification.': 'Colors reflect the last saved analysis, not a new verification.',
   'Non renseigné': 'Not provided',
   'Non disponible': 'Not available',
   'Non vérifié': 'Not verified',
@@ -621,7 +626,7 @@ function photoKey(url) {
 /* Renvoie { state: 'ok' | 'missing' | 'empty', urls: string[] } */
 async function probeIndex() {
   try {
-    const r = await fetchWithTimeout('./photos.json', { cache: 'no-store' }, 5500);
+    const r = await fetchWithTimeout('./photos.json', { cache: 'default' }, 6500);
     if (!r.ok) return { state: 'missing', urls: [] };
     const data = await r.json();
     const list = Array.isArray(data) ? data : (Array.isArray(data?.photos) ? data.photos : []);
@@ -841,71 +846,311 @@ async function readExifMetadata(blob) {
   return result;
 }
 
+/* ===== Cache C2PA resilient, strictement lié aux octets d'origine =====
+   CacheStorage : JPEG/PNG originaux (mêmes octets, sans réencodage).
+   IndexedDB : résultats de l'analyse locale, reliés au SHA-256 du fichier.
+   La copie en cache ne prouve pas une nouvelle validation ou une confiance actuelle.
+   Les imports locaux (blob:) ne sont jamais persistés. */
+const AFP_CACHE_VERSION = 1;
+const AFP_CACHE_DB_NAME = 'afp-c2pa-verified-metadata-v1';
+const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
+const AFP_CACHE_LIMIT = 32;
+const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
+const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
+const AFP_ENGINE_VERSION = 'c2pa-web-0.15.4';
+let afpDbPromise = null;
+
+function afpRemoteUrl(photo) {
+  if (photo.blob) return null; // pas de cache durable des fichiers personnels importés
+  try {
+    const u = new URL(photo.url, location.href);
+    if (u.origin !== location.origin || !u.pathname.toLowerCase().includes('/photos/')) return null;
+    return u.href;
+  } catch (_) { return null; }
+}
+function afpOpenDb() {
+  if (!('indexedDB' in window)) return Promise.resolve(null);
+  if (!afpDbPromise) afpDbPromise = new Promise(resolve => {
+    try {
+      const request = indexedDB.open(AFP_CACHE_DB_NAME, AFP_CACHE_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains('results')) db.createObjectStore('results', { keyPath: 'url' });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => { console.warn('[AFP Cache] IndexedDB indisponible'); resolve(null); };
+      request.onblocked = () => resolve(null);
+    } catch (_) { resolve(null); }
+  });
+  return afpDbPromise;
+}
+async function afpReadRecord(url) {
+  if (!url) return null;
+  const db = await afpOpenDb(); if (!db) return null;
+  return new Promise(resolve => {
+    try {
+      const r = db.transaction('results','readonly').objectStore('results').get(url);
+      r.onsuccess = () => resolve(r.result ?? null);
+      r.onerror = () => resolve(null);
+    } catch (_) { resolve(null); }
+  });
+}
+async function afpWriteRecord(photo, digest) {
+  const url = afpRemoteUrl(photo);
+  if (!url || !digest || !['ok','warn','bad','none'].includes(photo.state)) return;
+  const db = await afpOpenDb(); if (!db) return;
+  // Manifestes JSON uniquement, pas d'instances WASM ni de données de validation inventées.
+  let record;
+  try {
+    record = JSON.stringify({ url, hash:digest, sdk:AFP_ENGINE_VERSION, savedAt:Date.now(),
+      state:photo.state, store:photo.store ?? null, active:photo.active ?? null,
+      validation:photo.validation ?? [], exif:photo.exif ?? null });
+    if (record.length > AFP_MAX_METADATA_BYTES) return;
+    record = JSON.parse(record);
+  } catch (_) { return; }
+  await new Promise(resolve => {
+    try {
+      const tx = db.transaction('results','readwrite');
+      tx.objectStore('results').put(record);
+      tx.oncomplete = resolve; tx.onerror = resolve; tx.onabort = resolve;
+    } catch (_) { resolve(); }
+  });
+}
+async function afpSha256(blob) {
+  if (!crypto?.subtle || blob.size > AFP_MAX_CACHED_PHOTO_BYTES) return null;
+  try {
+    const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+    return [...new Uint8Array(digest)].map(v => v.toString(16).padStart(2,'0')).join('');
+  } catch (_) { return null; }
+}
+async function afpReadCachedOriginal(photo) {
+  const url=afpRemoteUrl(photo);
+  if (!url || !('caches' in window)) return null;
+  try {
+    const cache=await caches.open(AFP_CACHE_ORIGINALS);
+    const resp=await cache.match(url);
+    if (!resp || !resp.ok) return null;
+    const blob=await resp.blob();
+    return blob.size <= AFP_MAX_CACHED_PHOTO_BYTES ? blob : null;
+  } catch (_) { return null; }
+}
+async function afpSaveOriginal(photo, blob) {
+  const url=afpRemoteUrl(photo);
+  if (!url || !blob || blob.size > AFP_MAX_CACHED_PHOTO_BYTES || !('caches' in window)) return;
+  try {
+    const cache=await caches.open(AFP_CACHE_ORIGINALS);
+    await cache.put(url, new Response(blob, {headers:{'Content-Type':blob.type || 'application/octet-stream'}}));
+    const keys=await cache.keys();
+    for (const old of keys.slice(0, Math.max(0,keys.length - AFP_CACHE_LIMIT))) await cache.delete(old);
+  } catch (error) { console.warn('[AFP Cache] Photo non stockée (quota ou stockage désactivé)', error?.message||error); }
+}
+function afpCacheDate(photo) {
+  if (!photo.cacheSavedAt) return '';
+  try { return new Date(photo.cacheSavedAt).toLocaleString(uiLanguage==='en'?'en-GB':'fr-FR', {dateStyle:'short',timeStyle:'short'}); }
+  catch (_) { return ''; }
+}
+function afpCacheLabel(photo) {
+  if (!photo.cacheStatus) return '';
+  return `${tr('Dernière analyse enregistrée')}${afpCacheDate(photo)?' : '+afpCacheDate(photo):''}`;
+}
+function afpShowCacheBanner(photo) {
+  if (!photo.cacheStatus) return null;
+  const box=document.createElement('div');box.className='afp-c2pa-cache-note';
+  box.setAttribute('role','note');
+  const title=document.createElement('strong');title.textContent='◷ '+afpCacheLabel(photo);
+  const desc=document.createElement('span');
+  desc.textContent=tr('Résultat d’une analyse précédente, non vérifié à nouveau pendant cette visite.')+' '+
+    (photo.recheckingCache?tr('Nouvelle vérification en cours.'):tr('Les couleurs correspondent à la dernière analyse mémorisée, pas à une nouvelle vérification.'));
+  box.append(title,desc);
+  return box;
+}
+function afpRefreshPhoto(photo) {
+  renderCard(photo); updateCount();
+  if (currentIdx>=0 && photos[currentIdx]===photo && lightbox.open) {
+    crBadge.className=`cr ${photo.state}`;
+    addBadgeContent(crBadge,presentationFor(photo),photo.state,photo);
+    if (['delayed','shield-delayed','origin-distinguo'].includes(presentationFor(photo)) && delayedRevealReady) crBadge.classList.add('delayed-visible');
+    if (credentials.open) fillDetails(photo);
+    if (!bottomSheet.hidden && bottomPhoto===photo) refreshBottomSheet(photo);
+  }
+  refreshSidePanel(photo);
+}
+function afpRestoreRecord(photo, rec, digest) {
+  if (!rec || rec.sdk!==AFP_ENGINE_VERSION || rec.hash!==digest || !['ok','warn','bad','none'].includes(rec.state)) return false;
+  photo.state=rec.state; photo.store=rec.store; photo.active=rec.active;
+  photo.validation=rec.validation || []; photo.exif=rec.exif || null; photo.exifDate=photo.exif?.date;
+  photo.cacheStatus='stored'; photo.cacheSavedAt=rec.savedAt; photo.error=null;
+  photo.recheckingCache=false;
+  afpRefreshPhoto(photo);
+  return true;
+}
+function afpUseCachedPhotoImage(photo, blob) {
+  if (!blob || !afpRemoteUrl(photo) || photo.displayUrl) return;
+  photo.displayUrl=URL.createObjectURL(blob);
+  const card=grid.querySelector(`[data-idx="${photo.idx}"]`);
+  const img=card?.querySelector('img');
+  if (img) {img.src=photo.displayUrl;card.classList.remove('photo-unavailable');}
+  if (currentIdx>=0 && photos[currentIdx]===photo) lbPhoto.src=photo.displayUrl;
+}
+
+/* Service Worker : ressource statique + CDN figé + JPEG/PNG d'origine.
+   L'enregistrement est opportuniste ; le site reste utilisable s'il est interdit. */
+if ('serviceWorker' in navigator && location.protocol==='https:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(new URL('./sw.js', import.meta.url), {updateViaCache:'none'})
+      .catch(err=>console.warn('[AFP Cache] Service Worker non activé',err?.message||err));
+  }, {once:true});
+}
+window.addEventListener('online', () => {
+  let retry=false;
+  for (const p of photos) {
+    if (p.cacheStatus==='stored' && Date.now()-(p.lastCacheRetry||0)>20000) {
+      p.needsRetry=true; p.lastCacheRetry=Date.now(); retry=true;
+    }
+  }
+  if (retry) scheduleAnalysis();
+});
+
+
 /* ---------- Analyse C2PA ---------- */
+// Ne jamais conserver un échec CDN temporaire pour toute la session : réessai possible.
+let afpSdkRetryAfter = 0;
 async function ensureC2pa() {
-  if (sdkFailure) throw sdkFailure;
+  if (c2pa) return c2pa;
+  if (Date.now() < afpSdkRetryAfter) throw (sdkFailure || new Error('Moteur C2PA momentanément indisponible'));
   if (!c2paPromise) {
     c2paPromise = (async () => {
-      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Chargement du moteur C2PA trop long')), 12000));
-      const sdk = await Promise.race([import(SDK_URL), timeout]);
-      C2paReader = sdk.Reader;
-      if (typeof sdk.createC2pa !== 'function' || !C2paReader) throw new Error('SDK C2PA incomplet');
-      c2pa = await sdk.createC2pa({ wasmSrc: WASM_URL });
-      return c2pa;
-    })().catch(error => { sdkFailure = error; throw error; });
+      let timer;
+      try {
+        const timeout = new Promise((_, reject) => { timer=setTimeout(() => reject(new Error('Chargement du moteur C2PA trop long')), 14000); });
+        const sdk = await Promise.race([import(SDK_URL), timeout]);
+        C2paReader = sdk.Reader;
+        if (typeof sdk.createC2pa !== 'function' || !C2paReader) throw new Error('SDK C2PA incomplet');
+        c2pa = await sdk.createC2pa({ wasmSrc: WASM_URL });
+        sdkFailure = null;
+        // Réchauffement opportuniste des deux ressources externes pour les connexions futures.
+        afpWarmSdkCache().catch(()=>{});
+        return c2pa;
+      } finally { clearTimeout(timer); }
+    })().catch(error => {
+      sdkFailure=error; afpSdkRetryAfter=Date.now()+7000;
+      c2paPromise=null; throw error;
+    });
   }
   return c2paPromise;
 }
-
+async function afpWarmSdkCache() {
+  if (!('caches' in window) || !navigator.onLine) return;
+  try {
+    const cache=await caches.open('afp-c2pa-sdk-v1');
+    for (const url of [SDK_URL,WASM_URL]) {
+      if (await cache.match(url)) continue;
+      try {
+        const res=await fetchWithTimeout(url,{mode:'cors',cache:'default'},8000);
+        if(res.ok && res.type==='cors') await cache.put(url,res);
+      } catch (_) { /* hors connexion, ne bloque pas le lecteur */ }
+    }
+  } catch (_) {}
+}
 async function getBlob(photo) {
   if (photo.blob) return photo.blob;
-  const response = await fetchWithTimeout(photo.url, { cache: 'no-store' }, 30000);
-  if (!response.ok) throw new Error('Photo inaccessible (HTTP ' + response.status + ')');
-  const blob = await response.blob();
-  if (/text\/html/i.test(blob.type)) throw new Error('Le serveur a renvoyé une page HTML au lieu de la photo');
-  return blob;
+  try {
+    const response = await fetchWithTimeout(photo.url, { cache: 'default' }, 20000);
+    if (!response.ok) throw new Error('Photo inaccessible (HTTP ' + response.status + ')');
+    const blob = await response.blob();
+    if (/text\/html/i.test(blob.type)) throw new Error('Le serveur a renvoyé une page HTML au lieu de la photo');
+    await afpSaveOriginal(photo,blob);
+    return blob;
+  } catch (error) {
+    const cached=await afpReadCachedOriginal(photo);
+    if (cached) {
+      photo.usedCachedBytes=true;
+      afpUseCachedPhotoImage(photo,cached);
+      return cached;
+    }
+    throw error;
+  }
 }
-
 async function analyze(photo) {
-  if (photo.state !== 'loading') return;
+  if (photo.state !== 'loading' && !photo.needsRetry) return;
   if (photo.analysisPromise) return photo.analysisPromise;
+  photo.needsRetry=false;
   photo.analysisPromise = (async () => {
-    let reader = null;
+    let reader=null, blob=null, digest=null, restore=false;
+    const cachedMetadata=await afpReadRecord(afpRemoteUrl(photo));
     try {
-      const blob = await getBlob(photo);
-      photo.exif = await readExifMetadata(blob);
-      photo.exifDate = photo.exif.date;
-      const ext = photo.name.split('.').pop().toLowerCase();
-      if (ext === 'png') {
-        const header = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
-        if (!([137,80,78,71,13,10,26,10].every((v, i) => header[i] === v))) {
-          throw new Error('Fichier .png invalide ou image inaccessible (en-tête PNG absent)');
+      // Dès l'ouverture, restaurer le résultat seulement si l'original conservé
+      // possède EXACTEMENT les mêmes octets que ceux analysés précédemment.
+      if (cachedMetadata) {
+        const savedOriginal=await afpReadCachedOriginal(photo);
+        if (savedOriginal) {
+          const oldHash=await afpSha256(savedOriginal);
+          restore=afpRestoreRecord(photo,cachedMetadata,oldHash);
+          if (restore && !navigator.onLine) afpUseCachedPhotoImage(photo,savedOriginal);
         }
       }
-      const engine = await ensureC2pa();
-      // Utiliser le format du fichier avant le Content-Type HTTP, parfois générique.
-      // Indispensable pour analyser correctement les PNG hébergés sur GitHub Pages.
-      const mime = ({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',tif:'image/tiff',tiff:'image/tiff'})[ext] || blob.type;
-      reader = await C2paReader.fromBlob(engine, mime, blob);
-      if (!reader) { photo.state = 'none'; return; }
-      const store = await reader.manifestStore();
-      photo.store = store;
-      const entries = store?.validation_status ?? store?.validationStatus ?? [];
-      const list = Array.isArray(entries) ? entries : [];
-      photo.validation = list;
-      photo.active = await reader.activeManifest().catch(() => null);
-      const levels = list.map(validationLevel);
-      photo.state = !store ? 'none' : levels.includes('bad') ? 'bad' : levels.includes('warn') ? 'warn' : levels.includes('neutral') || !list.length ? 'warn' : 'ok';
+      if (restore) {
+        photo.recheckingCache=!!navigator.onLine;
+        if (!navigator.onLine) { afpRefreshPhoto(photo); return; }
+        afpRefreshPhoto(photo);
+      }
+      blob=await getBlob(photo);
+      digest=await afpSha256(blob);
+      if (!restore && cachedMetadata && digest) restore=afpRestoreRecord(photo,cachedMetadata,digest);
+      // Si la photo téléchargée a changé : ne JAMAIS reprendre son ancien statut.
+      if (restore && digest!==cachedMetadata.hash) {
+        restore=false; photo.cacheStatus=null; photo.cacheSavedAt=null;
+        photo.state='loading'; photo.store=null; photo.active=null; photo.validation=[];
+        afpRefreshPhoto(photo);
+      }
+      if (!photo.exif || !restore) {
+        photo.exif=await readExifMetadata(blob);
+        photo.exifDate=photo.exif.date;
+      }
+      const ext=photo.name.split('.').pop().toLowerCase();
+      if (ext==='png') {
+        const header = new Uint8Array(await blob.slice(0,8).arrayBuffer());
+        if (!([137,80,78,71,13,10,26,10].every((v,i)=>header[i]===v)))
+          throw new Error('Fichier .png invalide ou image inaccessible (en-tête PNG absent)');
+      }
+      const engine=await ensureC2pa();
+      const mime=({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',tif:'image/tiff',tiff:'image/tiff'})[ext]||blob.type;
+      reader=await C2paReader.fromBlob(engine,mime,blob);
+      photo.store=null;photo.active=null;photo.validation=[];
+      if (!reader) {
+        photo.state='none';
+      } else {
+        const store=await reader.manifestStore();
+        photo.store=store;
+        const entries=store?.validation_status??store?.validationStatus??[];
+        const list=Array.isArray(entries)?entries:[];
+        photo.validation=list;
+        photo.active=await reader.activeManifest().catch(()=>null);
+        const levels=list.map(validationLevel);
+        photo.state=!store?'none':levels.includes('bad')?'bad':levels.includes('warn')?'warn':levels.includes('neutral')||!list.length?'warn':'ok';
+      }
+      photo.error=null;
+      photo.cacheStatus=null;photo.cacheSavedAt=null;photo.recheckingCache=false;
+      await afpWriteRecord(photo,digest);
     } catch (error) {
-      console.warn('C2PA', photo.name, error);
-      photo.error = error?.message ?? String(error);
-      // Certains moteurs lancent une exception pour un PNG valide dépourvu de manifeste.
-      // Cela n'est ni une falsification, ni une erreur d'affichage de la photo.
-      photo.state = /no.?manifest|manifest.?not.?found|no.?c2pa.?manifest/i.test(photo.error) ? 'none' : 'error';
+      console.warn('[C2PA AFP] Analyse',photo.name,error);
+      photo.error=error?.message??String(error);
+      if (restore && digest && cachedMetadata?.hash!==digest) restore=false;
+      if (restore) {
+        // Une panne réseau/SDK ne transforme PAS un ancien résultat en validation rouge.
+        photo.state=cachedMetadata.state;
+        photo.cacheStatus='stored';photo.cacheSavedAt=cachedMetadata.savedAt;
+        photo.recheckingCache=false;
+      } else {
+        photo.cacheStatus=null;photo.recheckingCache=false;
+        photo.state=/no.?manifest|manifest.?not.?found|no.?c2pa.?manifest/i.test(photo.error)?'none':'error';
+        if (photo.state==='none' && digest) await afpWriteRecord(photo,digest);
+      }
     } finally {
       if (reader) try { await reader.free(); } catch (_) {}
+      if (photo.cacheStatus || photo.state!=='loading') afpRefreshPhoto(photo);
     }
-  })().finally(() => { photo.analysisPromise = null; });
+  })().finally(()=>{photo.analysisPromise=null;});
   return photo.analysisPromise;
 }
 
@@ -923,7 +1168,7 @@ async function analyzeAll() {
   analysisRunning = true;
   try {
     while (true) {
-      const photo = photos.find(p => p.state === 'loading' && !p.processing);
+      const photo = photos.find(p => (p.state === 'loading' || p.needsRetry) && !p.processing);
       if (!photo) break;
       photo.processing = true;
       // Un rendu intermédiaire est possible même avec beaucoup de fichiers.
@@ -1308,7 +1553,7 @@ const DISTINGUO_COLORS = Object.freeze({
   ok: '#35C979',
   warn: '#F6A928',
   bad: '#F16B6B',
-  error: '#F16B6B',
+  error: '#C7D0DA', // une panne de lecture/réseau n'est pas une falsification
   none: '#C7D0DA',
   neutral: '#C7D0DA',
   loading: '#C7D0DA'
@@ -1322,8 +1567,8 @@ function appendOriginBadge(target, photo, state) {
   target.dataset.originStatus = level;
   target.dataset.originKind = origin;
   const originDescription = originDetail.inferred ? tr('Capture déduite de la provenance C2PA du boîtier (non déclarée par digitalSourceType)') : originTitle(origin);
-  target.title = originDescription;
-  target.setAttribute('aria-label', originDescription + ' — ' + (level === 'warn' ? tr('À vérifier') : level === 'bad' ? tr('Échec') : level === 'ok' ? tr('Validé') : tr('Indéterminé')));
+  target.title = originDescription + (photo.cacheStatus ? ' — ' + afpCacheLabel(photo) : '');
+  target.setAttribute('aria-label', originDescription + ' — ' + (level === 'warn' ? tr('À vérifier') : level === 'bad' ? tr('Échec') : level === 'ok' ? tr('Validé') : tr('Indéterminé')) + (photo.cacheStatus ? ' — ' + afpCacheLabel(photo) : ''));
   target.classList.add(level, 'origin-' + origin);
 
   // Dessins optiquement équilibrés sur un cadre SVG 24 × 24 : appareil, AI, calques, ?.
@@ -1636,7 +1881,7 @@ function cardEl(photo) {
   card.dataset.idx = String(photo.idx);
   const img = document.createElement('img');
   img.loading = 'lazy';
-  img.src = photo.url;
+  img.src = photo.displayUrl || photo.url;
   img.alt = photo.name.split('/').pop();
   img.addEventListener('error', () => {
     card.classList.add('photo-unavailable');
@@ -1648,7 +1893,8 @@ function cardEl(photo) {
   tag.tabIndex = 0;
   tag.title = tr(C2PA_STATUS_TIPS[photo.state] || C2PA_STATUS_TIPS.neutral);
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),
-             document.createTextNode(statusLabel(photo.state)));
+             document.createTextNode(statusLabel(photo.state) + (photo.cacheStatus ? ' · ◷' : '')));
+  if (photo.cacheStatus) tag.title += ' — ' + afpCacheLabel(photo);
   const name = document.createElement('figcaption');
   name.className = 'name';
   name.textContent = photo.name.split('/').pop();
@@ -1675,7 +1921,8 @@ function renderCard(photo) {
   tag.title = tr(C2PA_STATUS_TIPS[photo.state] || C2PA_STATUS_TIPS.neutral);
   tag.textContent = '';
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),
-             document.createTextNode(statusLabel(photo.state)));
+             document.createTextNode(statusLabel(photo.state) + (photo.cacheStatus ? ' · ◷' : '')));
+  if (photo.cacheStatus) tag.title += ' — ' + afpCacheLabel(photo);
   const overlay = card.querySelector('.demo-overlay');
   if (overlay) { overlay.className='demo-overlay'; addBadgeContent(overlay,presentationFor(photo),photo.state,photo); }
   updateCaption(card,photo);
@@ -1959,7 +2206,7 @@ function openLightbox(idx) {
   currentIdx = idx;
   const photo = photos[idx];
   lbTitle.textContent = photo.name.split('/').pop();
-  lbPhoto.src = photo.url;
+  lbPhoto.src = photo.displayUrl || photo.url;
   lbPhoto.alt = photo.name.split('/').pop();
   crBadge.className = `cr ${photo.state}`;
   const mode=presentationFor(photo);
@@ -2174,7 +2421,7 @@ function fillDetails(photo) {
     const support=[];
     if(photo.exif?.artist)support.push(field('Auteur déclaré',photo.exif.artist,'neutral'));
     if(photo.exifDate)support.push(field('Date enregistrée par l’appareil',photo.exifDate,'neutral'));
-    lbSummary.replaceChildren(origin,...(support.length?[readerFold('Informations sur la photo',section('Informations de production',support))]:[]));
+    lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),...(support.length?[readerFold('Informations sur la photo',section('Informations de production',support))]:[]));
     lbJson.textContent=photo.state==='none'?tr('Aucun manifeste trouvé.'):String(photo.error||'');return;
   }
   const entries=photo.validation??[];
@@ -2260,7 +2507,7 @@ function fillDetails(photo) {
     section('Résultats techniques de validation',[validationList])
   );
   // Priorités de lecture : origine -> digitalSourceType -> confiance -> détails repliés.
-  lbSummary.replaceChildren(origin,trust,...(photoFold?[photoFold]:[]),originTechnicalSection(photo),technical);
+  lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),trust,...(photoFold?[photoFold]:[]),originTechnicalSection(photo),technical);
   lbJson.textContent=JSON.stringify(photo.store,null,2);
 }
 

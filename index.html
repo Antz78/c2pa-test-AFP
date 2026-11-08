@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Galerie · Content Credentials</title>
   <style>
+
+/* Cache : avertissement de réutilisation, jamais présenté comme une nouvelle vérification. */
+.afp-c2pa-cache-note{display:flex;flex-direction:column;gap:5px;padding:11px 13px;margin:0 0 14px;border:1px solid #c9d6eb;border-radius:10px;background:#f0f5ff;color:#263e60;font-size:12px;line-height:1.5}
+.afp-c2pa-cache-note strong{font-size:12.5px}
+#side-panel .afp-c2pa-cache-note,.bottom-sheet .afp-c2pa-cache-note{background:#233148;border-color:#45607d;color:#e4edfc}
+#grid .tag.error{background:#262d38;color:#b5c0d0}
+#grid .demo-overlay .dot.error,#lightbox #cr-badge .dot.error{background:#8b96a5}
+
     :root{
       --bg:#0d1117;--panel:#161b22;--panel2:#1c2330;--text:#e6edf3;--muted:#8b96a5;
       --accent:#4f8ff7;--ok:#3fb950;--warn:#d29922;--error:#f85149;--border:#2a3341;
@@ -704,7 +712,7 @@
     </section>
   </div>
 </dialog>
-<script type="module" src="./app.js?v=20261106-png-v4-colorhelp"></script>
+<script type="module" src="./app.js?v=20261108-offline-cache-v1"></script>
 <script>
   // Diagnostic indépendant de app.js si une erreur empêche son exécution.
   setTimeout(function () {

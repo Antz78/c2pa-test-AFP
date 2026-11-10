@@ -94,6 +94,11 @@ const TRANSLATIONS = {
   'Capture déclarée dans le C2PA': 'Capture declared in C2PA',
   'Origine déclarée dans le C2PA': 'Origin declared in C2PA',
   'Capture déduite du boîtier': 'Camera capture inferred',
+  'Capture déduite d’un manifeste Nikon ou Canon antérieur': 'Capture inferred from an earlier Nikon or Canon manifest',
+  'Capture déduite du générateur du boîtier (EXIF absent ou supprimé)': 'Capture inferred from camera generator (EXIF absent or redacted)',
+  'Image contenant du contenu généré par IA': 'Image containing AI-generated content',
+  'Origine indéterminée malgré une signature C2PA': 'Origin undetermined despite a C2PA signature',
+  'Vérification ou origine déduite à confirmer': 'Verification or inferred origin needs review',
   'La galerie déduit une capture à partir du boîtier identifié dans les données C2PA signées. Ce n’est pas une déclaration officielle du type de source.': 'This viewer infers a capture from the camera identified in signed C2PA data. This is not an explicit official source-type declaration.',
   'Le type de source est déclaré dans les informations C2PA.': 'The source type is declared in the C2PA information.',
   'L’origine provient d’une étape antérieure de la provenance, et pas nécessairement de la version actuelle.': 'The origin comes from an earlier provenance step, not necessarily the current version.',
@@ -1347,6 +1352,23 @@ function c2paSourceDetails(photo) {
       for (const k of [m.label,m.id,m.instanceID,m.instance_id]) if (k) byLabel.set(String(k),m);
     }
   }
+  function manifestId(value) {
+    if (!value) return null;
+    if (typeof value === 'object') return manifestId(value.url ?? value.uri ?? value.label ?? value.id ?? value.value);
+    const s=String(value).trim();
+    const match=s.match(/(?:^|\/)(urn:uuid:[0-9a-f-]{36})(?=\/|$|[#?])/i);
+    if (match) return match[1].toLowerCase();
+    if (/^urn:uuid:[0-9a-f-]{36}$/i.test(s)) return s.toLowerCase();
+    return s;
+  }
+  for (const [key,m] of [...byLabel.entries()]) {
+    byLabel.set(manifestId(key),m);
+  }
+  function lookupManifest(ref) {
+    const id=manifestId(ref);
+    if (!id) return null;
+    return byLabel.get(id) ?? byLabel.get(String(ref)) ?? null;
+  }
   function obj(v) {
     if (typeof v === 'string' && /^\s*[\[{]/.test(v)) {
       try { return JSON.parse(v); } catch (_) { return v; }
@@ -1453,6 +1475,34 @@ function c2paSourceDetails(photo) {
   const activeCandidates=[manifest,...(storedActive && storedActive!==manifest ? [storedActive] : [])];
   const explicit=activeCandidates.flatMap(ownDeclarations);
   const direct=chosen(explicit);
+  // Une photographie qui contient un ingrédient génératif inséré dans l'image
+  // ne doit pas être étiquetée "simple capture" au seul motif qu'elle a
+  // commencé comme une photo. Ce cas partage le pictogramme AI, mais le
+  // panneau doit indiquer qu'il s'agit d'une composition / retouche générative.
+  function generatedComponent(m) {
+    const claims=[...(Array.isArray(m?.ingredients)?m.ingredients:[]),
+      ...assertionsOf(m).filter(x=>/c2pa\.ingredient/i.test(labelOf(x))).map(payloadOf)];
+    for(const candidate of claims) {
+      const part=obj(candidate);
+      if(!part || typeof part !== 'object')continue;
+      if(!/^componentof$/i.test(String(part.relationship ?? '').replace(/[-_]/g,'')))continue;
+      const raw=sourceValue(part.digitalSourceType ?? part.digital_source_type);
+      let aiRaw=raw && ['ai','composite'].includes(normKind(raw)) ? raw : null;
+      if(!aiRaw && part.activeManifest) {
+        const ingredientManifest=lookupManifest(part.activeManifest);
+        if(ingredientManifest) {
+          const ingredientSource=chosen(ownDeclarations(ingredientManifest),true);
+          if(ingredientSource && ['ai','composite'].includes(ingredientSource.kind)) aiRaw=ingredientSource.raw;
+        }
+      }
+      if(aiRaw) return {kind:'composite',raw:aiRaw,action:'c2pa.placed',
+        source:'c2pa.ingredient (componentOf)',hasField:true,declared:true,
+        inherited:false,note:'Contenu génératif déclaré dans un ingrédient composant l’image'};
+    }
+    return null;
+  }
+  const aiPart=activeCandidates.map(generatedComponent).find(Boolean);
+  if(aiPart)return aiPart;
   if (direct?.declared) return direct;
 
   /* Les ingrédients composant l'image ne définissent PAS l'origine globale.
@@ -1478,21 +1528,25 @@ function c2paSourceDetails(photo) {
     }
     return refs;
   }
-  const visited=new Set([manifest]);
+  // La recherche du parent suit la chaîne, mais l’inférence appareil est évaluée
+  // après les déclarations officielles pour garder la bonne priorité.
+  const ancestors=[];
+  const visited=new Set(activeCandidates);
   const queue=activeCandidates.flatMap(parentRefs).map(x=>({x,depth:1}));
   while (queue.length) {
     const {x,depth}=queue.shift();
-    if (depth>5) continue;
-    if (x.direct) {
-      const found=chosen([{raw:x.direct,source:'parentOf ingredient.digitalSourceType',action:null}],true);
-      if (found?.declared) {found.note='Parent déclaré dans un ingrédient C2PA';return found;}
+    if(depth>8) continue;
+    if(x.direct) {
+      const declared=chosen([{raw:x.direct,source:'parentOf ingredient.digitalSourceType',action:null}],true);
+      if(declared?.declared){declared.note='Origine attestée par le signataire dans l’ingrédient parent';return declared;}
       continue;
     }
-    const parent=byLabel.get(x.ref);
-    if (!parent || visited.has(parent)) continue;
+    const parent=lookupManifest(x.ref);
+    if(!parent || visited.has(parent)) continue;
     visited.add(parent);
+    ancestors.push(parent);
     const inherited=chosen(ownDeclarations(parent),true);
-    if (inherited?.declared) {inherited.note='Manifeste parent de la chaîne C2PA';return inherited;}
+    if(inherited?.declared){inherited.note='Origine déclarée dans le manifeste parent de la chaîne C2PA';return inherited;}
     queue.push(...parentRefs(parent).map(x=>({x,depth:depth+1})));
   }
   /* Fallback prudent pour certaines photos signées dans l'appareil.
@@ -1500,7 +1554,8 @@ function c2paSourceDetails(photo) {
      stds.exif signée indiquant le boîtier, sans digitalSourceType.
      Il s'agit d'une INFERENCE étayée, jamais d'un digitalCapture officiel.
      Ne pas l'utiliser si un contrôle C2PA a réellement échoué. */
-  function captureFromSignedCameraEvidence(m) {
+  function captureFromSignedCameraEvidence(m, inherited=false) {
+    // Ne jamais transformer un manifeste invalide en capture validée.
     if (!m || ['bad','error','none','loading'].includes(photo?.state)) return null;
     const claims=assertionsOf(m);
     const actions=claims.filter(x=>/^(?:c2pa\.)?actions(?:\.v\d+)?(?:__\d+)?$/i.test(labelOf(x)));
@@ -1508,33 +1563,39 @@ function c2paSourceDetails(photo) {
     for (const a of actions) {
       const p=payloadOf(a);
       const list=Array.isArray(p) ? p : p?.actions;
-      if (Array.isArray(list)) events.push(...list.map(x=>obj(x)?.action).filter(Boolean));
+      if(Array.isArray(list)) events.push(...list.map(x=>obj(x)?.action).filter(Boolean));
     }
-    if (!events.includes('c2pa.created') || events.some(x=>/edited|opened|placed|removed|repackaged|transcoded/i.test(x))) return null;
-    const exif=claims.filter(x=>/^stds\.exif(?:__\d+)?$/i.test(labelOf(x)));
-    if (!exif.length) return null;
-    const candidate=exif.map(x=>payloadOf(x)).find(v=>v && typeof v==='object' && !Array.isArray(v) &&
-      (v['tiff:Make'] || v['tiff:Model'] || v['tiff']?.Make || v['tiff']?.Model));
-    if (!candidate) return null;
-    const make=String(candidate['tiff:Make'] ?? candidate['tiff']?.Make ?? '').trim();
-    const model=String(candidate['tiff:Model'] ?? candidate['tiff']?.Model ?? '').trim();
+    if(!events.includes('c2pa.created') || events.some(x=>/edited|opened|placed|removed|repackaged|transcoded/i.test(x))) return null;
     const generator=String(m.claim_generator ?? m.claimGenerator ??
       m.claim_generator_info?.[0]?.name ?? m.claimGeneratorInfo?.[0]?.name ?? '').trim();
-    const canon=/^canon$/i.test(make) && /^canon\s+eos\s+r\d+/i.test(model) &&
-      /^Canon EOS R\d+/i.test(generator);
-    const nikon=/^nikon(?: corporation)?$/i.test(make) && /^(?:nikon\s+)?z[0-9a-z_]+/i.test(model) &&
-      (/^z[0-9a-z_]+_ver\./i.test(generator) || /^Nikon\s+Z/i.test(generator));
-    if (!canon && !nikon) return null;
-    return {kind:'capture', raw:null,action:'c2pa.created',
-      source:'c2pa.actions + stds.exif + claim_generator', hasField:false,
-      declared:false, inherited:false, inferred:true,
-      cameraModel:model, cameraMake:make, generator,
-      note:'Capture déduite de la création C2PA et du boîtier décrit dans une assertion EXIF signée. Aucun digitalSourceType déclaré.'};
+    const exif=claims.filter(x=>/^stds\.exif(?:__\d+)?$/i.test(labelOf(x)));
+    const camera=exif.map(x=>payloadOf(x)).find(v=>v && typeof v==='object' && !Array.isArray(v) &&
+      (v['tiff:Make'] || v['tiff:Model'] || v.tiff?.Make || v.tiff?.Model));
+    const make=String(camera?.['tiff:Make'] ?? camera?.tiff?.Make ?? '').trim();
+    const model=String(camera?.['tiff:Model'] ?? camera?.tiff?.Model ?? '').trim();
+    const canonGenerator=/^Canon EOS R\d+/i.test(generator);
+    const nikonGenerator=/^Z[0-9a-z_]+_Ver\./i.test(generator) || /^Nikon\s+Z[0-9a-z ]+/i.test(generator);
+    const canonExif=/^Canon$/i.test(make) && /^Canon\s+EOS\s+R\d+/i.test(model);
+    const nikonExif=/^NIKON(?:\s+CORPORATION)?$/i.test(make) && /^(?:NIKON\s+)?Z[0-9a-z_]+/i.test(model);
+    // La signature et le générateur ne prouvent pas la scène, seulement une provenance
+    // cohérente avec un boîtier, et ceci ne doit PAS remplacer une déclaration explicite.
+    const corroborated=(canonGenerator && canonExif) || (nikonGenerator && nikonExif);
+    const generatorOnly=inherited && !camera && (canonGenerator || nikonGenerator);
+    if(!corroborated && !generatorOnly) return null;
+    return {kind:'capture',raw:null,action:'c2pa.created',
+      source: generatorOnly?'parentOf → claim_generator (EXIF absent ou supprimé)'
+        :'c2pa.actions + stds.exif + claim_generator',hasField:false,
+      declared:false,inherited,inferred:true,weakInference:generatorOnly,
+      cameraModel: model || (nikonGenerator?'Nikon (identifié par le générateur)':'Canon (identifié par le générateur)'),
+      cameraMake:make,generator,
+      note:generatorOnly?'Capture déduite du générateur du boîtier (EXIF absent ou supprimé)'
+        :'Capture déduite de la création et des métadonnées C2PA du boîtier ; digitalSourceType non déclaré.'};
   }
-  for (const candidate of activeCandidates) {
-    const fallback=captureFromSignedCameraEvidence(candidate);
-    if (fallback) return fallback;
+  for (const candidate of [...activeCandidates,...ancestors]) {
+    const fallback=captureFromSignedCameraEvidence(candidate,ancestors.includes(candidate));
+    if(fallback) return fallback;
   }
+
   return direct ?? unknown;
 }
 function detectDeclaredOrigin(photo) {
@@ -1562,9 +1623,11 @@ function appendOriginBadge(target, photo, state) {
   const originDetail = c2paSourceDetails(photo);
   const origin = originDetail.kind || 'unknown';
   const level = originStatusLevel(state);
-  const color = DISTINGUO_COLORS[level] || '#FFFFFF';
+  const badgeLevel = origin === 'unknown' && level !== 'bad' ? 'neutral'
+    : (originDetail.inferred && level === 'ok' ? 'warn' : level);
+  const color = DISTINGUO_COLORS[badgeLevel] || '#C7D0DA';
   target.style.setProperty('--origin-foreground', color);
-  target.dataset.originStatus = level;
+  target.dataset.originStatus = badgeLevel;
   target.dataset.originKind = origin;
   const originDescription = originDetail.inferred ? tr('Capture déduite de la provenance C2PA du boîtier (non déclarée par digitalSourceType)') : originTitle(origin);
   // Ne pas utiliser l'attribut HTML title : il crée une seconde infobulle blanche native.
@@ -1581,7 +1644,8 @@ function appendOriginBadge(target, photo, state) {
   } else if (origin === 'ai') {
     iconPaths = '<path d="M3.5 18.6 8.4 5.4l4.9 13.2 M5.2 14h6.35"/><path d="M17 5.4h4.1 M19.05 5.4v13.2 M17 18.6h4.1"/>';
   } else if (origin === 'composite') {
-    iconPaths = '<path d="M12 4.5 20.8 9.1 12 13.7 3.2 9.1Z"/><path d="m3.2 12.35 8.8 4.55 8.8-4.55"/><path d="m3.2 15.7 8.8 4.5 8.8-4.5"/>';
+    // Seulement trois symboles : tout contenu d'IA générative porte le même sigle AI.
+    iconPaths = '<path d="M3.5 18.6 8.4 5.4l4.9 13.2 M5.2 14h6.35"/><path d="M17 5.4h4.1 M19.05 5.4v13.2 M17 18.6h4.1"/>';
   } else {
     iconPaths = '<path d="M7.3 9a4.75 4.75 0 1 1 7.85 3.6C13.2 14 12 14.9 12 16.2"/><path d="M12 19.25v.12"/>';
   }
@@ -2130,15 +2194,16 @@ function colorTarget(node) {
 // La classification C2PA et sa justification restent accessibles dans le panneau détaillé.
 const DISTINGUO_HOVER_MESSAGES = Object.freeze({
   capture: 'Photographic Capture',
-  unknown: 'Image without signature',
+  unknown: 'Image origin unknown',
   ai: 'AI generated illustration',
-  composite: 'Composite image'
+  composite: 'Contains AI-generated content'
 });
 function showColorHelp(target) {
   if (!target) return;
   const isDistinguo = target.classList.contains('mode-origin-distinguo');
   const cls = colorKey(target) || colorKey(target.querySelector('.dot'));
-  const markerMessage = isDistinguo ? DISTINGUO_HOVER_MESSAGES[target.dataset.originKind] : null;
+  const markerMessage = isDistinguo ? (target.dataset.originKind === 'unknown' && target.dataset.originStatus === 'neutral' && target.classList.contains('none')
+    ? 'Image without signature' : DISTINGUO_HOVER_MESSAGES[target.dataset.originKind]) : null;
   if (!markerMessage && (!cls || !C2PA_STATUS_TIPS[cls])) return;
   colorHelpTarget = target;
   colorHelp.classList.toggle('is-distinguo-tip', Boolean(markerMessage));
@@ -2349,7 +2414,7 @@ function readerIcon(kind) {
   const paths={
     capture:'<path d="M5.4 8.1h2.4l1.6-2.2h5.2l1.6 2.2h2.4a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5.4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13.35" r="3.15"/>',
     ai:'<path d="M3.5 18.6 8.4 5.4l4.9 13.2 M5.2 14h6.35"/><path d="M17 5.4h4.1 M19.05 5.4v13.2 M17 18.6h4.1"/>',
-    composite:'<path d="M12 4.5 20.8 9.1 12 13.7 3.2 9.1Z"/><path d="m3.2 12.35 8.8 4.55 8.8-4.55"/><path d="m3.2 15.7 8.8 4.5 8.8-4.5"/>',
+    composite:'<path d="M3.5 18.6 8.4 5.4l4.9 13.2 M5.2 14h6.35"/><path d="M17 5.4h4.1 M19.05 5.4v13.2 M17 18.6h4.1"/>',
     unknown:'<path d="M7.3 9a4.75 4.75 0 1 1 7.85 3.6C13.2 14 12 14.9 12 16.2"/><path d="M12 19.25v.12"/>'
   };
   const wrap=document.createElement('span');wrap.className='afp-reader-picture';wrap.setAttribute('aria-hidden','true');
@@ -2370,6 +2435,7 @@ function readerOriginExplanation(detail,pending,missing,error) {
   if(pending)return tr('Origine en cours d’analyse…');
   if(error)return tr('Impossible de lire les informations C2PA de cette image.');
   if(missing)return tr('Cette image ne contient pas de manifeste C2PA intégré détectable.');
+  if(detail.inferred && detail.weakInference)return tr('Capture déduite du générateur du boîtier (EXIF absent ou supprimé)') + '. ' + tr('L’absence de ce champ ne signifie pas que la photo a été créée par IA.');
   if(detail.inferred)return tr('La galerie déduit une capture à partir du boîtier identifié dans les données C2PA signées. Ce n’est pas une déclaration officielle du type de source.');
   if(detail.hasField && detail.inherited)return tr('L’origine provient d’une étape antérieure de la provenance, et pas nécessairement de la version actuelle.');
   if(detail.hasField)return tr('Le type de source est déclaré dans les informations C2PA.');
@@ -2379,7 +2445,7 @@ function originPanelSection(photo) {
   const detail=c2paSourceDetails(photo);
   const pending=photo.state==='loading',missing=photo.state==='none',error=photo.state==='error';
   const kind=pending||missing||error?'unknown':detail.kind;
-  const labels={capture:'Photo capturée',ai:'Image générée par IA',composite:'Image composée',unknown:'Origine inconnue'};
+  const labels={capture:'Photo capturée',ai:'Image générée par IA',composite:'Image contenant du contenu généré par IA',unknown:'Origine inconnue'};
   const box=document.createElement('section');box.className='credential-section afp-reader-origin';
   const head=document.createElement('h3');head.textContent=tr('Origine de l’image');
   const card=document.createElement('div');card.className='afp-reader-card';

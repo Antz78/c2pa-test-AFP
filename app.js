@@ -2099,6 +2099,16 @@ colorHelpStyle.textContent = `
     font:500 13px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;
     z-index:2147483647;pointer-events:none;white-space:normal;overflow-wrap:anywhere;
   }
+  /* Distinguo: infobulle courte, beaucoup plus compacte que les explications C2PA. */
+  .c2pa-color-help.is-distinguo-tip,
+  .c2pa-color-help.is-distinguo-tip:popover-open{
+    /* Largeur = texte + marges internes, sans largeur fixe ni espace vide. */
+    width:max-content;min-width:0;max-width:calc(100vw - 20px);
+    white-space:nowrap;overflow-wrap:normal;word-break:normal;
+    padding:6px 9px;border-radius:7px;
+    font:600 11px/1.3 system-ui,-apple-system,'Segoe UI',sans-serif;
+    box-shadow:0 5px 16px #0007;
+  }
   .c2pa-color-help[hidden]{display:none!important}
   .credential-row .signal,.validation-item .signal,.tag,.demo-overlay .dot,.cr .dot{cursor:help}
   .photo-unavailable img{min-height:90px;object-fit:contain}
@@ -2131,18 +2141,21 @@ function showColorHelp(target) {
   const markerMessage = isDistinguo ? DISTINGUO_HOVER_MESSAGES[target.dataset.originKind] : null;
   if (!markerMessage && (!cls || !C2PA_STATUS_TIPS[cls])) return;
   colorHelpTarget = target;
+  colorHelp.classList.toggle('is-distinguo-tip', Boolean(markerMessage));
   colorHelp.textContent = markerMessage || tr(C2PA_STATUS_TIPS[cls]);
   colorHelp.hidden = false;
+  // Pour les icônes, largeur naturelle du texte ; conserver les bulles explicatives originales ailleurs.
+  colorHelp.style.width = markerMessage ? '' : Math.min(335, Math.max(160, window.innerWidth - 24)) + 'px';
+  colorHelp.style.left = '0px';
   try { if (typeof colorHelp.showPopover === 'function' && !colorHelp.matches(':popover-open')) colorHelp.showPopover(); } catch (_) {}
-  // Clamp the explanation to the visible viewport.
+  // Placement dans la fenêtre y compris sur petit écran.
   const rect = target.getBoundingClientRect();
   const vw = Math.min(window.innerWidth, window.visualViewport?.width || Infinity, document.documentElement.clientWidth || Infinity);
   const vh = Math.min(window.innerHeight, window.visualViewport?.height || Infinity);
-  const width = Math.min(335, Math.max(160, vw - 24));
-  const left = Math.max(12, Math.min(vw - width - 12, rect.left));
-  colorHelp.style.width = width + 'px';
+  const width = colorHelp.getBoundingClientRect().width || 160;
+  const left = Math.max(8, Math.min(vw - width - 8, markerMessage ? rect.left + rect.width / 2 - width / 2 : rect.left));
   colorHelp.style.left = left + 'px';
-  const bubbleHeight = colorHelp.getBoundingClientRect().height || 85;
+  const bubbleHeight = colorHelp.getBoundingClientRect().height || 45;
   const below = rect.bottom + 9;
   colorHelp.style.top = (below + bubbleHeight <= vh - 8 ? below : Math.max(8, rect.top - bubbleHeight - 9)) + 'px';
 }

@@ -1567,7 +1567,9 @@ function appendOriginBadge(target, photo, state) {
   target.dataset.originStatus = level;
   target.dataset.originKind = origin;
   const originDescription = originDetail.inferred ? tr('Capture déduite de la provenance C2PA du boîtier (non déclarée par digitalSourceType)') : originTitle(origin);
-  target.title = originDescription + (photo.cacheStatus ? ' — ' + afpCacheLabel(photo) : '');
+  // Ne pas utiliser l'attribut HTML title : il crée une seconde infobulle blanche native.
+  // Les informations détaillées restent dans aria-label et dans le panneau C2PA.
+  target.removeAttribute('title');
   target.setAttribute('aria-label', originDescription + ' — ' + (level === 'warn' ? tr('À vérifier') : level === 'bad' ? tr('Échec') : level === 'ok' ? tr('Validé') : tr('Indéterminé')) + (photo.cacheStatus ? ' — ' + afpCacheLabel(photo) : ''));
   target.classList.add(level, 'origin-' + origin);
 
@@ -2108,12 +2110,22 @@ function colorTarget(node) {
   if (!(node instanceof Element)) return null;
   return node.closest('.credential-row > .signal, .validation-item > .signal, #grid .tag, #grid .demo-overlay, #cr-badge, #side-status, #lb-status, #bottom-status, #credentials .status');
 }
+// Libellés courts pour les quatre marqueurs Distinguo : une seule bulle, à la charte AFP.
+// La classification C2PA et sa justification restent accessibles dans le panneau détaillé.
+const DISTINGUO_HOVER_MESSAGES = Object.freeze({
+  capture: 'Photographic Capture',
+  unknown: 'Image without signature',
+  ai: 'AI generated illustration',
+  composite: 'Composite image'
+});
 function showColorHelp(target) {
   if (!target) return;
+  const isDistinguo = target.classList.contains('mode-origin-distinguo');
   const cls = colorKey(target) || colorKey(target.querySelector('.dot'));
-  if (!cls || !C2PA_STATUS_TIPS[cls]) return;
+  const markerMessage = isDistinguo ? DISTINGUO_HOVER_MESSAGES[target.dataset.originKind] : null;
+  if (!markerMessage && (!cls || !C2PA_STATUS_TIPS[cls])) return;
   colorHelpTarget = target;
-  colorHelp.textContent = tr(C2PA_STATUS_TIPS[cls]);
+  colorHelp.textContent = markerMessage || tr(C2PA_STATUS_TIPS[cls]);
   colorHelp.hidden = false;
   try { if (typeof colorHelp.showPopover === 'function' && !colorHelp.matches(':popover-open')) colorHelp.showPopover(); } catch (_) {}
   // Clamp the explanation to the visible viewport.

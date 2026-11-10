@@ -1892,6 +1892,9 @@ function cardEl(photo) {
   });
   const tag = document.createElement('span');
   tag.className = `tag ${photo.state}`;
+  // Masquer le bandeau 'Needs verification' sur les photos, sans changer l'état C2PA.
+  // La couleur du pictogramme, les filtres et le panneau restent inchangés.
+  tag.style.setProperty('display', photo.state === 'warn' ? 'none' : '', 'important');
   tag.tabIndex = 0;
   tag.title = tr(C2PA_STATUS_TIPS[photo.state] || C2PA_STATUS_TIPS.neutral);
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),
@@ -1920,6 +1923,9 @@ function renderCard(photo) {
   if (!card) return;
   const tag = card.querySelector('.tag');
   tag.className = `tag ${photo.state}`;
+  // Masquer le bandeau 'Needs verification' sur les photos, sans changer l'état C2PA.
+  // La couleur du pictogramme, les filtres et le panneau restent inchangés.
+  tag.style.setProperty('display', photo.state === 'warn' ? 'none' : '', 'important');
   tag.title = tr(C2PA_STATUS_TIPS[photo.state] || C2PA_STATUS_TIPS.neutral);
   tag.textContent = '';
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),

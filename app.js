@@ -1,4 +1,4 @@
-console.info('[AFP Distinguo] Marqueurs vectoriels à contraste élevé, couleurs C2PA réelles — v20261107-reader-first');
+console.info('[AFP Distinguo] Version 20261110 parent Nikon/AFP v3 — build AFP-PARENT-3');
 console.info('[C2PA AFP] Version filtres v3 chargée — badges À vérifier');
 // Galerie C2PA — 100 % statique, fonctionne sur GitHub Pages.
 // Deux modes :
@@ -1362,7 +1362,8 @@ function c2paSourceDetails(photo) {
     return s;
   }
   for (const [key,m] of [...byLabel.entries()]) {
-    byLabel.set(manifestId(key),m);
+    const normalized=manifestId(key);
+    if(normalized) byLabel.set(normalized,m);
   }
   function lookupManifest(ref) {
     const id=manifestId(ref);
@@ -1517,7 +1518,10 @@ function c2paSourceDetails(photo) {
       if (!/parentof|parent_of|parent-of/.test(relation)) continue;
       const uri=sourceValue(p.digitalSourceType ?? p.digital_source_type ?? p['digital-source-type']);
       if (uri) refs.push({direct:uri});
-      for (const val of [p.activeManifest,p.active_manifest,p.manifest,p.manifestLabel,p.c2pa_manifest,p.instanceID,p.instance_id]) {
+      // CAI SDK returns active_manifest as a STRING inside manifest.ingredients.
+      // Raw JUMBF c2pa.ingredient.v3 uses activeManifest: {url: "self#jumbf=/c2pa/…"}.
+      for (const val of [p.activeManifest,p.active_manifest,p.manifest,p.manifestLabel,
+        p.manifest_label,p.c2pa_manifest,p.c2paManifest,p.provenance,p.instanceID,p.instance_id]) {
         const ref=sourceValue(val);
         if (ref) refs.push({ref});
       }
@@ -1567,7 +1571,8 @@ function c2paSourceDetails(photo) {
     }
     if(!events.includes('c2pa.created') || events.some(x=>/edited|opened|placed|removed|repackaged|transcoded/i.test(x))) return null;
     const generator=String(m.claim_generator ?? m.claimGenerator ??
-      m.claim_generator_info?.[0]?.name ?? m.claimGeneratorInfo?.[0]?.name ?? '').trim();
+      m.claim_generator_info?.[0]?.name ?? m.claimGeneratorInfo?.[0]?.name ??
+      m.claim_generator_info?.name ?? m.claimGeneratorInfo?.name ?? '').trim();
     const exif=claims.filter(x=>/^stds\.exif(?:__\d+)?$/i.test(labelOf(x)));
     const camera=exif.map(x=>payloadOf(x)).find(v=>v && typeof v==='object' && !Array.isArray(v) &&
       (v['tiff:Make'] || v['tiff:Model'] || v.tiff?.Make || v.tiff?.Model));
@@ -1594,6 +1599,57 @@ function c2paSourceDetails(photo) {
   for (const candidate of [...activeCandidates,...ancestors]) {
     const fallback=captureFromSignedCameraEvidence(candidate,ancestors.includes(candidate));
     if(fallback) return fallback;
+  }
+
+  /* AFP / Nikon, deuxième chemin : certains SDK ne conservent pas la même
+     représentation des liens "parentOf" (v3, manifeste de mise à jour et
+     assertions expurgées). Dans ce cas, rechercher UNIQUEMENT le parent
+     photographique unique déjà embarqué dans LE MÊME manifestStore C2PA.
+
+     Conditions cumulatives : manifeste actif AFP, entrée/sortie sans placement
+     ni modification visuelle déclarée, présence d'une relation parentOf OU
+     parent Nikon/Canon unique associé à c2pa.opened, générateur d'appareil
+     et action c2pa.created. Une présence de marque Nikon dans les EXIF du JPEG
+     seule ne suffit jamais. Résultat = INFERENCE, jamais digitalCapture écrit. */
+  const activeRoots=[...new Set(activeCandidates)];
+  const eventsIn=(m)=>assertionsOf(m)
+    .filter(a=>/^(?:c2pa\.)?actions(?:\.v\d+)?(?:__\d+)?$/i.test(labelOf(a)))
+    .flatMap(a=>{const body=payloadOf(a);return Array.isArray(body)?body:Array.isArray(body?.actions)?body.actions:[];})
+    .map(a=>String(obj(a)?.action??'').toLowerCase()).filter(Boolean);
+  const rootActions=activeRoots.flatMap(eventsIn);
+  const rootGenerator=activeRoots.map(m=>String(m?.claim_generator_info?.name ??
+    m?.claim_generator_info?.[0]?.name ?? m?.claim_generator ?? '')).join(' ');
+  const isAfpManifest=/agence france.presse|\bafp\b|iris-sr-tag/i.test(rootGenerator);
+  const parentClaims=activeRoots.flatMap(m=>[
+    ...(Array.isArray(m?.ingredients)?m.ingredients:[]),
+    ...assertionsOf(m).filter(a=>/c2pa\.ingredient/i.test(labelOf(a))).map(payloadOf)
+  ]).map(obj).filter(p=>p && typeof p==='object' &&
+    /^parentof$/i.test(String(p.relationship??'').replace(/[-_\s]/g,'')));
+  const noImageEdits=rootActions.length>0 && !rootActions.some(a=>
+    /c2pa\.(?:placed|removed|edited|transcoded|repackaged|resized|color_adjustments)/.test(a));
+  if (isAfpManifest && noImageEdits && (parentClaims.length===1 ||
+      (rootActions.includes('c2pa.opened') && parentClaims.length===0))) {
+    const embedded=[...new Set([...byLabel.values()])]
+      .filter(m=>m && !activeRoots.includes(m) && !ancestors.includes(m));
+    const supported=[];
+    for (const candidate of embedded) {
+      // A declaration on the parent remains stronger than an inference.
+      const declared=chosen(ownDeclarations(candidate),true);
+      if (declared?.declared) supported.push({...declared, note:'Origine du manifeste parent embarqué dans le fichier AFP'});
+      else {
+        const inferred=captureFromSignedCameraEvidence(candidate,true);
+        if (inferred) supported.push(inferred);
+      }
+    }
+    if (supported.length===1) {
+      const result=supported[0];
+      // If the only provenance is inferred from a camera claim, do not imply
+      // that the active AFP manifest declared digitalCapture.
+      result.source='AFP parentOf → manifeste appareil embarqué (résolution SDK de repli)';
+      result.inherited=true;
+      if (!result.declared) {result.inferred=true;result.weakInference=true;}
+      return result;
+    }
   }
 
   return direct ?? unknown;

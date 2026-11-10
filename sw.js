@@ -1,7 +1,7 @@
-/* AFP C2PA - Service Worker v1 : disponibilité réseau et octets d'origine.
+/* AFP C2PA - Service Worker v2 : disponibilité réseau et octets d'origine.
    S'applique uniquement au site qui l'enregistre ; n'envoie aucune donnée. */
 const CACHE_PREFIX='afp-c2pa-';
-const SHELL='afp-c2pa-shell-v1';
+const SHELL='afp-c2pa-shell-v2';
 const ORIGINALS='afp-c2pa-originals-v1';
 const SDK='afp-c2pa-sdk-v1';
 const MAX_ORIGINALS=32;
@@ -31,7 +31,11 @@ async function networkFirst(request,cacheName,timeoutMs=9000) {
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try {
-    const response=await fetch(request,{signal:controller.signal});
+    // Bypass the browser HTTP cache for the page and scripts when online.
+    // CacheStorage still holds a fallback for offline visits.
+    const requestPath=new URL(request.url).pathname;
+    const freshShell=request.mode==='navigate'||/\.(?:js|html)$/.test(requestPath);
+    const response=await fetch(request,{signal:controller.signal,cache:freshShell?'no-store':'default'});
     if(response.ok && response.type!=='opaque') cache.put(request,response.clone()).catch(()=>{});
     return response;
   } catch(error) {

@@ -1240,11 +1240,12 @@ originBadgeStyle.textContent = `
     width:56px!important;height:56px!important;
     right:18px!important;bottom:8px!important;
   }
-  /* Première apparition : 40 % de transparence (opacité 60 %).
-     Au survol ou au focus : 100 % d'opacité, via les règles ci-dessous. */
+  /* Au repos : opacite 40%. Intro lumineuse 100% pendant 1 s apres 2 s. */
   #grid .demo-overlay.mode-origin-distinguo.origin-visible,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible {
-    opacity:.60!important;visibility:visible!important;pointer-events:auto!important;
+    opacity:.40!important;visibility:visible!important;pointer-events:auto!important;
+    -webkit-touch-callout:none!important;-webkit-user-select:none!important;
+    user-select:none!important;touch-action:manipulation!important;
   }
   #grid .demo-overlay.mode-origin-distinguo svg,
   #lightbox #cr-badge.mode-origin-distinguo svg {
@@ -1266,18 +1267,35 @@ originBadgeStyle.textContent = `
     stroke-width:2.55!important;stroke-linecap:round!important;stroke-linejoin:round!important;
     opacity:1!important;
   }
-  #grid .demo-overlay.mode-origin-distinguo.origin-visible:hover,
+  /* Premiere seconde, appui long et clavier : meme lumiere, meme tressautement. */
+  #grid .demo-overlay.mode-origin-distinguo.origin-visible.origin-intro,
+  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible.origin-intro,
+  #grid .demo-overlay.mode-origin-distinguo.origin-visible.origin-touch-hold,
+  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible.origin-touch-hold,
   #grid .demo-overlay.mode-origin-distinguo.origin-visible:focus-visible,
-  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:hover,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:focus-visible {
     opacity:1!important;
     filter:brightness(1.18) drop-shadow(0 0 5px var(--origin-foreground,#cfd6de)) drop-shadow(0 0 9px rgba(255,255,255,.22))!important;
   }
-  #grid .demo-overlay.mode-origin-distinguo.origin-visible:hover svg,
+  #grid .demo-overlay.mode-origin-distinguo.origin-visible.origin-intro svg,
+  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible.origin-intro svg,
+  #grid .demo-overlay.mode-origin-distinguo.origin-visible.origin-touch-hold svg,
+  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible.origin-touch-hold svg,
   #grid .demo-overlay.mode-origin-distinguo.origin-visible:focus-visible svg,
-  #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:hover svg,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:focus-visible svg {
     animation:afpDistinguoHop .75s ease-in-out infinite!important;
+  }
+  /* Les pseudo-etats :hover peuvent rester collés sur iOS. Hover = vraie souris uniquement. */
+  @media (hover:hover) and (pointer:fine) {
+    #grid .demo-overlay.mode-origin-distinguo.origin-visible:hover,
+    #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:hover {
+      opacity:1!important;
+      filter:brightness(1.18) drop-shadow(0 0 5px var(--origin-foreground,#cfd6de)) drop-shadow(0 0 9px rgba(255,255,255,.22))!important;
+    }
+    #grid .demo-overlay.mode-origin-distinguo.origin-visible:hover svg,
+    #lightbox #cr-badge.mode-origin-distinguo.delayed-visible:hover svg {
+      animation:afpDistinguoHop .75s ease-in-out infinite!important;
+    }
   }
   #grid .demo-overlay.mode-origin-distinguo::before,
   #grid .demo-overlay.mode-origin-distinguo::after,
@@ -1675,6 +1693,24 @@ const DISTINGUO_COLORS = Object.freeze({
   neutral: '#C7D0DA',
   loading: '#C7D0DA'
 });
+/* Apparition en deux temps : +2 s => flash 100 % et tressautement durant 1 s,
+   puis 40 %. La date de revelation reste stable si une analyse C2PA met a jour le DOM. */
+function applyOriginIntro(target, until) {
+  clearTimeout(target._originIntroTimer);
+  target._originIntroUntil = until;
+  const remaining = (until || 0) - performance.now();
+  target.classList.toggle('origin-intro', remaining > 0);
+  if (remaining > 0) {
+    target._originIntroTimer = setTimeout(() => {
+      if (target._originIntroUntil === until) target.classList.remove('origin-intro');
+    }, remaining);
+  }
+}
+function revealThumbnailOrigin(target) {
+  if (!target.isConnected || !target.classList.contains('mode-origin-distinguo')) return;
+  target.classList.add('origin-visible');
+  applyOriginIntro(target, target._originRevealDeadline + 1000);
+}
 function appendOriginBadge(target, photo, state) {
   const originDetail = c2paSourceDetails(photo);
   const origin = originDetail.kind || 'unknown';
@@ -1722,12 +1758,9 @@ function appendOriginBadge(target, photo, state) {
     const now = performance.now();
     if (!target._originRevealDeadline) target._originRevealDeadline = now + 2000;
     clearTimeout(target._originRevealTimer);
-    if (now >= target._originRevealDeadline) target.classList.add('origin-visible');
-    else target._originRevealTimer = setTimeout(() => {
-      if (target.isConnected && target.classList.contains('mode-origin-distinguo')) {
-        target.classList.add('origin-visible');
-      }
-    }, Math.max(0, target._originRevealDeadline - now));
+    if (now >= target._originRevealDeadline) revealThumbnailOrigin(target);
+    else target._originRevealTimer = setTimeout(() => revealThumbnailOrigin(target),
+      Math.max(0, target._originRevealDeadline - now));
   }
 }
 
@@ -1822,7 +1855,10 @@ function setCurlTheme(button){
 function addBadgeContent(target, mode, state, photo = null) {
   if (mode !== 'origin-distinguo') {
     clearTimeout(target._originRevealTimer);
+    clearTimeout(target._originIntroTimer);
     target._originRevealDeadline = null;
+    target._originIntroUntil = null;
+    target.classList.remove('origin-intro', 'origin-touch-hold');
   }
   target.dataset.c2paStatus = state;
   target.replaceChildren();
@@ -1970,11 +2006,16 @@ let delayedRevealReady=false;
 function scheduleDelayedBadge(mode) {
   clearTimeout(delayedTimer);
   delayedRevealReady=false;
-  crBadge.classList.remove('delayed-visible');
+  crBadge.classList.remove('delayed-visible','origin-intro','origin-touch-hold');
+  clearTimeout(crBadge._originIntroTimer);
+  crBadge._originIntroUntil = null;
   if(mode==='delayed' || mode==='shield-delayed' || mode==='origin-distinguo') delayedTimer=setTimeout(()=>{
     if(lightbox.open && currentIdx>=0 && ['delayed','shield-delayed','origin-distinguo'].includes(presentationFor(photos[currentIdx]))) {
       delayedRevealReady=true;
       crBadge.classList.add('delayed-visible');
+      if (presentationFor(photos[currentIdx]) === 'origin-distinguo') {
+        applyOriginIntro(crBadge, performance.now() + 1000);
+      }
     }
   },2000);
 }
@@ -2254,7 +2295,7 @@ const DISTINGUO_HOVER_MESSAGES = Object.freeze({
   ai: 'AI generated illustration',
   composite: 'Contains AI-generated content'
 });
-function showColorHelp(target) {
+function showColorHelp(target, options = {}) {
   if (!target) return;
   const isDistinguo = target.classList.contains('mode-origin-distinguo');
   const cls = colorKey(target) || colorKey(target.querySelector('.dot'));
@@ -2279,6 +2320,18 @@ function showColorHelp(target) {
   const bubbleHeight = colorHelp.getBoundingClientRect().height || 45;
   const below = rect.bottom + 9;
   colorHelp.style.top = (below + bubbleHeight <= vh - 8 ? below : Math.max(8, rect.top - bubbleHeight - 9)) + 'px';
+  if (options.centerInImage && isDistinguo) {
+    // Appui long mobile : le texte est au centre de la photo, jamais sous le doigt.
+    const photoImage = target.id === 'cr-badge' ? document.querySelector('#lb-photo')
+      : target.closest('.card')?.querySelector('img');
+    const bounds = photoImage?.getBoundingClientRect();
+    if (bounds?.width && bounds?.height) {
+      const centeredLeft = bounds.left + (bounds.width - width) / 2;
+      const centeredTop = bounds.top + (bounds.height - bubbleHeight) / 2;
+      colorHelp.style.left = Math.max(8, Math.min(vw - width - 8, centeredLeft)) + 'px';
+      colorHelp.style.top = Math.max(8, Math.min(vh - bubbleHeight - 8, centeredTop)) + 'px';
+    }
+  }
 }
 function hideColorHelp() {
   colorHelpTarget = null;
@@ -2294,7 +2347,13 @@ document.addEventListener('pointerout', e => {
   if (e.pointerType === 'touch') return;
   if (colorHelpTarget && !colorHelpTarget.contains(e.relatedTarget)) hideColorHelp();
 });
-document.addEventListener('focusin', e => { const target = colorTarget(e.target); if (target) showColorHelp(target); });
+document.addEventListener('focusin', e => {
+  const target = colorTarget(e.target);
+  if (!target) return;
+  // Un focus cree par un tap tactile ne doit pas simuler un survol permanent.
+  if (target.classList.contains('mode-origin-distinguo') && !target.matches(':focus-visible')) return;
+  showColorHelp(target);
+});
 document.addEventListener('focusout', e => { if (colorHelpTarget?.contains(e.target)) hideColorHelp(); });
 document.addEventListener('click', e => {
   const target = colorTarget(e.target);
@@ -2303,6 +2362,77 @@ document.addEventListener('click', e => {
     e.stopPropagation(); e.preventDefault();
     if (colorHelpTarget === target) hideColorHelp(); else showColorHelp(target);
   }
+}, true);
+/* Gestes tactiles du Distinguo :
+   tap bref = clic normal (panneau C2PA), appui long = bulle tant que le doigt est pose.
+   L'appui long ne doit jamais declencher de clic apres le relachement. */
+const ORIGIN_LONG_PRESS_MS = 480;
+const ORIGIN_TOUCH_MOVE_PX = 14;
+let originTouchGesture = null;
+let originBlockedClickTarget = null;
+let originBlockedClickUntil = 0;
+function endOriginTouchGesture(event) {
+  const gesture = originTouchGesture;
+  if (!gesture || (event && gesture.pointerId !== event.pointerId)) return;
+  clearTimeout(gesture.timer);
+  originTouchGesture = null;
+  if (gesture.longPress) {
+    gesture.target.classList.remove('origin-touch-hold');
+    hideColorHelp();
+    // Le click est normalement emis APRES pointerup : on le bloque uniquement apres appui long.
+    originBlockedClickTarget = gesture.target;
+    originBlockedClickUntil = performance.now() + 1100;
+    gesture.target.blur();
+  }
+}
+document.addEventListener('pointerdown', event => {
+  if (event.pointerType !== 'touch' || event.button !== 0) return;
+  const target = colorTarget(event.target);
+  if (!target?.classList.contains('mode-origin-distinguo')) return;
+  // On ne traite que les marqueurs deja apparus.
+  if (!(target.classList.contains('origin-visible') || target.classList.contains('delayed-visible'))) return;
+  // Un nouveau contact annule une suppression de clic eventuellement restee d'un ancien appui long.
+  // Le clic post-longpress, s'il existe, aura deja ete emis juste apres le precedent pointerup.
+  originBlockedClickTarget = null;
+  originBlockedClickUntil = 0;
+  endOriginTouchGesture();
+  const gesture = {pointerId:event.pointerId, target, x:event.clientX, y:event.clientY, timer:0, longPress:false};
+  originTouchGesture = gesture;
+  gesture.timer = setTimeout(() => {
+    if (originTouchGesture !== gesture || !target.isConnected) return;
+    gesture.longPress = true;
+    target.classList.add('origin-touch-hold');
+    showColorHelp(target, {centerInImage:true});
+  }, ORIGIN_LONG_PRESS_MS);
+}, true);
+document.addEventListener('pointermove', event => {
+  const gesture = originTouchGesture;
+  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
+  if (dx*dx + dy*dy > ORIGIN_TOUCH_MOVE_PX*ORIGIN_TOUCH_MOVE_PX) {
+    clearTimeout(gesture.timer);
+    if (gesture.longPress) {
+      // Si le doigt glisse loin du symbole apres l'appui long, terminer l'infobulle.
+      endOriginTouchGesture(event);
+    } else originTouchGesture = null;
+  }
+}, true);
+document.addEventListener('pointerup', endOriginTouchGesture, true);
+document.addEventListener('pointercancel', endOriginTouchGesture, true);
+document.addEventListener('click', event => {
+  if (!originBlockedClickTarget || performance.now() > originBlockedClickUntil) {
+    originBlockedClickTarget = null;return;
+  }
+  const target = colorTarget(event.target);
+  if (target === originBlockedClickTarget) {
+    event.preventDefault();event.stopImmediatePropagation();
+    originBlockedClickTarget = null;
+  }
+}, true);
+// Ne pas ouvrir le menu de sauvegarde / selection natif sur un appui long du marqueur.
+document.addEventListener('contextmenu', event => {
+  const target = colorTarget(event.target);
+  if (target?.classList.contains('mode-origin-distinguo') && matchMedia('(pointer:coarse)').matches) event.preventDefault();
 }, true);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') hideColorHelp(); });
 // Tooltip reste affichée jusqu'au prochain contact / clic / fermeture.
@@ -2355,6 +2485,7 @@ function signatureOf(a) {
 function validationText(v) { return typeof v === 'string' ? v : firstValue(v?.code, v?.status, JSON.stringify(v)); }
 
 function openLightbox(idx) {
+  hideColorHelp();
   currentIdx = idx;
   const photo = photos[idx];
   lbTitle.textContent = photo.name.split('/').pop();
@@ -2393,7 +2524,12 @@ function openLightbox(idx) {
     if (currentIdx >= 0 && photos[currentIdx] === photo) {
       crBadge.className = `cr ${photo.state}`;
       addBadgeContent(crBadge,presentationFor(photo),photo.state,photo);
-      if(['delayed','shield-delayed','origin-distinguo'].includes(presentationFor(photo)) && delayedRevealReady) crBadge.classList.add('delayed-visible');
+      if(['delayed','shield-delayed','origin-distinguo'].includes(presentationFor(photo)) && delayedRevealReady) {
+        crBadge.classList.add('delayed-visible');
+        if (presentationFor(photo) === 'origin-distinguo' && crBadge._originIntroUntil) {
+          applyOriginIntro(crBadge, crBadge._originIntroUntil);
+        }
+      }
       if (!bottomSheet.hidden && bottomPhoto === photo) refreshBottomSheet(photo);
       if (!sidePanel.hidden) refreshSidePanel(photo);
       if (credentials.open) fillDetails(photo); // rafraîchir le panneau déjà ouvert

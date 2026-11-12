@@ -1,4 +1,4 @@
-console.info('[AFP Distinguo] Version 20261110 parent Nikon/AFP v3 — build AFP-PARENT-3');
+console.info('[AFP Distinguo] Origine / confiance C2PA — v20261112 public trust directory');
 console.info('[C2PA AFP] Version filtres v3 chargée — badges À vérifier');
 // Galerie C2PA — 100 % statique, fonctionne sur GitHub Pages.
 // Deux modes :
@@ -13,6 +13,21 @@ let sdkFailure = null; // dernière panne temporaire, jamais mémorisée défini
 /* ===== Interface FR / EN : sans MutationObserver, sans analyse C2PA supplémentaire =====
    Seuls les libellés changent. Les données brutes de provenance restent intactes. */
 const TRANSLATIONS = {
+  'Capture photographique': 'Photographic Capture',
+  'Illustration générée par IA': 'AI generated illustration',
+  'Image sans signature C2PA': 'Image without C2PA signature',
+  'Le champ C2PA dédié à l’origine de l’image n’est pas renseigné. Toutefois, d’autres métadonnées C2PA permettent d’identifier une capture provenant d’un appareil photo. Cela ne garantit pas à lui seul l’authenticité de la scène.': 'The C2PA image-origin field is not filled in. However, other C2PA metadata identify a capture originating from a camera. This alone does not prove that the scene is authentic.',
+  'La provenance C2PA indique une capture photographique, mais les métadonnées du boîtier sont incomplètes. Il s’agit d’une déduction, pas d’une déclaration officielle du type de source.': 'C2PA provenance indicates a photographic capture, but some camera metadata are missing. This is an inference, not an explicit source-type declaration.',
+  'Nikon signe ses photos avec un certificat numérique, un peu comme une carte d’identité. Le vérificateur contrôle si ce certificat est reconnu via une chaîne de confiance C2PA. Certaines autorités de certification, comme DigiCert et Adobe, figurent sur la liste officielle. Le certificat utilisé ici n’est pas reconnu par ce vérificateur. Nikon figure dans l’ancienne liste provisoire, gelée en 2026. Cela ne signifie pas que la photo est fausse.': 'Nikon signs its photos with a digital certificate, much like an ID card. This verifier checks whether that certificate is recognized through a C2PA trust chain. Certificate authorities such as DigiCert and Adobe are on the official list. This verifier does not recognize the certificate used here. Nikon appears on the former interim list, frozen in 2026. This does not mean the photo is fake.',
+  'Une signature numérique accompagne ces informations. Ce vérificateur ne reconnaît pas le certificat de signature comme fiable. Cela ne prouve pas que la photo est fausse.': 'These details have a digital signature. This verifier does not recognize the signing certificate as trusted. That does not mean the photo is fake.',
+  'Certificat numérique à vérifier': 'Digital certificate needs review',
+  'Liste officielle C2PA : consultation en cours…': 'Official C2PA trust list: checking…',
+  'Liste officielle C2PA : consultation impossible (connexion indisponible).': 'Official C2PA trust list: unavailable (network issue).',
+  'Liste officielle C2PA : ': 'Official C2PA trust list: ',
+  'Entrée directe au nom du constructeur trouvée': 'Direct entry under the manufacturer’s name found',
+  'Aucune entrée directe au nom du constructeur': 'No direct entry under the manufacturer’s name',
+  'Ce contrôle informatif ne remplace pas la vérification cryptographique de la chaîne de certificats.': 'This informational check does not replace cryptographic validation of the certificate chain.',
+  'Consulter les listes C2PA': 'Browse C2PA lists',
   'À analyser': 'Pending analysis',
   'Vérifiée': 'Verified',
   'À vérifier ⚠': 'Needs verification ⚠',
@@ -2577,6 +2592,10 @@ readerPanelStyle.textContent = `
   .afp-reader-trust p{font-size:12px;line-height:1.5;margin:0;color:var(--trust-text)}
   .afp-reader-trust .afp-reader-signer{margin-top:8px;padding-top:8px;border-top:1px solid var(--trust-border);font-size:12.5px;overflow-wrap:anywhere}
   .afp-reader-trust .afp-reader-signer span{color:var(--trust-muted)}
+  .afp-reader-directory-status{border-top:1px solid var(--trust-border);margin-top:10px;padding-top:10px}
+  .afp-reader-directory-status p{font-size:11.5px;line-height:1.5;color:var(--trust-text);margin:0 0 5px}
+  .afp-reader-directory-status a{color:#77aafd;text-decoration:underline;text-underline-offset:2px;font-size:11px;display:inline-block;margin-top:2px}
+  .afp-reader-directory-status small{display:block;font-size:10.5px;line-height:1.45;margin-top:5px;color:var(--trust-muted)}
   .afp-reader-fold{border:1px solid #d6e1ec;border-radius:11px;margin:0 0 10px;overflow:hidden;background:transparent;min-width:0}
   #side-panel .afp-reader-fold{border-color:#34485d}
   .afp-reader-fold > summary{list-style:none;cursor:pointer;font-size:13px;font-weight:730;line-height:1.45;padding:13px 14px;color:inherit;display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -2627,8 +2646,8 @@ function readerOriginExplanation(detail,pending,missing,error) {
   if(pending)return tr('Origine en cours d’analyse…');
   if(error)return tr('Impossible de lire les informations C2PA de cette image.');
   if(missing)return tr('Cette image ne contient pas de manifeste C2PA intégré détectable.');
-  if(detail.inferred && detail.weakInference)return tr('Capture déduite du générateur du boîtier (EXIF absent ou supprimé)') + '. ' + tr('L’absence de ce champ ne signifie pas que la photo a été créée par IA.');
-  if(detail.inferred)return tr('La galerie déduit une capture à partir du boîtier identifié dans les données C2PA signées. Ce n’est pas une déclaration officielle du type de source.');
+  if(detail.inferred && detail.weakInference)return tr('La provenance C2PA indique une capture photographique, mais les métadonnées du boîtier sont incomplètes. Il s’agit d’une déduction, pas d’une déclaration officielle du type de source.');
+  if(detail.inferred)return tr('Le champ C2PA dédié à l’origine de l’image n’est pas renseigné. Toutefois, d’autres métadonnées C2PA permettent d’identifier une capture provenant d’un appareil photo. Cela ne garantit pas à lui seul l’authenticité de la scène.');
   if(detail.hasField && detail.inherited)return tr('L’origine provient d’une étape antérieure de la provenance, et pas nécessairement de la version actuelle.');
   if(detail.hasField)return tr('Le type de source est déclaré dans les informations C2PA.');
   return tr('Aucune origine ne peut être déterminée à partir des informations disponibles.');
@@ -2637,13 +2656,13 @@ function originPanelSection(photo) {
   const detail=c2paSourceDetails(photo);
   const pending=photo.state==='loading',missing=photo.state==='none',error=photo.state==='error';
   const kind=pending||missing||error?'unknown':detail.kind;
-  const labels={capture:'Photo capturée',ai:'Image générée par IA',composite:'Image contenant du contenu généré par IA',unknown:'Origine inconnue'};
+  const labels={capture:'Capture photographique',ai:'Illustration générée par IA',composite:'Illustration générée par IA',unknown:'Origine inconnue'};
   const box=document.createElement('section');box.className='credential-section afp-reader-origin';
   const head=document.createElement('h3');head.textContent=tr('Origine de l’image');
   const card=document.createElement('div');card.className='afp-reader-card';
   const top=document.createElement('div');top.className='afp-reader-head';
   const main=document.createElement('div');main.className='afp-reader-main';
-  const title=document.createElement('strong');title.textContent=pending?tr('Analyse en cours'):tr(labels[kind]);
+  const title=document.createElement('strong');title.textContent=pending?tr('Analyse en cours'):(missing?tr('Image sans signature C2PA'):tr(labels[kind]));
   const desc=document.createElement('p');desc.textContent=readerOriginExplanation(detail,pending,missing,error);
   main.append(title,desc);top.append(readerIcon(kind),main);
   const source=document.createElement('div');source.className='afp-reader-source';
@@ -2697,6 +2716,82 @@ function foldReaderBoilerplate() {
 }
 foldReaderBoilerplate();
 
+/* ================== Annuaire PUBLIC C2PA (information seulement) ==================
+   L'Explorer est une interface. Sa source machine est le JSON officiel.
+   Ce JSON répertorie des autorités/services de confiance, PAS les certificats
+   de chaque photo. Seule la validation du SDK peut conclure sur la signature.
+   Pas de requalification cryptographique sur la base d'un nom de marque. */
+const AFP_OFFICIAL_TRUST_JSON='https://raw.githubusercontent.com/c2pa-org/conformance-public/main/trust-list/C2PA-TRUST-LIST.json';
+const AFP_CONFORMANCE_EXPLORER='https://spec.c2pa.org/conformance-explorer/';
+const AFP_TRUST_DIRECTORY_CACHE='afp-c2pa-public-trust-list-summary-v1';
+let afpDirectoryFetch=null;
+function afpDirectoryNames(json){
+  const list=json?.LoTE?.TrustedEntitiesList;
+  if(!Array.isArray(list))throw Error('Unexpected C2PA trust-list format');
+  const names=[];
+  for(const item of list){
+    const details=item.TrustedEntityInformation??{};
+    for(const entry of (details.TEName??[]))if(typeof entry?.value==='string')names.push(entry.value);
+    for(const service of (item.TrustedEntityServices??[])){
+      for(const entry of (service.ServiceInformation?.ServiceName??[]))if(typeof entry?.value==='string')names.push(entry.value);
+    }
+  }
+  return {names, issued:json?.LoTE?.ListAndSchemeInformation?.ListIssueDateTime??null};
+}
+function afpCachedTrustDirectory(){
+  try{
+    const cached=JSON.parse(localStorage.getItem(AFP_TRUST_DIRECTORY_CACHE)||'null');
+    if(cached && Date.now()-cached.storedAt < 86400000 && Array.isArray(cached.data?.names))return cached.data;
+  }catch(_){}
+  return null;
+}
+function afpPublicTrustDirectory(){
+  if(afpDirectoryFetch)return afpDirectoryFetch;
+  const cached=afpCachedTrustDirectory();
+  if(cached)return afpDirectoryFetch=Promise.resolve(cached);
+  afpDirectoryFetch=(async()=>{
+    const ctrl=new AbortController();const timeout=setTimeout(()=>ctrl.abort(),6500);
+    try{
+      const response=await fetch(AFP_OFFICIAL_TRUST_JSON,{mode:'cors',cache:'no-cache',signal:ctrl.signal});
+      if(!response.ok)throw Error('Trust list HTTP '+response.status);
+      const json=await response.json();const data=afpDirectoryNames(json);
+      try{localStorage.setItem(AFP_TRUST_DIRECTORY_CACHE,JSON.stringify({storedAt:Date.now(),data}));}catch(_){}
+      return data;
+    }finally{clearTimeout(timeout);}
+  })().catch(err=>{
+    afpDirectoryFetch=null; // retry next panel opening after a network failure
+    throw err;
+  });
+  return afpDirectoryFetch;
+}
+function afpAttachTrustDirectoryStatus(trust,signerName){
+  if(!/nikon/i.test(String(signerName)))return;
+  const holder=document.createElement('div');
+  holder.className='afp-reader-directory-status';
+  holder.dataset.directorySigner=String(signerName).trim().toUpperCase();
+  holder.setAttribute('role','note');
+  const explanation=document.createElement('p');explanation.textContent=tr('Liste officielle C2PA : consultation en cours…');
+  const link=document.createElement('a');link.href=AFP_CONFORMANCE_EXPLORER;link.target='_blank';link.rel='noopener noreferrer';
+  link.textContent=tr('Consulter les listes C2PA');
+  const limit=document.createElement('small');limit.textContent=tr('Ce contrôle informatif ne remplace pas la vérification cryptographique de la chaîne de certificats.');
+  holder.append(explanation,link,limit);trust.append(holder);
+  function updateEveryVisibleCopy(message){
+    // side-panel/bottom-sheet clone #lb-summary : rafraîchir TOUS les exemplaires.
+    for(const item of document.querySelectorAll('.afp-reader-directory-status')){
+      if(item.dataset.directorySigner===holder.dataset.directorySigner){
+        const paragraph=item.querySelector('p');if(paragraph)paragraph.textContent=message;
+      }
+    }
+  }
+  afpPublicTrustDirectory().then(data=>{
+    // Ne jamais interpréter la présence/absence du NOM comme la validation du certificat.
+    const nameListed=data.names.some(name=>/\bnikon\b/i.test(name));
+    let issue='';
+    if(data.issued){const d=new Date(data.issued);if(!Number.isNaN(d.getTime())) issue=' ('+d.toLocaleDateString(uiLanguage==='fr'?'fr-FR':'en-GB')+')';}
+    updateEveryVisibleCopy(tr('Liste officielle C2PA : ')+tr(nameListed?'Entrée directe au nom du constructeur trouvée':'Aucune entrée directe au nom du constructeur')+issue+'.');
+  }).catch(()=>{updateEveryVisibleCopy(tr('Liste officielle C2PA : consultation impossible (connexion indisponible).'));});
+}
+
 /* ---------- Panneau Content Credentials (bouton logo AFP) ---------- */
 function fillDetails(photo) {
   const origin=originPanelSection(photo);
@@ -2744,8 +2839,10 @@ function fillDetails(photo) {
     trustText='Les informations C2PA ne doivent pas être considérées comme vérifiées tant que cette erreur n’est pas éclaircie.';
     setStatusLine('error','Manifeste présent, mais une ou plusieurs vérifications ont échoué.','bad');
   }else if(hasUntrustedSigner){
-    trustLevel='warn';trustTitle='Identité du signataire à confirmer';
-    trustText='Le certificat de ce signataire n’est pas reconnu par notre vérificateur. Cela ne prouve pas que la photo est fausse.';
+    trustLevel='warn';trustTitle='Certificat numérique à vérifier';
+    trustText=/nikon/i.test(String(signer||''))
+      ?'Nikon signe ses photos avec un certificat numérique, un peu comme une carte d’identité. Le vérificateur contrôle si ce certificat est reconnu via une chaîne de confiance C2PA. Certaines autorités de certification, comme DigiCert et Adobe, figurent sur la liste officielle. Le certificat utilisé ici n’est pas reconnu par ce vérificateur. Nikon figure dans l’ancienne liste provisoire, gelée en 2026. Cela ne signifie pas que la photo est fausse.'
+      :'Une signature numérique accompagne ces informations. Ce vérificateur ne reconnaît pas le certificat de signature comme fiable. Cela ne prouve pas que la photo est fausse.';
     setStatusLine('warn','Manifeste présent, mais la confiance du signataire nécessite une vérification.');
   }else if(!entries.length||levels.includes('neutral')||levels.includes('warn')){
     trustLevel='warn';trustTitle='Vérification à confirmer';
@@ -2764,6 +2861,7 @@ function fillDetails(photo) {
   const by=document.createElement('span');by.textContent=tr('Signé par')+' : ';
   const signerName=document.createElement('strong');signerName.textContent=signer?readable(signer):tr('Signataire non identifié');
   signerP.append(by,signerName);trust.append(trustH,trustP,signerP);
+  if(hasUntrustedSigner)afpAttachTrustDirectoryStatus(trust,signer);
 
   const photoInfo=[];
   if(author)photoInfo.push(field('Auteur déclaré',`${author}${authorSource?' — '+authorSource:''}`,'neutral'));

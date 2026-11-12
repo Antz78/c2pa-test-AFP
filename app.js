@@ -2554,6 +2554,9 @@ function signatureOf(a) {
 function validationText(v) { return typeof v === 'string' ? v : firstValue(v?.code, v?.status, JSON.stringify(v)); }
 
 function openLightbox(idx) {
+  // Quand le lecteur navigue dans la galerie, garder le panneau déjà ouvert.
+  // Seule sa croix (ou la fermeture de la lightbox) doit le masquer.
+  const keepCredentialsPanel = lightbox.open && !sidePanel.hidden;
   hideColorHelp();
   currentIdx = idx;
   const photo = photos[idx];
@@ -2574,19 +2577,23 @@ function openLightbox(idx) {
   if (curl) curl.updatePhoto(lbPhoto, makeProvenanceCard(photo));
   scheduleDelayedBadge(mode);
   lightbox.classList.toggle('direct-layout',mode==='direct');
-  if(mode==='direct'){
+  // Effacer d'abord les informations de la photo précédente : jamais de certificat
+  // affiché pour la mauvaise image durant une analyse ou une navigation rapide.
+  setStatusLine(photo.state === 'loading' ? 'loading' : photo.state, tr('Chargement des informations…'));
+  lbSummary.replaceChildren();
+  lbJson.textContent = tr('Chargement…');
+  if(mode==='direct' || keepCredentialsPanel){
+    // Le panneau suit la nouvelle photographie : état courant ou attente C2PA,
+    // puis mise à jour automatique après analyze(photo).
     openSidePanel(photo);
-    sidePanel.classList.add('direct-visible');
+    sidePanel.classList.toggle('direct-visible',mode==='direct');
+    if(keepCredentialsPanel) sidePanel.scrollTop = 0;
   } else {
     sidePanel.hidden=true;
     lightbox.classList.remove('afp-panel-open');
     sidePanel.classList.remove('direct-visible');
     sidePhoto=null;
   }
-  setStatusLine(photo.state === 'loading' ? 'loading' : photo.state, tr('Chargement des informations…'));
-  lbSummary.replaceChildren();
-  lbJson.textContent = tr('Chargement…');
-  // Si le panneau était ouvert sur la photo précédente, on le ferme.
   if (credentials.open) credentials.close();
   if (!lightbox.open) lightbox.showModal();
   requestAnimationFrame(syncLargeCaptionWidth);
@@ -2992,15 +2999,15 @@ function afpSignerTrustExplanation(signer, trustLevel, isUntrusted) {
   // à l'AFP ni à une signature Canon dont les contrôles sont concluants.
   if(who.key==='canon' && isUntrusted && trustLevel!=='bad'){
     return (uiLanguage==='fr' ? [
-      'Les appareils Canon compatibles C2PA apposent sur chaque photo une **signature numérique unique**, véritable acte de naissance de l’image. Elle permet d’en retracer l’origine et de détecter toute modification non déclarée.',
-      'Notre galerie contrôle cette signature et vérifie si elle est garantie par un organisme reconnu par le C2PA, comme DigiCert ou Adobe.',
-      '**Dans le cas présent, le certificat Canon n’est pas reconnu par la liste officielle actuelle.** Canon figure uniquement dans l’ancienne liste de confiance, figée depuis le 1er janvier 2026.',
-      '**Cela ne signifie pas que la photo est fausse, mais que son signataire ne bénéficie pas de la reconnaissance officielle actuelle du C2PA.**'
+      'Les appareils Canon compatibles C2PA associent à chaque photo un **certificat numérique**, véritable acte de naissance de l’image.',
+      'Ce certificat permet d’identifier l’appareil ou l’organisme qui a signé la photo. Son authenticité est contrôlée à partir de **listes officielles de confiance, publiées en ligne par le C2PA**.',
+      'Un second contrôle compare l’empreinte numérique de la photo à celle enregistrée lors de sa création. **Si l’image a été modifiée sans nouvelle certification C2PA, cette correspondance est rompue et son intégrité ne peut plus être garantie.**',
+      'Lorsque ces vérifications sont concluantes, elles apportent une **preuve cryptographique rigoureuse et pratiquement irréfutable de l’intégrité des données signées**.'
     ] : [
-      'C2PA-compatible Canon cameras attach a **unique digital signature** to each photo, like the image’s birth certificate. It helps trace the image’s origin and detect undeclared changes.',
-      'Our gallery checks this signature and whether it is backed by a C2PA-recognized trust authority, such as DigiCert or Adobe.',
-      '**In this case, the Canon certificate is not recognized by the current official trust list.** Canon appears only on the former interim trust list, frozen since January 1, 2026.',
-      '**This does not mean the photo is fake; it means the signer is not currently recognized as trusted by the official C2PA list.**'
+      'C2PA-compatible Canon cameras associate a **digital certificate** with each photograph, much like a birth certificate for the image.',
+      'This certificate identifies the camera or organization that signed the photo. Its authenticity is checked against **official trust lists published online by C2PA**.',
+      'A second check compares the photo’s digital fingerprint with the one recorded when it was created. **If the image has been changed without new C2PA certification, the fingerprints no longer match and its integrity cannot be guaranteed.**',
+      'When these checks are successful, they provide **rigorous, practically irrefutable cryptographic evidence of the integrity of the signed data**.'
     ]).join('\n\n');
   }
   const isCameraBrand=['nikon','canon','sony','leica','fujifilm'].includes(who.key);

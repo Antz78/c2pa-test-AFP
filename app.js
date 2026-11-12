@@ -2645,6 +2645,8 @@ readerPanelStyle.textContent = `
   .afp-reader-trust .afp-reader-trust-title{font-size:13px;font-weight:760;line-height:1.4;margin:0 0 5px;color:var(--trust-text)}
   .afp-reader-trust .afp-reader-trust-title:before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;background:var(--trust-accent)}
   .afp-reader-trust p{font-size:12px;line-height:1.5;margin:0;color:var(--trust-text)}
+  .afp-reader-trust .afp-reader-trust-copy p+p{margin-top:9px;}
+  .afp-reader-trust .afp-reader-trust-copy strong{font-weight:750;}
   .afp-reader-trust .afp-reader-signer{margin-top:8px;padding-top:8px;border-top:1px solid var(--trust-border);font-size:12.5px;overflow-wrap:anywhere}
   .afp-reader-trust .afp-reader-signer span{color:var(--trust-muted)}
   .afp-reader-directory-status{border-top:1px solid var(--trust-border);margin-top:10px;padding-top:10px}
@@ -2985,6 +2987,22 @@ function afpSignerProfile(value) {
 }
 function afpSignerTrustExplanation(signer, trustLevel, isUntrusted) {
   const who=afpSignerProfile(signer);
+  // Texte éditorial spécifique aux fichiers Canon dont le certificat est
+  // signalé non reconnu par le vérificateur C2PA. Ne pas l'appliquer à Nikon,
+  // à l'AFP ni à une signature Canon dont les contrôles sont concluants.
+  if(who.key==='canon' && isUntrusted && trustLevel!=='bad'){
+    return (uiLanguage==='fr' ? [
+      'Les appareils Canon compatibles C2PA apposent sur chaque photo une **signature numérique unique**, véritable acte de naissance de l’image. Elle permet d’en retracer l’origine et de détecter toute modification non déclarée.',
+      'Notre galerie contrôle cette signature et vérifie si elle est garantie par un organisme reconnu par le C2PA, comme DigiCert ou Adobe.',
+      '**Dans le cas présent, le certificat Canon n’est pas reconnu par la liste officielle actuelle.** Canon figure uniquement dans l’ancienne liste de confiance, figée depuis le 1er janvier 2026.',
+      '**Cela ne signifie pas que la photo est fausse, mais que son signataire ne bénéficie pas de la reconnaissance officielle actuelle du C2PA.**'
+    ] : [
+      'C2PA-compatible Canon cameras attach a **unique digital signature** to each photo, like the image’s birth certificate. It helps trace the image’s origin and detect undeclared changes.',
+      'Our gallery checks this signature and whether it is backed by a C2PA-recognized trust authority, such as DigiCert or Adobe.',
+      '**In this case, the Canon certificate is not recognized by the current official trust list.** Canon appears only on the former interim trust list, frozen since January 1, 2026.',
+      '**This does not mean the photo is fake; it means the signer is not currently recognized as trusted by the official C2PA list.**'
+    ]).join('\n\n');
+  }
   const isCameraBrand=['nikon','canon','sony','leica','fujifilm'].includes(who.key);
   const intro=uiLanguage==='fr'
     ?`${who.fr} ${isCameraBrand?'signe ses photos':'signe ce contenu'} avec un certificat numérique, comme une carte d’identité ou un bulletin de naissance. Le vérificateur contrôle la signature et cherche une chaîne de confiance reliée à une autorité reconnue par les listes C2PA, comme DigiCert ou Adobe.`
@@ -3009,6 +3027,23 @@ function afpSignerTrustExplanation(signer, trustLevel, isUntrusted) {
   return intro+' '+(uiLanguage==='fr'
     ?'Dans le cas présent, le vérificateur ne signale pas de problème dans les contrôles retournés.'
     :'In this case, the verifier reports no issue in the checks it returned.');
+}
+
+function afpTrustExplanationNode(message){
+  const wrapper=document.createElement('div');
+  wrapper.className='afp-reader-trust-copy';
+  for(const paragraph of String(message||'').split(/\n\s*\n/)){
+    const p=document.createElement('p');
+    for(const fragment of paragraph.split(/(\*\*[^*]+\*\*)/g)){
+      if(fragment.startsWith('**')&&fragment.endsWith('**')&&fragment.length>4){
+        const strong=document.createElement('strong');
+        strong.textContent=fragment.slice(2,-2);
+        p.append(strong);
+      }else if(fragment) p.append(document.createTextNode(fragment));
+    }
+    wrapper.append(p);
+  }
+  return wrapper;
 }
 
 let afpDirectoryFetch=null;
@@ -3149,7 +3184,7 @@ function fillDetails(photo) {
   const trust=document.createElement('section');trust.className='afp-reader-trust';trust.dataset.level=trustLevel;
   trust.setAttribute('aria-label',tr('Qui a signé ces informations ?'));
   const trustH=document.createElement('h3');trustH.className='afp-reader-trust-title';trustH.textContent=tr(trustTitle);
-  const trustP=document.createElement('p');trustP.textContent=trustText;
+  const trustP=afpTrustExplanationNode(trustText);
   const signerP=document.createElement('div');signerP.className='afp-reader-signer';
   const by=document.createElement('span');by.textContent=tr('Signé par')+' : ';
   const signerName=document.createElement('strong');signerName.textContent=signer?readable(signer):tr('Signataire non identifié');

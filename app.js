@@ -1,4 +1,4 @@
-console.info('[AFP Distinguo] Dynamique signataire, statuts certificat et volet en tête — v20261112-v2');
+console.info('[AFP Distinguo] Dynamique signataire, statuts certificat et volet en tête — v20261112-colors-timestamp-v3');
 console.info('[C2PA AFP] Version filtres v3 chargée — badges À vérifier');
 // Galerie C2PA — 100 % statique, fonctionne sur GitHub Pages.
 // Deux modes :
@@ -13,6 +13,17 @@ let sdkFailure = null; // dernière panne temporaire, jamais mémorisée défini
 /* ===== Interface FR / EN : sans MutationObserver, sans analyse C2PA supplémentaire =====
    Seuls les libellés changent. Les données brutes de provenance restent intactes. */
 const TRANSLATIONS = {
+  'Comprendre les couleurs': 'Understanding the colors',
+  'Vert — Contrôle OK': 'Green — Check passed',
+  'Orange — Contrôle incertain': 'Amber — Inconclusive check',
+  'Rouge — Contrôle négatif': 'Red — Failed check',
+  'Gris — Information déclarée': 'Grey — Declared information',
+  'Tous les contrôles obligatoires pertinents ont réussi, la confiance est établie et aucun échec bloquant n’est présent.': 'All relevant required checks passed, trust is established, and no blocking failure is present.',
+  'La provenance existe, mais un certificat n’est pas reconnu, une vérification reste incomplète ou un élément externe nécessaire est inaccessible.': 'Provenance is present, but a certificate is not trusted, a check is incomplete, or a required external resource is unavailable.',
+  'Un contrôle essentiel a établi une incohérence : signature, intégrité, certificat ou structure non valide.': 'An essential check failed: an invalid signature, integrity mismatch, certificate problem, or invalid structure.',
+  'Information déclarative sans vérification.': 'Declared information without independent verification.',
+  'Une heure TSA validée atteste la date de la signature. Elle ne remplace pas la date de prise de vue EXIF.': 'A validated TSA timestamp attests the signing time. It does not replace the EXIF capture date.',
+  'Ces couleurs décrivent les résultats des contrôles, pas la vérité de la scène photographiée.': 'These colors describe verification results, not the truth of the photographed scene.',
   'Capture photographique': 'Photographic Capture',
   'Illustration générée par IA': 'AI generated illustration',
   'Image sans signature C2PA': 'Image without C2PA signature',
@@ -337,6 +348,7 @@ function changeLanguage(next) {
   updateStaticTranslations();
   for(const raw of document.querySelectorAll('#side-panel > details:has(> pre) > summary, #credentials .credential-body > details:has(> pre) > summary, .bottom-sheet-scroll > details:has(> pre) > summary'))raw.textContent=tr('Voir les données brutes du manifeste');
   for(const label of document.querySelectorAll('.afp-reader-about > summary'))label.textContent=tr('Comprendre l’authentification');
+  for(const note of document.querySelectorAll('.afp-reader-about > .note, .afp-reader-about > .bottom-sheet-note'))note.textContent=tr('Ces couleurs décrivent les résultats des contrôles, pas la vérité de la scène photographiée.');
   syncLanguageButtons();
   updateCount();
   for (const photo of photos) {
@@ -2615,6 +2627,17 @@ readerPanelStyle.textContent = `
   #side-panel .afp-reader-fold .credential-row{grid-template-columns:21px minmax(0,40%) minmax(0,1fr)}
   #side-panel .afp-reader-fold .field-value small{line-height:1.5}
   #side-panel > .note,dialog#credentials .credential-body > .note,.bottom-sheet > .bottom-sheet-scroll > .bottom-sheet-note{display:none}
+  .afp-c2pa-legend{display:grid;gap:0;min-width:0;border-radius:9px;overflow:hidden;border:1px solid rgba(140,161,184,.22)}
+  .afp-c2pa-legend-item{display:flex;align-items:flex-start;gap:11px;padding:10px 9px}
+  .afp-c2pa-legend-item + .afp-c2pa-legend-item{border-top:1px solid rgba(140,161,184,.18)}
+  .afp-c2pa-legend-mark{width:12px;height:12px;border-radius:50%;flex:0 0 12px;margin-top:3px;border:1px solid rgba(255,255,255,.17);box-shadow:0 0 0 2px rgba(0,0,0,.07)}
+  .afp-c2pa-legend-mark.ok{background:#35c979}
+  .afp-c2pa-legend-mark.warn{background:#f6a928}
+  .afp-c2pa-legend-mark.bad{background:#f16b6b}
+  .afp-c2pa-legend-mark.neutral{background:#94a3b8}
+  .afp-c2pa-legend-item strong{display:block;font-size:12px;line-height:1.45;margin:0 0 2px}
+  .afp-c2pa-legend-item p{font-size:11.5px;line-height:1.5;margin:0;opacity:.85}
+  .afp-c2pa-legend-date{font-size:11px;line-height:1.55;margin:10px 3px 0;opacity:.8}
   .afp-reader-about{margin:0 0 16px!important;padding:0!important;border:1px solid #34485d!important;border-radius:11px!important;background:transparent!important}
   #credentials .afp-reader-about,.bottom-sheet .afp-reader-about{border-color:#d6e1ec!important}
   .afp-reader-about > summary{font-size:13px;padding:12px 14px;cursor:pointer;font-weight:700}
@@ -2640,6 +2663,27 @@ function readerFold(title, ...children) {
   const label=document.createElement('summary');label.textContent=tr(title);
   const body=document.createElement('div');body.className='afp-reader-fold-body';body.append(...children);
   fold.append(label,body);return fold;
+}
+function afpColorLegend() {
+  // Légende éditoriale AFP. N'affecte ni le statut C2PA, ni la couleur calculée.
+  const items=[
+    ['ok','Vert — Contrôle OK','Tous les contrôles obligatoires pertinents ont réussi, la confiance est établie et aucun échec bloquant n’est présent.'],
+    ['warn','Orange — Contrôle incertain','La provenance existe, mais un certificat n’est pas reconnu, une vérification reste incomplète ou un élément externe nécessaire est inaccessible.'],
+    ['bad','Rouge — Contrôle négatif','Un contrôle essentiel a établi une incohérence : signature, intégrité, certificat ou structure non valide.'],
+    ['neutral','Gris — Information déclarée','Information déclarative sans vérification.']
+  ];
+  const list=document.createElement('div');list.className='afp-c2pa-legend';
+  for(const [level,name,description] of items){
+    const row=document.createElement('div');row.className='afp-c2pa-legend-item';
+    const dot=document.createElement('span');dot.className='afp-c2pa-legend-mark '+level;dot.setAttribute('aria-hidden','true');
+    const content=document.createElement('div');
+    const heading=document.createElement('strong');heading.textContent=tr(name);
+    const p=document.createElement('p');p.textContent=tr(description);
+    content.append(heading,p);row.append(dot,content);list.append(row);
+  }
+  const notice=document.createElement('p');notice.className='afp-c2pa-legend-date';
+  notice.textContent=tr('Une heure TSA validée atteste la date de la signature. Elle ne remplace pas la date de prise de vue EXIF.');
+  return readerFold('Comprendre les couleurs',list,notice);
 }
 function shortSourceCode(raw) {
   if (!raw || typeof raw!=='string') return null;
@@ -2711,7 +2755,7 @@ function foldReaderBoilerplate() {
     if(!explain&&!note)continue;
     const fold=document.createElement('details');fold.className='afp-reader-about';
     const label=document.createElement('summary');label.textContent=tr('Comprendre l’authentification');
-    fold.append(label);if(explain)fold.append(explain);if(note)fold.append(note);
+    fold.append(label);if(explain)fold.append(explain);if(note){note.textContent=tr('Ces couleurs décrivent les résultats des contrôles, pas la vérité de la scène photographiée.');fold.append(note);}
     // Toujours sous l'en-tête / choix de langue, avant le bloc origine.
     const firstContent=holder.querySelector(':scope > #side-summary, :scope > #lb-summary, :scope > #bottom-summary');
     if(firstContent)holder.insertBefore(fold,firstContent);
@@ -2862,7 +2906,7 @@ function fillDetails(photo) {
   const origin=originPanelSection(photo);
   if(photo.state==='loading'){
     setStatusLine('loading',tr('Vérification C2PA en cours…'));
-    lbSummary.replaceChildren(origin);lbJson.textContent=tr('Chargement…');return;
+    lbSummary.replaceChildren(origin,afpColorLegend());lbJson.textContent=tr('Chargement…');return;
   }
   if(photo.state==='none'||photo.state==='error'){
     setStatusLine(photo.state==='none'?'none':'error',photo.state==='none'?'Aucun manifeste C2PA intégré détecté.':
@@ -2870,7 +2914,7 @@ function fillDetails(photo) {
     const support=[];
     if(photo.exif?.artist)support.push(field('Auteur déclaré',photo.exif.artist,'neutral'));
     if(photo.exifDate)support.push(field('Date enregistrée par l’appareil',photo.exifDate,'neutral'));
-    lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),...(support.length?[readerFold('Informations sur la photo',section('Informations de production',support))]:[]));
+    lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),...(support.length?[readerFold('Informations sur la photo',section('Informations de production',support))]:[]),afpColorLegend());
     lbJson.textContent=photo.state==='none'?tr('Aucun manifeste trouvé.'):String(photo.error||'');return;
   }
   const entries=photo.validation??[];
@@ -2957,7 +3001,7 @@ function fillDetails(photo) {
     section('Résultats techniques de validation',[validationList])
   );
   // Priorités de lecture : origine -> digitalSourceType -> confiance -> détails repliés.
-  lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),trust,...(photoFold?[photoFold]:[]),originTechnicalSection(photo),technical);
+  lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),trust,afpColorLegend(),...(photoFold?[photoFold]:[]),originTechnicalSection(photo),technical);
   lbJson.textContent=JSON.stringify(photo.store,null,2);
 }
 

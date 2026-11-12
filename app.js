@@ -1,4 +1,4 @@
-console.info('[AFP Distinguo] Dynamique signataire, statuts certificat et volet en tête — v20261112-colors-timestamp-v3');
+console.info('[AFP Distinguo] Dynamique signataire, statuts certificat et volet en tête — v20261112-trust-wording-clean-v4');
 console.info('[C2PA AFP] Version filtres v3 chargée — badges À vérifier');
 // Galerie C2PA — 100 % statique, fonctionne sur GitHub Pages.
 // Deux modes :
@@ -2813,13 +2813,11 @@ function afpSignerTrustExplanation(signer, trustLevel, isUntrusted) {
     return intro+' '+(uiLanguage==='fr'
       ?'Dans le cas présent, le certificat utilisé n’est pas reconnu par ce vérificateur.'
       :'In this case, this verifier does not recognize the certificate used here.')
-      +legacy+' '+(uiLanguage==='fr'
-      ?'Cela ne signifie pas que la photo est fausse.'
-      :'This does not mean the photo is fake.');
+      +legacy;
   }
   if(trustLevel==='warn')return intro+' '+(uiLanguage==='fr'
-    ?'Dans le cas présent, la vérification n’a pas pu être entièrement confirmée. Cela ne signifie pas que la photo est fausse.'
-    :'In this case, the checks could not be fully confirmed. This does not mean the photo is fake.');
+    ?'Dans le cas présent, la vérification n’a pas pu être entièrement confirmée.'
+    :'In this case, the checks could not be fully confirmed.');
   return intro+' '+(uiLanguage==='fr'
     ?'Dans le cas présent, le vérificateur ne signale pas de problème dans les contrôles retournés.'
     :'In this case, the verifier reports no issue in the checks it returned.');

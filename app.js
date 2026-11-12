@@ -1,6 +1,6 @@
-console.info('[AFP Distinguo] Dynamique signataire, statuts certificat et volet en tête — v20261112-unified-accordions-v4');
-console.info('[C2PA AFP] Version filtres v3 chargée — badges À vérifier');
-// Galerie C2PA — 100 % statique, fonctionne sur GitHub Pages.
+console.info('[AFP Distinguo] Dynamique signataire, statuts certificat et volet en tête : v20261112-unified-accordions-v4');
+console.info('[C2PA AFP] Version filtres v3 chargée : badges À vérifier');
+// Galerie C2PA : 100 % statique, fonctionne sur GitHub Pages.
 // Deux modes :
 //  A) ./photos.json existe (généré par GitHub Action à chaque push) → galerie automatique.
 //  B) Sinon, glissez le dossier PHOTOS/ (ou des photos) directement sur la page.
@@ -13,6 +13,33 @@ let sdkFailure = null; // dernière panne temporaire, jamais mémorisée défini
 /* ===== Interface FR / EN : sans MutationObserver, sans analyse C2PA supplémentaire =====
    Seuls les libellés changent. Les données brutes de provenance restent intactes. */
 const TRANSLATIONS = {
+  'Méthode d’identification (détails)': 'How this origin was identified (details)',
+  'Comprendre les vérifications': 'Understanding the checks',
+  'Ces vérifications portent sur les informations C2PA et leur signature, pas sur la réalité de la scène photographiée.': 'These checks concern the C2PA data and its signature, not whether the scene shown actually happened.',
+  'Intégrité du fichier': 'File integrity',
+  'Signature cryptographique': 'Cryptographic signature',
+  'Confiance dans le certificat': 'Certificate trust',
+  'Données signées conformes': 'Signed data match',
+  'Différence détectée': 'Mismatch detected',
+  'Résultat explicite non communiqué': 'No separate result reported',
+  'Signature vérifiée': 'Signature verified',
+  'Signature incorrecte': 'Invalid signature',
+  'Certificat reconnu': 'Certificate trusted',
+  'Certificat non reconnu': 'Certificate not trusted',
+  'Confiance non confirmée': 'Trust not confirmed',
+  'Certificat ou validation en échec': 'Certificate or validation check failed',
+  'Vérification à confirmer': 'Verification needs review',
+  'Compare le fichier aux empreintes protégées par les Content Credentials.': 'Compares the file with the fingerprints protected by the Content Credentials.',
+  'Vérifie que la signature cryptographique correspond aux données du manifeste.': 'Checks that the cryptographic signature matches the manifest data.',
+  'Vérifie si la chaîne du certificat mène à une autorité de confiance reconnue.': 'Checks whether the certificate chain leads to a recognized trust authority.',
+  'Aucun résultat isolé ne permet de conclure ici. Voir les codes détaillés si nécessaire.': 'No separate result is available here. See the detailed codes if needed.',
+  'Signataire déclaré dans le certificat. Ce nom seul ne confirme pas son identité.': 'Signer named in the certificate. The name alone does not verify their identity.',
+  'Appareil ou logiciel ayant créé le manifeste C2PA.': 'Device or software that created the C2PA manifest.',
+  'Codes C2PA et identifiants (avancé)': 'C2PA status codes and identifiers (advanced)',
+  'Horodatage TSA et date de prise de vue': 'TSA timestamp and capture date',
+  'Une heure TSA validée certifie la date de signature. Elle ne remplace pas la date de prise de vue enregistrée par l’appareil (EXIF).': 'A validated TSA timestamp certifies the signing time. It does not replace the capture date recorded by the camera (EXIF).',
+  'Cette partie présente les résultats renvoyés par le vérificateur. Une information absente ne signifie pas automatiquement un échec.': 'This section shows the verifier’s results. A missing result does not automatically mean a failed check.',
+
   'Qu’est-ce que le C2PA ?': 'What is C2PA?',
   'Certificat': 'Certificate',
   'Aucun certificat C2PA détecté dans ce fichier.': 'No C2PA certificate was detected in this file.',
@@ -26,10 +53,10 @@ const TRANSLATIONS = {
   'Un certificat non reconnu par le vérificateur ne signifie pas nécessairement que l’image a été falsifiée.': 'A certificate not recognized by the verifier does not necessarily mean that the image was altered.',
   'Informations techniques du manifeste': 'Technical manifest data',
   'Comprendre les couleurs': 'Understanding the colors',
-  'Vert — Contrôle OK': 'Green — Check passed',
-  'Orange — Contrôle incertain': 'Amber — Inconclusive check',
-  'Rouge — Contrôle négatif': 'Red — Failed check',
-  'Gris — Information déclarée': 'Grey — Declared information',
+  'Vert : Contrôle OK': 'Green : Check passed',
+  'Orange : Contrôle incertain': 'Amber : Inconclusive check',
+  'Rouge : Contrôle négatif': 'Red : Failed check',
+  'Gris : Information déclarée': 'Grey : Declared information',
   'Tous les contrôles obligatoires pertinents ont réussi, la confiance est établie et aucun échec bloquant n’est présent.': 'All relevant required checks passed, trust is established, and no blocking failure is present.',
   'La provenance existe, mais un certificat n’est pas reconnu, une vérification reste incomplète ou un élément externe nécessaire est inaccessible.': 'Provenance is present, but a certificate is not trusted, a check is incomplete, or a required external resource is unavailable.',
   'Un contrôle essentiel a établi une incohérence : signature, intégrité, certificat ou structure non valide.': 'An essential check failed: an invalid signature, integrity mismatch, certificate problem, or invalid structure.',
@@ -442,7 +469,7 @@ function installLanguageSwitch() {
       box.append(button);
     }
     if (id === 'afp-language-switch-side') {
-      parent.insertBefore(box, parent.querySelector('#side-status'));
+      parent.insertBefore(box, parent.querySelector(':scope > .afp-reader-about') || parent.querySelector('#side-status'));
     } else if (id === 'afp-language-switch-bottom') {
       parent.insertBefore(box, parent.querySelector('.bottom-sheet-body'));
     } else if (id === 'afp-language-switch-lightbox') {
@@ -453,7 +480,7 @@ function installLanguageSwitch() {
   updateStaticTranslations(); syncLanguageButtons();
 }
 
-/* curl.js — Repli de coin de page WebGL, autonome, sans dépendance.
+/* curl.js : Repli de coin de page WebGL, autonome, sans dépendance.
    Usage : const ctl = mountCurl(bouton); ctl.updatePhoto(imgElement, cardCanvas);
    Le bouton reçoit un <canvas> plein cadre qui reproduit la portion de photo
    située dessous, puis y enroule le coin autour d'un cylindre virtuel. */
@@ -687,7 +714,7 @@ async function probeIndex() {
 /* ---------- Mode A2 : lecture directe du dossier PHOTOS/ via l'API GitHub ----------
    Un navigateur ne peut pas lister un dossier distant, mais l'API GitHub, elle, le peut.
    Auto-détection du repo depuis l'URL github.io ; sinon, renseignez GITHUB_REPO. */
-const GITHUB_REPO = ''; // ex. 'antonin/c2pa-galerie' — laissez vide pour la détection auto
+const GITHUB_REPO = ''; // ex. 'antonin/c2pa-galerie' : laissez vide pour la détection auto
 function detectRepo() {
   if (GITHUB_REPO) return GITHUB_REPO;
   const host = location.hostname;
@@ -1767,7 +1794,7 @@ function appendOriginBadge(target, photo, state) {
   // Ne pas utiliser l'attribut HTML title : il crée une seconde infobulle blanche native.
   // Les informations détaillées restent dans aria-label et dans le panneau C2PA.
   target.removeAttribute('title');
-  target.setAttribute('aria-label', originDescription + ' — ' + (level === 'warn' ? tr('À vérifier') : level === 'bad' ? tr('Échec') : level === 'ok' ? tr('Validé') : tr('Indéterminé')) + (photo.cacheStatus ? ' — ' + afpCacheLabel(photo) : ''));
+  target.setAttribute('aria-label', originDescription + ' : ' + (level === 'warn' ? tr('À vérifier') : level === 'bad' ? tr('Échec') : level === 'ok' ? tr('Validé') : tr('Indéterminé')) + (photo.cacheStatus ? ' : ' + afpCacheLabel(photo) : ''));
   target.classList.add(level, 'origin-' + origin);
 
   // Dessins optiquement équilibrés sur un cadre SVG 24 × 24 : appareil, AI, calques, ?.
@@ -2102,7 +2129,7 @@ function cardEl(photo) {
   tag.title = tr(C2PA_STATUS_TIPS[photo.state] || C2PA_STATUS_TIPS.neutral);
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),
              document.createTextNode(statusLabel(photo.state) + (photo.cacheStatus ? ' · ◷' : '')));
-  if (photo.cacheStatus) tag.title += ' — ' + afpCacheLabel(photo);
+  if (photo.cacheStatus) tag.title += ' : ' + afpCacheLabel(photo);
   const name = document.createElement('figcaption');
   name.className = 'name';
   name.textContent = photo.name.split('/').pop();
@@ -2133,7 +2160,7 @@ function renderCard(photo) {
   tag.textContent = '';
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),
              document.createTextNode(statusLabel(photo.state) + (photo.cacheStatus ? ' · ◷' : '')));
-  if (photo.cacheStatus) tag.title += ' — ' + afpCacheLabel(photo);
+  if (photo.cacheStatus) tag.title += ' : ' + afpCacheLabel(photo);
   const overlay = card.querySelector('.demo-overlay');
   if (overlay) { overlay.className='demo-overlay'; addBadgeContent(overlay,presentationFor(photo),photo.state,photo); }
   updateCaption(card,photo);
@@ -2552,6 +2579,7 @@ function openLightbox(idx) {
     sidePanel.classList.add('direct-visible');
   } else {
     sidePanel.hidden=true;
+    lightbox.classList.remove('afp-panel-open');
     sidePanel.classList.remove('direct-visible');
     sidePhoto=null;
   }
@@ -2716,6 +2744,26 @@ readerPanelStyle.textContent = `
   .afp-reader-about .afp-c2pa-legend{margin-top:0}
   .afp-reader-raw pre{margin:0!important;padding:9px!important;max-height:280px!important;overflow:auto!important}
   .afp-reader-about .afp-reader-raw{margin-top:9px!important}
+  /* Origine: les preuves et les champs source restent accessibles, mais discrets. */
+  #side-panel .afp-reader-origin .afp-reader-origin-method,
+  #credentials .afp-reader-origin .afp-reader-origin-method,
+  .bottom-sheet .afp-reader-origin .afp-reader-origin-method {
+    margin:8px 0 0!important;border-color:rgba(136,157,181,.25)!important;
+  }
+  #side-panel details.afp-reader-origin-method > summary,
+  #credentials details.afp-reader-origin-method > summary,
+  .bottom-sheet details.afp-reader-origin-method > summary{font-size:11px!important;font-weight:600!important;opacity:.82!important;min-height:31px!important;padding:6px 9px!important;}
+  .afp-reader-origin-method .credential-section h3{font-size:11px!important;}
+  .afp-reader-origin-method .credential-row{font-size:11px!important;}
+  .afp-reader-technical-intro,.afp-reader-technical-date{
+    margin:0 0 10px!important;font-size:12px!important;line-height:1.55!important;opacity:.9;
+  }
+  .afp-reader-technical-date{margin:12px 0 4px!important;padding:10px 11px;border:1px solid rgba(140,161,184,.22);border-radius:8px;}
+  .afp-reader-technical-codes{margin-top:9px!important;}
+  #side-panel details.afp-reader-technical-codes > summary,
+  #credentials details.afp-reader-technical-codes > summary,
+  .bottom-sheet details.afp-reader-technical-codes > summary{font-size:11.5px!important;}
+  .afp-reader-fold .credential-row .field-value small{font-size:11px;line-height:1.45;opacity:.9;}
 `;
 document.head.append(readerPanelStyle);
 function readerIcon(kind) {
@@ -2743,10 +2791,10 @@ function readerOpenFold(title,...children) {
 function afpColorLegend() {
   // Légende éditoriale AFP. N'affecte ni le statut C2PA, ni la couleur calculée.
   const items=[
-    ['ok','Vert — Contrôle OK','Tous les contrôles obligatoires pertinents ont réussi, la confiance est établie et aucun échec bloquant n’est présent.'],
-    ['warn','Orange — Contrôle incertain','La provenance existe, mais un certificat n’est pas reconnu, une vérification reste incomplète ou un élément externe nécessaire est inaccessible.'],
-    ['bad','Rouge — Contrôle négatif','Un contrôle essentiel a établi une incohérence : signature, intégrité, certificat ou structure non valide.'],
-    ['neutral','Gris — Information déclarée','Information déclarative sans vérification.']
+    ['ok','Vert : Contrôle OK','Tous les contrôles obligatoires pertinents ont réussi, la confiance est établie et aucun échec bloquant n’est présent.'],
+    ['warn','Orange : Contrôle incertain','La provenance existe, mais un certificat n’est pas reconnu, une vérification reste incomplète ou un élément externe nécessaire est inaccessible.'],
+    ['bad','Rouge : Contrôle négatif','Un contrôle essentiel a établi une incohérence : signature, intégrité, certificat ou structure non valide.'],
+    ['neutral','Gris : Information déclarée','Information déclarative sans vérification.']
   ];
   const list=document.createElement('div');list.className='afp-c2pa-legend';
   for(const [level,name,description] of items){
@@ -2757,9 +2805,7 @@ function afpColorLegend() {
     const p=document.createElement('p');p.textContent=tr(description);
     content.append(heading,p);row.append(dot,content);list.append(row);
   }
-  const notice=document.createElement('p');notice.className='afp-c2pa-legend-date';
-  notice.textContent=tr('Une heure TSA validée atteste la date de la signature. Elle ne remplace pas la date de prise de vue EXIF.');
-  return readerFold('Comprendre les couleurs',list,notice);
+  return readerFold('Comprendre les couleurs',list);
 }
 function shortSourceCode(raw) {
   if (!raw || typeof raw!=='string') return null;
@@ -2806,7 +2852,11 @@ function originPanelSection(photo) {
     sourceNote.textContent=tr('L’absence de ce champ ne signifie pas que la photo a été créée par IA.');
   }
   source.append(kicker,value,sourceNote);card.append(top,source);
-  box.querySelector('.afp-reader-fold-body').append(card);
+  const originBody=box.querySelector('.afp-reader-fold-body');
+  originBody.append(card);
+  const method=originTechnicalSection(photo);
+  method.classList.add('afp-reader-origin-method');
+  originBody.append(method);
   return box;
 }
 function originTechnicalSection(photo) {
@@ -2814,7 +2864,7 @@ function originTechnicalSection(photo) {
   const basis=detail.inferred?'Déduit de la création et du boîtier identifiés par les données C2PA signées'
     :detail.hasField?(detail.inherited?'Déclaré dans une étape précédente de la provenance':'Déclaré explicitement dans le manifeste C2PA')
     :'Aucune information suffisante';
-  return readerFold('Comment cette origine a été déterminée',
+  return readerFold('Méthode d’identification (détails)',
     section('D’où vient cette conclusion ?', [
       field('Méthode de classification',tr(pending?'Analyse en cours':basis),'neutral'),
       field('Valeur exacte du champ',detail.raw??tr('Non renseigné dans le manifeste'),'neutral'),
@@ -2893,11 +2943,13 @@ function foldReaderBoilerplate() {
       raw.remove();raw.className='afp-reader-fold afp-reader-raw';
       raw.querySelector(':scope > summary').textContent=tr('Informations techniques du manifeste');
     }
-    // Positionné à la fin des informations (mais dans le panneau), par défaut fermé.
+    // Toujours en haut du contenu, après le sélecteur FR/EN et avant l'origine.
     const about=readerFold('Qu’est-ce que le C2PA ?');
     about.classList.add('afp-reader-about');
     if(raw)about.querySelector('.afp-reader-fold-body').append(raw);
-    holder.append(about);
+    const firstContent=holder.querySelector(':scope > #side-status, :scope > #lb-status, :scope > #bottom-status');
+    if(firstContent) holder.insertBefore(about,firstContent);
+    else holder.prepend(about);
   }
   refreshC2paAboutPanels();
 }
@@ -3105,7 +3157,7 @@ function fillDetails(photo) {
   if(hasUntrustedSigner)afpAttachTrustDirectoryStatus(trust,signer);
 
   const photoInfo=[];
-  if(author)photoInfo.push(field('Auteur déclaré',`${author}${authorSource?' — '+authorSource:''}`,'neutral'));
+  if(author)photoInfo.push(field('Auteur déclaré',`${author}${authorSource?' : '+authorSource:''}`,'neutral'));
   if(photo.exifDate)photoInfo.push(field('Date enregistrée par l’appareil',photo.exifDate,'neutral'));
   const detail=c2paSourceDetails(photo);
   if(detail.cameraModel)photoInfo.push(field('Appareil identifié',detail.cameraModel,'neutral'));
@@ -3124,22 +3176,105 @@ function fillDetails(photo) {
   }else{
     const empty=document.createElement('p');empty.textContent=tr('Aucun résultat détaillé retourné.');empty.style.padding='12px';validationList.append(empty);
   }
+  // N'attribuer du vert qu'à un contrôle effectivement communiqué comme réussi.
+  // La simple absence de code d'échec ne suffit pas à déclarer une validation.
+  const hasCode=(pattern)=>codes.some(code=>pattern.test(code));
+  const integrityOk=hasCode(/^(?:assertion\.(?:datahash|bmffhash|boxhash|hasheduri)\.match)$/);
+  const signatureOk=hasCode(/^claimsignature\.validated$/);
+  const certificateOk=hasCode(/^signingcredential\.trusted$/);
+  const certificateBad=hasCode(/^(?:signingcredential\.(?:ocsp\.revoked|invalid|expired|mismatch)|claimsignature\.outsidevalidity)$/);
+  const integrityStatus=hasIntegrityFailure?'bad':integrityOk?'ok':'neutral';
+  const signatureStatus=hasSignatureFailure?'bad':signatureOk?'ok':'neutral';
+  const certificateStatus=certificateBad?'bad':hasUntrustedSigner?'warn':certificateOk?'ok':trustLevel==='warn'?'warn':'neutral';
+  const pIntro=document.createElement('p');pIntro.className='afp-reader-technical-intro';
+  pIntro.textContent=tr('Ces vérifications portent sur les informations C2PA et leur signature, pas sur la réalité de la scène photographiée.');
+  const pTsa=document.createElement('p');pTsa.className='afp-reader-technical-date';
+  const tsaTitle=document.createElement('strong');tsaTitle.textContent=tr('Horodatage TSA et date de prise de vue')+' : ';
+  pTsa.append(tsaTitle,document.createTextNode(tr('Une heure TSA validée certifie la date de signature. Elle ne remplace pas la date de prise de vue enregistrée par l’appareil (EXIF).')));
+  const rawIntro=document.createElement('p');rawIntro.className='afp-reader-technical-intro';
+  rawIntro.textContent=tr('Cette partie présente les résultats renvoyés par le vérificateur. Une information absente ne signifie pas automatiquement un échec.');
+  const rawFields=[
+    field('Signataire déclaré',signer,'neutral',tr('Signataire déclaré dans le certificat. Ce nom seul ne confirme pas son identité.')),
+    field('Générateur',generator,'neutral',tr('Appareil ou logiciel ayant créé le manifeste C2PA.')),
+    field('Identifiant du manifeste',manifest,'neutral')
+  ];
+  const detailedCodes=readerFold('Codes C2PA et identifiants (avancé)',rawIntro,section('Informations du manifeste',rawFields),section('Résultats techniques de validation',[validationList]));
+  detailedCodes.classList.add('afp-reader-technical-codes');
   const technical=readerFold('Détails de vérification (technique)',
-    section('Vérification C2PA',[
-      field('Contrôle de l’intégrité',tr(hasIntegrityFailure?'Échec':'Non confirmé séparément'),hasIntegrityFailure?'bad':'neutral'),
-      field('Contrôle de la signature',tr(hasSignatureFailure?'Échec':hasUntrustedSigner?'Confiance à vérifier':'Non confirmé séparément'),hasSignatureFailure?'bad':hasUntrustedSigner?'warn':'neutral'),
-      field('Signataire déclaré',signer,'neutral'),
-      field('Générateur',generator,'neutral'),
-      field('Identifiant du manifeste',manifest,'neutral')
+    pIntro,
+    section('Comprendre les vérifications',[
+      field('Intégrité du fichier',tr(hasIntegrityFailure?'Différence détectée':integrityOk?'Données signées conformes':'Résultat explicite non communiqué'),integrityStatus,tr('Compare le fichier aux empreintes protégées par les Content Credentials.')),
+      field('Signature cryptographique',tr(hasSignatureFailure?'Signature incorrecte':signatureOk?'Signature vérifiée':'Résultat explicite non communiqué'),signatureStatus,tr('Vérifie que la signature cryptographique correspond aux données du manifeste.')),
+      field('Confiance dans le certificat',tr(certificateBad?'Certificat ou validation en échec':hasUntrustedSigner?'Certificat non reconnu':certificateOk?'Certificat reconnu':trustLevel==='warn'?'Vérification à confirmer':'Résultat explicite non communiqué'),certificateStatus,tr('Vérifie si la chaîne du certificat mène à une autorité de confiance reconnue.'))
     ]),
-    section('Résultats techniques de validation',[validationList])
+    pTsa,
+    detailedCodes
   );
   // Deux volets ouverts par défaut : origine et certificat.
   // L'aide C2PA, la légende et le JSON restent dans le volet explicatif final.
   const trustFold=readerOpenFold('Certificat',trust);
-  lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),trustFold,...(photoFold?[photoFold]:[]),originTechnicalSection(photo),technical);
+  lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),trustFold,...(photoFold?[photoFold]:[]),technical);
   lbJson.textContent=JSON.stringify(photo.store,null,2);
 }
+
+/* Mise en page du visualiseur avec panneau ouvert : photo entière, jamais masquée. */
+const afpPanelFitStyle = document.createElement('style');
+afpPanelFitStyle.id = 'afp-panel-fit-photo-style';
+afpPanelFitStyle.textContent = `
+  #lightbox .lb-stage {
+    transition: right .24s ease, padding .24s ease;
+  }
+  @media (min-width: 901px) {
+    #lightbox.afp-panel-open {
+      --afp-panel-width: min(510px, 100vw);
+    }
+    #lightbox.afp-panel-open .lb-stage {
+      /* On réserve exactement la largeur du panneau à droite de la photo. */
+      left: 0!important;
+      right: var(--afp-panel-width)!important;
+      width: auto!important;
+      box-sizing: border-box!important;
+      padding: 64px clamp(22px, 3.6vw, 72px)!important;
+      display: flex!important;
+      align-items: center!important;
+      justify-content: center!important;
+      transition: right .24s ease, padding .24s ease!important;
+    }
+    #lightbox.afp-panel-open .lb-photo-column {
+      flex: 0 1 auto!important;
+      min-width: 0!important;
+      max-width: 100%!important;
+      max-height: 100%!important;
+    }
+    #lightbox.afp-panel-open .lb-photo-column .lb-frame {
+      min-width: 0!important;
+      max-width: 100%!important;
+      max-height: calc(100dvh - 185px)!important;
+    }
+    #lightbox.afp-panel-open .lb-photo-column .lb-frame > #lb-photo {
+      /* Une réduction proportionnelle, jamais un recadrage. */
+      display: block!important;
+      width: auto!important;
+      height: auto!important;
+      max-width: 100%!important;
+      max-height: calc(100dvh - 185px)!important;
+      object-fit: contain!important;
+    }
+    #lightbox.afp-panel-open .nav.next {
+      right: calc(var(--afp-panel-width) + 12px)!important;
+    }
+  }
+  @media (max-width: 900px) {
+    /* Pas de place pour deux colonnes : garder l'affichage mobile existant. */
+    #lightbox.afp-panel-open:not(.direct-layout) .lb-stage {
+      right: 0!important;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #lightbox.afp-panel-open .lb-stage {transition: none!important;}
+  }
+`;
+document.head.appendChild(afpPanelFitStyle);
 
 const sidePanel = document.querySelector('#side-panel');
 let sidePhoto = null;
@@ -3158,10 +3293,11 @@ function refreshSidePanel(photo) {
 function openSidePanel(photo) {
   sidePhoto = photo;
   sidePanel.hidden = false;
+  lightbox.classList.add('afp-panel-open');
   refreshSidePanel(photo);
   // Si l'analyse est encore en cours, le panneau sera rafraîchi à sa fin.
 }
-document.querySelector('#side-close').addEventListener('click', () => { sidePanel.hidden = true; sidePhoto = null; sidePanel.classList.remove('direct-visible'); lightbox.classList.remove('direct-layout'); });
+document.querySelector('#side-close').addEventListener('click', () => { sidePanel.hidden = true; sidePhoto = null; sidePanel.classList.remove('direct-visible'); lightbox.classList.remove('direct-layout', 'afp-panel-open'); });
 
 crBadge.addEventListener('click', () => {
   if (currentIdx < 0) return;
@@ -3185,7 +3321,7 @@ function step(dir) {
 document.querySelector('#lb-close').addEventListener('click', () => lightbox.close());
 document.querySelector('#lb-prev').addEventListener('click', () => step(-1));
 document.querySelector('#lb-next').addEventListener('click', () => step(1));
-lightbox.addEventListener('close', () => { currentIdx = -1; if (credentials.open) credentials.close(); });
+lightbox.addEventListener('close', () => { currentIdx = -1; lightbox.classList.remove('afp-panel-open'); sidePanel.hidden = true; sidePhoto = null; if (credentials.open) credentials.close(); });
 window.addEventListener('keydown', e => {
   if (!lightbox.open || credentials.open) return;
   if (e.key === 'ArrowLeft') step(-1);

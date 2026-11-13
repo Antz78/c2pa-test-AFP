@@ -1,4 +1,4 @@
-console.info('[AFP Distinguo] Dynamique signataire, statuts certificat et volet en tête : v20261112-unified-accordions-v4');
+console.info('[AFP Distinguo] Sources de confiance vérifiées et Z 9 : v20261112-dual-trust-v1');
 console.info('[C2PA AFP] Version filtres v3 chargée : badges À vérifier');
 // Galerie C2PA : 100 % statique, fonctionne sur GitHub Pages.
 // Deux modes :
@@ -8,6 +8,7 @@ console.info('[C2PA AFP] Version filtres v3 chargée : badges À vérifier');
 // Le SDK C2PA est chargé à la demande : une panne du CDN ne bloque PLUS la galerie.
 const SDK_URL = 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.15.4/+esm';
 let C2paReader = null;
+let C2paContext = null;
 let sdkFailure = null; // dernière panne temporaire, jamais mémorisée définitivement
 
 /* ===== Interface FR / EN : sans MutationObserver, sans analyse C2PA supplémentaire =====
@@ -25,6 +26,19 @@ const TRANSLATIONS = {
   'Signature vérifiée': 'Signature verified',
   'Signature incorrecte': 'Invalid signature',
   'Certificat reconnu': 'Certificate trusted',
+  'Certificat reconnu (liste officielle C2PA)': 'Certificate recognized (official C2PA list)',
+  'Certificat reconnu (ancienne liste C2PA)': 'Certificate recognized (legacy C2PA list)',
+  'Certificat non reconnu par les deux listes': 'Certificate not trusted by either list',
+  'Contrôle des listes de confiance indisponible': 'Trust-list checks unavailable',
+  'Contrôle des listes de confiance incomplet': 'Trust-list checks incomplete',
+  'Reconnaissance officielle C2PA': 'Official C2PA recognition',
+  'Reconnaissance provisoire historique C2PA': 'Legacy C2PA recognition',
+  'Vérification de confiance à confirmer': 'Trust verification inconclusive',
+  'Le certificat a été validé avec la liste officielle C2PA.': 'The signing certificate was validated using the official C2PA list.',
+  'Le certificat a été validé avec l’ancienne liste provisoire C2PA, gelée le 1er janvier 2026. Cette validation historique est distincte de celle de la liste officielle actuelle.': 'The certificate was validated using the legacy interim C2PA list, frozen on January 1, 2026. This historic validation is distinct from recognition under the current official list.',
+  'Aucune des deux listes C2PA consultées ne permet de reconnaître ce certificat. Cela ne signifie pas que la photo a été falsifiée.': 'Neither of the two C2PA trust lists recognizes this certificate. This does not mean the photo was altered.',
+  'Impossible de consulter les listes C2PA. La confiance dans le certificat ne peut pas être confirmée.': 'C2PA trust lists could not be fetched. Certificate trust cannot be confirmed.',
+  'Une seule liste C2PA a pu être consultée. La confiance dans le certificat reste à confirmer.': 'Only one C2PA trust list was available. Certificate trust remains unconfirmed.',
   'Certificat non reconnu': 'Certificate not trusted',
   'Confiance non confirmée': 'Trust not confirmed',
   'Certificat ou validation en échec': 'Certificate or validation check failed',
@@ -931,7 +945,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.15.4';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.15.4-dual-trust-20261112-v1';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -978,7 +992,8 @@ async function afpWriteRecord(photo, digest) {
   try {
     record = JSON.stringify({ url, hash:digest, sdk:AFP_ENGINE_VERSION, savedAt:Date.now(),
       state:photo.state, store:photo.store ?? null, active:photo.active ?? null,
-      validation:photo.validation ?? [], exif:photo.exif ?? null });
+      validation:photo.validation ?? [], trustSource:photo.trustSource ?? null,
+      exif:photo.exif ?? null });
     if (record.length > AFP_MAX_METADATA_BYTES) return;
     record = JSON.parse(record);
   } catch (_) { return; }
@@ -1052,7 +1067,8 @@ function afpRefreshPhoto(photo) {
 function afpRestoreRecord(photo, rec, digest) {
   if (!rec || rec.sdk!==AFP_ENGINE_VERSION || rec.hash!==digest || !['ok','warn','bad','none'].includes(rec.state)) return false;
   photo.state=rec.state; photo.store=rec.store; photo.active=rec.active;
-  photo.validation=rec.validation || []; photo.exif=rec.exif || null; photo.exifDate=photo.exif?.date;
+  photo.validation=rec.validation || []; photo.trustSource=rec.trustSource || null;
+  photo.exif=rec.exif || null; photo.exifDate=photo.exif?.date;
   photo.cacheStatus='stored'; photo.cacheSavedAt=rec.savedAt; photo.error=null;
   photo.recheckingCache=false;
   afpRefreshPhoto(photo);
@@ -1078,7 +1094,8 @@ if ('serviceWorker' in navigator && location.protocol==='https:') {
 window.addEventListener('online', () => {
   let retry=false;
   for (const p of photos) {
-    if (p.cacheStatus==='stored' && Date.now()-(p.lastCacheRetry||0)>20000) {
+    if ((p.cacheStatus==='stored' || ['unavailable','incomplete'].includes(p.trustSource)) &&
+        Date.now()-(p.lastCacheRetry||0)>20000) {
       p.needsRetry=true; p.lastCacheRetry=Date.now(); retry=true;
     }
   }
@@ -1098,8 +1115,8 @@ async function ensureC2pa() {
       try {
         const timeout = new Promise((_, reject) => { timer=setTimeout(() => reject(new Error('Chargement du moteur C2PA trop long')), 14000); });
         const sdk = await Promise.race([import(SDK_URL), timeout]);
-        C2paReader = sdk.Reader;
-        if (typeof sdk.createC2pa !== 'function' || !C2paReader) throw new Error('SDK C2PA incomplet');
+        C2paReader = sdk.Reader; C2paContext = sdk.Context;
+        if (typeof sdk.createC2pa !== 'function' || !C2paReader || !C2paContext) throw new Error('SDK C2PA incomplet (Context absent)');
         c2pa = await sdk.createC2pa({ wasmSrc: WASM_URL });
         sdkFailure = null;
         // Réchauffement opportuniste des deux ressources externes pour les connexions futures.
@@ -1145,12 +1162,98 @@ async function getBlob(photo) {
     throw error;
   }
 }
+/* ===== Validation C2PA : listes officielles puis liste provisoire historique =====
+   Les listes contiennent des certificats d'autorités, pas des noms de marques.
+   Seul le lecteur cryptographique peut confirmer que le certificat du fichier
+   mène réellement à l'une de ces autorités. Jamais de confiance par nom/exif. */
+const AFP_TRUST_PEM_URLS = Object.freeze({
+  official: 'https://raw.githubusercontent.com/c2pa-org/conformance-public/main/trust-list/C2PA-TRUST-LIST.pem',
+  legacy: 'https://raw.githubusercontent.com/contentauth/verify-site/main/static/trust/anchors.pem'
+});
+const afpTrustContexts = new Map();
+const afpTrustRetryAfter = Object.create(null);
+async function afpTrustContext(source) {
+  if (!C2paContext || !AFP_TRUST_PEM_URLS[source]) throw new Error('Contexte de confiance C2PA indisponible');
+  if (Date.now() < (afpTrustRetryAfter[source]||0)) throw new Error('Liste '+source+' momentanément inaccessible');
+  if (!afpTrustContexts.has(source)) {
+    const promise = (async () => {
+      // Le délai est borné et les listes sont résolues UNE fois pour la galerie.
+      const response = await fetchWithTimeout(AFP_TRUST_PEM_URLS[source], {mode:'cors',cache:'no-cache'}, 8000);
+      if (!response.ok) throw new Error('Liste de confiance '+source+' : HTTP '+response.status);
+      const pem = await response.text();
+      if (!/-----BEGIN CERTIFICATE-----[\s\S]*-----END CERTIFICATE-----/.test(pem))
+        throw new Error('Liste de confiance '+source+' : format de certificat inattendu');
+      return new C2paContext({ verify: {verifyTrust:true,verifyAfterReading:true}, trust: {trustAnchors:pem} });
+    })();
+    afpTrustContexts.set(source, promise);
+    // Une liste momentanément inaccessible peut être retentée à la prochaine analyse.
+    promise.catch(() => {
+      afpTrustRetryAfter[source]=Date.now()+20000;
+      if (afpTrustContexts.get(source)===promise) afpTrustContexts.delete(source);
+    });
+  }
+  return afpTrustContexts.get(source);
+}
+function afpValidationCodes(result) {
+  return (result?.validation || []).map(v=>String(typeof v==='string'?v:v?.code??v?.status??'').toLowerCase());
+}
+function afpHasTrustedCertificate(result) {
+  return afpValidationCodes(result).some(c=>/^signingcredential\.trusted$/.test(c));
+}
+function afpHasCriticalFailure(result) {
+  return (result?.validation || []).some(v=>validationLevel(v)==='bad');
+}
+function afpBenignNotice(entry) {
+  const code=String(typeof entry==='string'?entry:entry?.code??entry?.status??'').toLowerCase();
+  // Informations non bloquantes : aucun accès OCSP demandé, exclusions déclarées.
+  // Elles ne constituent ni une réussite cryptographique supplémentaire, ni un échec.
+  return /^(?:signingcredential\.ocsp\.skipped|assertion\.datahash\.additionalexclusionspresent)$/.test(code);
+}
+async function afpReadC2pa(engine,mime,blob,source) {
+  const ctx=source ? await afpTrustContext(source) : undefined;
+  let reader = null;
+  try {
+    reader = await C2paReader.fromBlob(engine,mime,blob,ctx);
+    if (!reader) return {store:null,active:null,validation:[]};
+    const store=await reader.manifestStore();
+    const entries=store?.validation_status??store?.validationStatus??[];
+    const active=await reader.activeManifest().catch(()=>null);
+    return {store,active,validation:Array.isArray(entries)?entries:[]};
+  } finally {
+    if (reader) try { await reader.free(); } catch (_) {}
+  }
+}
+async function afpValidateAgainstTrustLists(engine,mime,blob) {
+  let official=null,legacy=null;
+  const issues=[];
+  try { official=await afpReadC2pa(engine,mime,blob,'official'); }
+  catch (error) { issues.push('official: '+(error?.message??String(error))); }
+  if (official && !official.store) return {...official,trustSource:null};
+  if (official && (afpHasTrustedCertificate(official) || afpHasCriticalFailure(official)))
+    return {...official,trustSource:afpHasTrustedCertificate(official)?'official':(issues.length?'incomplete':'untrusted')};
+  // L'ancienne liste n'est consultée qu'en cas de doute avec la liste officielle.
+  try { legacy=await afpReadC2pa(engine,mime,blob,'legacy'); }
+  catch (error) { issues.push('legacy: '+(error?.message??String(error))); }
+  if (legacy && !legacy.store) return {...legacy,trustSource:null};
+  if (legacy && afpHasTrustedCertificate(legacy) && !afpHasCriticalFailure(legacy))
+    return {...legacy,trustSource:'legacy'};
+  if (official || legacy) {
+    const chosen=official||legacy;
+    return {...chosen,trustSource:issues.length?'incomplete':'untrusted'};
+  }
+  // L'échec du téléchargement des listes ne doit pas masquer un manifeste existant.
+  // On lit le C2PA sans attribuer une confiance non démontrée au certificat.
+  console.warn('[C2PA AFP] Listes de confiance indisponibles :',issues.join('; '));
+  const neutral=await afpReadC2pa(engine,mime,blob,null);
+  return {...neutral,trustSource:neutral.store?'unavailable':null};
+}
+
 async function analyze(photo) {
   if (photo.state !== 'loading' && !photo.needsRetry) return;
   if (photo.analysisPromise) return photo.analysisPromise;
   photo.needsRetry=false;
   photo.analysisPromise = (async () => {
-    let reader=null, blob=null, digest=null, restore=false;
+    let blob=null, digest=null, restore=false;
     const cachedMetadata=await afpReadRecord(afpRemoteUrl(photo));
     try {
       // Dès l'ouverture, restaurer le résultat seulement si l'original conservé
@@ -1174,7 +1277,7 @@ async function analyze(photo) {
       // Si la photo téléchargée a changé : ne JAMAIS reprendre son ancien statut.
       if (restore && digest!==cachedMetadata.hash) {
         restore=false; photo.cacheStatus=null; photo.cacheSavedAt=null;
-        photo.state='loading'; photo.store=null; photo.active=null; photo.validation=[];
+        photo.state='loading'; photo.store=null; photo.active=null; photo.validation=[]; photo.trustSource=null;
         afpRefreshPhoto(photo);
       }
       if (!photo.exif || !restore) {
@@ -1189,20 +1292,15 @@ async function analyze(photo) {
       }
       const engine=await ensureC2pa();
       const mime=({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',tif:'image/tiff',tiff:'image/tiff'})[ext]||blob.type;
-      reader=await C2paReader.fromBlob(engine,mime,blob);
-      photo.store=null;photo.active=null;photo.validation=[];
-      if (!reader) {
-        photo.state='none';
-      } else {
-        const store=await reader.manifestStore();
-        photo.store=store;
-        const entries=store?.validation_status??store?.validationStatus??[];
-        const list=Array.isArray(entries)?entries:[];
-        photo.validation=list;
-        photo.active=await reader.activeManifest().catch(()=>null);
-        const levels=list.map(validationLevel);
-        photo.state=!store?'none':levels.includes('bad')?'bad':levels.includes('warn')?'warn':levels.includes('neutral')||!list.length?'warn':'ok';
-      }
+      const check=await afpValidateAgainstTrustLists(engine,mime,blob);
+      photo.store=check.store; photo.active=check.active; photo.validation=check.validation;
+      photo.trustSource=check.trustSource;
+      const levels=photo.validation.map(validationLevel);
+      const certificateTrusted=afpHasTrustedCertificate(check);
+      const unknownChecks=photo.validation.some(v=>validationLevel(v)==='neutral' && !afpBenignNotice(v));
+      photo.state=!check.store?'none':levels.includes('bad')?'bad':
+        (!certificateTrusted || !['official','legacy'].includes(photo.trustSource) ||
+         levels.includes('warn') || unknownChecks)?'warn':'ok';
       photo.error=null;
       photo.cacheStatus=null;photo.cacheSavedAt=null;photo.recheckingCache=false;
       await afpWriteRecord(photo,digest);
@@ -1221,7 +1319,6 @@ async function analyze(photo) {
         if (photo.state==='none' && digest) await afpWriteRecord(photo,digest);
       }
     } finally {
-      if (reader) try { await reader.free(); } catch (_) {}
       if (photo.cacheStatus || photo.state!=='loading') afpRefreshPhoto(photo);
     }
   })().finally(()=>{photo.analysisPromise=null;});
@@ -1668,7 +1765,7 @@ function c2paSourceDetails(photo) {
     const canonGenerator=/^Canon EOS R\d+/i.test(generator);
     const nikonGenerator=/^Z[0-9a-z_]+_Ver\./i.test(generator) || /^Nikon\s+Z[0-9a-z ]+/i.test(generator);
     const canonExif=/^Canon$/i.test(make) && /^Canon\s+EOS\s+R\d+/i.test(model);
-    const nikonExif=/^NIKON(?:\s+CORPORATION)?$/i.test(make) && /^(?:NIKON\s+)?Z[0-9a-z_]+/i.test(model);
+    const nikonExif=/^NIKON(?:\s+CORPORATION)?$/i.test(make) && /^(?:NIKON\s+)?Z[\s_-]*\d[\w\s-]*/i.test(model);
     // La signature et le générateur ne prouvent pas la scène, seulement une provenance
     // cohérente avec un boîtier, et ceci ne doit PAS remplacer une déclaration explicite.
     const corroborated=(canonGenerator && canonExif) || (nikonGenerator && nikonExif);
@@ -2992,8 +3089,14 @@ function afpSignerProfile(value) {
   if(input)return {key:input.toLowerCase(),fr:input,en:input,known:true};
   return {key:'unknown',fr:'Le signataire',en:'The signer',known:false};
 }
-function afpSignerTrustExplanation(signer, trustLevel, isUntrusted) {
+function afpSignerTrustExplanation(signer, trustLevel, isUntrusted, trustSource=null) {
   const who=afpSignerProfile(signer);
+  if (trustSource==='official' || trustSource==='legacy') {
+    const intro=uiLanguage==='fr'
+      ?`${who.fr} a signé ces informations C2PA. La galerie a contrôlé leur signature et leur intégrité avec un procédé cryptographique rigoureux.`
+      :`${who.en} signed these C2PA credentials. This gallery checked the signature and data integrity using rigorous cryptographic validation.`;
+    return intro;
+  }
   // Texte éditorial spécifique aux fichiers Canon dont le certificat est
   // signalé non reconnu par le vérificateur C2PA. Ne pas l'appliquer à Nikon,
   // à l'AFP ni à une signature Canon dont les contrôles sont concluants.
@@ -3018,15 +3121,9 @@ function afpSignerTrustExplanation(signer, trustLevel, isUntrusted) {
     ?'Dans le cas présent, au moins un contrôle C2PA a échoué. Les informations signées ne peuvent pas être considérées comme vérifiées.'
     :'In this case, at least one C2PA check failed. The signed information cannot be treated as verified.');
   if(isUntrusted){
-    const legacy=AFP_LEGACY_SIGNER_BRANDS.has(who.key)
-      ?(uiLanguage==='fr'
-        ?` ${who.fr} figure dans l’ancienne liste provisoire, gelée le 1er janvier 2026.`
-        :` ${who.en} appears on the former interim trust list, frozen on January 1, 2026.`)
-      :'';
     return intro+' '+(uiLanguage==='fr'
-      ?'Dans le cas présent, le certificat utilisé n’est pas reconnu par ce vérificateur.'
-      :'In this case, this verifier does not recognize the certificate used here.')
-      +legacy;
+      ?'Dans le cas présent, la chaîne de certification n’a pas été reconnue par les listes consultées.'
+      :'In this case, the certificate chain was not recognized by the lists checked.');
   }
   if(trustLevel==='warn')return intro+' '+(uiLanguage==='fr'
     ?'Dans le cas présent, la vérification n’a pas pu être entièrement confirmée.'
@@ -3034,6 +3131,26 @@ function afpSignerTrustExplanation(signer, trustLevel, isUntrusted) {
   return intro+' '+(uiLanguage==='fr'
     ?'Dans le cas présent, le vérificateur ne signale pas de problème dans les contrôles retournés.'
     :'In this case, the verifier reports no issue in the checks it returned.');
+}
+
+function afpTrustSourceExplanation(trustSource) {
+  const messages={
+    official:'Le certificat a été validé avec la liste officielle C2PA.',
+    legacy:'Le certificat a été validé avec l’ancienne liste provisoire C2PA, gelée le 1er janvier 2026. Cette validation historique est distincte de celle de la liste officielle actuelle.',
+    untrusted:'Aucune des deux listes C2PA consultées ne permet de reconnaître ce certificat. Cela ne signifie pas que la photo a été falsifiée.',
+    unavailable:'Impossible de consulter les listes C2PA. La confiance dans le certificat ne peut pas être confirmée.',
+    incomplete:'Une seule liste C2PA a pu être consultée. La confiance dans le certificat reste à confirmer.'
+  };
+  return tr(messages[trustSource]||messages.incomplete);
+}
+function afpAppendTrustSourceNote(trust, photo) {
+  const source=photo?.trustSource;
+  if(!source)return;
+  const holder=document.createElement('div');holder.className='afp-reader-directory-status';
+  const note=document.createElement('p'); note.textContent=afpTrustSourceExplanation(source);
+  const link=document.createElement('a');link.href=AFP_CONFORMANCE_EXPLORER;
+  link.target='_blank';link.rel='noopener noreferrer';link.textContent=tr('Consulter les listes C2PA');
+  holder.append(note,link);trust.append(holder);
 }
 
 function afpTrustExplanationNode(message){
@@ -3149,6 +3266,8 @@ function fillDetails(photo) {
   const levels=entries.map(validationLevel);
   const codes=entries.map(v=>String(typeof v==='string'?v:v?.code??v?.status??'').toLowerCase());
   const hasUntrustedSigner=codes.some(c=>/signingcredential\.(?:untrusted|unknown)|signer\.untrusted/.test(c));
+  const verifiedTrustSource=['official','legacy'].includes(photo.trustSource) &&
+    codes.some(c=>/^signingcredential\.trusted$/.test(c));
   const hasIntegrityFailure=codes.some(c=>/assertion\.datahash\.mismatch|assertion\.bmffhash\.mismatch|assertion\.hasheduri\.mismatch|assertion\.boxhash\.mismatch|hash\.mismatch/.test(c));
   const hasSignatureFailure=codes.some(c=>/claimsignature\.mismatch|claimsignature\.invalid|signature\.invalid/.test(c));
   const a=photo.active??{};
@@ -3173,20 +3292,22 @@ function fillDetails(photo) {
   let trustLevel='neutral',trustTitle,trustText;
   if(levels.includes('bad')){
     trustLevel='bad';trustTitle='Une vérification de provenance a échoué.';
-    trustText=afpSignerTrustExplanation(signer,'bad',false);
+    trustText=afpSignerTrustExplanation(signer,'bad',false,photo.trustSource);
     setStatusLine('error','Manifeste présent, mais une ou plusieurs vérifications ont échoué.','bad');
-  }else if(hasUntrustedSigner){
-    trustLevel='warn';trustTitle='Certificat numérique à vérifier';
-    trustText=afpSignerTrustExplanation(signer,'warn',true);
-    setStatusLine('warn','Manifeste présent, mais la confiance du signataire nécessite une vérification.');
-  }else if(!entries.length||levels.includes('neutral')||levels.includes('warn')){
-    trustLevel='warn';trustTitle='Vérification à confirmer';
-    trustText=afpSignerTrustExplanation(signer,'warn',false);
-    setStatusLine('warn','Manifeste présent, mais la validation complète ne peut pas être confirmée.');
-  }else{
-    trustLevel='ok';trustTitle='Signature C2PA : aucun problème signalé';
-    trustText=afpSignerTrustExplanation(signer,'ok',false);
+  }else if(verifiedTrustSource){
+    trustLevel='ok';
+    trustTitle=photo.trustSource==='official'?'Certificat reconnu (liste officielle C2PA)':'Certificat reconnu (ancienne liste C2PA)';
+    trustText=afpSignerTrustExplanation(signer,'ok',false,photo.trustSource);
     setStatusLine('ok','Contrôles C2PA retournés sans problème signalé. Cela ne prouve pas la véracité de la scène.');
+  }else if(photo.trustSource==='untrusted' || hasUntrustedSigner){
+    trustLevel='warn';trustTitle=photo.trustSource==='untrusted'?'Certificat non reconnu par les deux listes':'Certificat numérique à vérifier';
+    trustText=afpSignerTrustExplanation(signer,'warn',true,photo.trustSource);
+    setStatusLine('warn','Manifeste présent, mais la confiance du signataire nécessite une vérification.');
+  }else{
+    trustLevel='warn';trustTitle=photo.trustSource==='unavailable'?'Contrôle des listes de confiance indisponible':
+      photo.trustSource==='incomplete'?'Contrôle des listes de confiance incomplet':'Vérification à confirmer';
+    trustText=afpSignerTrustExplanation(signer,'warn',false,photo.trustSource);
+    setStatusLine('warn','Manifeste présent, mais la validation complète ne peut pas être confirmée.');
   }
   const trust=document.createElement('section');trust.className='afp-reader-trust';trust.dataset.level=trustLevel;
   trust.setAttribute('aria-label',tr('Qui a signé ces informations ?'));
@@ -3196,7 +3317,7 @@ function fillDetails(photo) {
   const by=document.createElement('span');by.textContent=tr('Signé par')+' : ';
   const signerName=document.createElement('strong');signerName.textContent=signer?readable(signer):tr('Signataire non identifié');
   signerP.append(by,signerName);trust.append(trustH,trustP,signerP);
-  if(hasUntrustedSigner)afpAttachTrustDirectoryStatus(trust,signer);
+  afpAppendTrustSourceNote(trust,photo);
 
   const photoInfo=[];
   if(author)photoInfo.push(field('Auteur déclaré',`${author}${authorSource?' : '+authorSource:''}`,'neutral'));
@@ -3227,7 +3348,7 @@ function fillDetails(photo) {
   const certificateBad=hasCode(/^(?:signingcredential\.(?:ocsp\.revoked|invalid|expired|mismatch)|claimsignature\.outsidevalidity)$/);
   const integrityStatus=hasIntegrityFailure?'bad':integrityOk?'ok':'neutral';
   const signatureStatus=hasSignatureFailure?'bad':signatureOk?'ok':'neutral';
-  const certificateStatus=certificateBad?'bad':hasUntrustedSigner?'warn':certificateOk?'ok':trustLevel==='warn'?'warn':'neutral';
+  const certificateStatus=certificateBad?'bad':verifiedTrustSource?'ok':trustLevel==='warn'?'warn':'neutral';
   const pIntro=document.createElement('p');pIntro.className='afp-reader-technical-intro';
   pIntro.textContent=tr('Ces vérifications portent sur les informations C2PA et leur signature, pas sur la réalité de la scène photographiée.');
   const pTsa=document.createElement('p');pTsa.className='afp-reader-technical-date';
@@ -3247,7 +3368,12 @@ function fillDetails(photo) {
     section('Comprendre les vérifications',[
       field('Intégrité du fichier',tr(hasIntegrityFailure?'Différence détectée':integrityOk?'Données signées conformes':'Résultat explicite non communiqué'),integrityStatus,tr('Compare le fichier aux empreintes protégées par les Content Credentials.')),
       field('Signature cryptographique',tr(hasSignatureFailure?'Signature incorrecte':signatureOk?'Signature vérifiée':'Résultat explicite non communiqué'),signatureStatus,tr('Vérifie que la signature cryptographique correspond aux données du manifeste.')),
-      field('Confiance dans le certificat',tr(certificateBad?'Certificat ou validation en échec':hasUntrustedSigner?'Certificat non reconnu':certificateOk?'Certificat reconnu':trustLevel==='warn'?'Vérification à confirmer':'Résultat explicite non communiqué'),certificateStatus,tr('Vérifie si la chaîne du certificat mène à une autorité de confiance reconnue.'))
+      field('Confiance dans le certificat',tr(certificateBad?'Certificat ou validation en échec':verifiedTrustSource?
+        (photo.trustSource==='official'?'Certificat reconnu (liste officielle C2PA)':'Certificat reconnu (ancienne liste C2PA)'):
+        photo.trustSource==='untrusted'?'Certificat non reconnu par les deux listes':
+        photo.trustSource==='unavailable'?'Contrôle des listes de confiance indisponible':
+        photo.trustSource==='incomplete'?'Contrôle des listes de confiance incomplet':
+        'Vérification à confirmer'),certificateStatus,tr('Vérifie si la chaîne du certificat mène à une autorité de confiance reconnue.'))
     ]),
     pTsa,
     detailedCodes

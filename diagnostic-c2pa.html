@@ -33,7 +33,7 @@ async function run(){
       let reader;
       try{
         reader=await Reader.fromBlob(engine,/\.png$/i.test(name)?'image/png':'image/jpeg',blob,context);
-        if(!reader)throw Error('Manifeste absent');
+        if(!reader){output.push({name,error:'Manifeste absent'});continue;}
         const store=await reader.manifestStore();
         const record={name,validationState:store?.validation_state??null,checks:extract(store)};
         output.push(record);
@@ -41,7 +41,7 @@ async function run(){
         const h=document.createElement('h2');h.textContent=name;
         const p=document.createElement('pre');p.textContent=JSON.stringify(record,null,2);
         a.append(h,p);results.append(a);
-      } finally {if(reader)await reader.free();}
+      } catch(err){output.push({name,error:String(err?.message||err)});} finally {if(reader)await reader.free();}
     }
     window.__diagnosticResults=output;window.__diagnosticDone=true;
     status.textContent='Diagnostic terminé. Les couleurs ne sont pas modifiées.';

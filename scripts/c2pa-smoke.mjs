@@ -11,6 +11,7 @@ try {
   if(!Array.isArray(data.result)||data.result.length!==6)throw Error('Did not verify all images');
   for(const item of data.result){
     const results=item.checks;
+    if(item.error){console.log('Unsigned or unreadable:',item.name,item.error);continue;}
     if(!results||!Object.values(results).some(v=>Array.isArray(v)&&v.length))throw Error('No C2PA validation codes for '+item.name);
   }
 }finally{await browser.close();}

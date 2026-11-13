@@ -1502,10 +1502,10 @@ originBadgeStyle.textContent = `
     width:56px!important;height:56px!important;
     right:18px!important;bottom:8px!important;
   }
-  /* Au repos : opacite 40%. Intro lumineuse 100% pendant 1 s apres 2 s. */
+  /* Au repos : opacite 35%. Intro lumineuse 100% pendant 1 s apres 2 s. */
   #grid .demo-overlay.mode-origin-distinguo.origin-visible,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible {
-    opacity:.40!important;visibility:visible!important;pointer-events:auto!important;
+    opacity:.35!important;visibility:visible!important;pointer-events:auto!important;
     -webkit-touch-callout:none!important;-webkit-user-select:none!important;
     user-select:none!important;touch-action:manipulation!important;
   }
@@ -2315,10 +2315,11 @@ function cardEl(photo) {
   });
   const tag = document.createElement('span');
   tag.className = `tag ${photo.state}`;
-  // Masquer le bandeau 'Needs verification' sur les photos, sans changer l'état C2PA.
-  // La couleur du pictogramme, les filtres et le panneau restent inchangés.
-  tag.style.setProperty('display', photo.state === 'warn' ? 'none' : '', 'important');
-  tag.tabIndex = 0;
+  // Masquer tous les bandeaux d'état au-dessus des imagettes, sans changer l'état C2PA.
+  // Les pictogrammes, filtres et panneaux restent inchangés.
+  tag.hidden = true;
+  tag.style.setProperty('display', 'none', 'important');
+  tag.tabIndex = -1;
   tag.title = tr(C2PA_STATUS_TIPS[photo.state] || C2PA_STATUS_TIPS.neutral);
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),
              document.createTextNode(statusLabel(photo.state) + (photo.cacheStatus ? ' · ◷' : '')));
@@ -2346,9 +2347,10 @@ function renderCard(photo) {
   if (!card) return;
   const tag = card.querySelector('.tag');
   tag.className = `tag ${photo.state}`;
-  // Masquer le bandeau 'Needs verification' sur les photos, sans changer l'état C2PA.
-  // La couleur du pictogramme, les filtres et le panneau restent inchangés.
-  tag.style.setProperty('display', photo.state === 'warn' ? 'none' : '', 'important');
+  // Masquer tous les bandeaux d'état au-dessus des imagettes, sans changer l'état C2PA.
+  // Les pictogrammes, filtres et panneaux restent inchangés.
+  tag.hidden = true;
+  tag.style.setProperty('display', 'none', 'important');
   tag.title = tr(C2PA_STATUS_TIPS[photo.state] || C2PA_STATUS_TIPS.neutral);
   tag.textContent = '';
   tag.append(Object.assign(document.createElement('span'), { className: 'dot' }),

@@ -1,0 +1,30 @@
+name: C2PA reader smoke test
+on:
+  pull_request:
+    paths: ['app.js', 'sw.js', 'diagnostic-c2pa.html', 'scripts/c2pa-smoke.mjs', 'scripts/c2pa-gallery-smoke.mjs', '.github/workflows/c2pa-engine-test.yml']
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: |
+          node --check app.js
+          node --check sw.js
+          node --check scripts/c2pa-smoke.mjs
+          node --check scripts/c2pa-gallery-smoke.mjs
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Verify both signed PNGs with the actual browser SDK
+        run: |
+          printf '{"photos":["PHOTOS/Dragon au-dessus de DC.png","PHOTOS/Homme en feu devant un mur de briques.png"]}' > photos.json
+          python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/c2pa-http.log 2>&1 &
+          node scripts/c2pa-smoke.mjs
+          node scripts/c2pa-gallery-smoke.mjs

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Diagnostic moteur C2PA — AFP</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:1050px;margin:35px auto;padding:0 16px;color:#172331}h1{font-size:23px}button{padding:10px 20px;background:#1162bc;color:white;border:0;border-radius:7px;cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f0f3f7;padding:14px;border-radius:8px}article{margin:20px 0;padding:15px;border:1px solid #ddd;border-radius:9px}small{color:#526173}code{font-size:12px}</style>
+<h1>Diagnostic indépendant des deux signatures OpenAI</h1>
+<p>SDK officiel <code>@contentauth/c2pa-web@0.17.0</code> — liste officielle C2PA uniquement, jamais de validation forcée par le nom du fabricant.</p>
+<button id="run">Comparer les deux PNG</button><p id="status" aria-live="polite"></p><div id="results"></div>
+<script type="module">
+const version='0.17.0';
+const files=['Dragon au-dessus de DC.png','Homme en feu devant un mur de briques.png'];
+const trustUrl='https://raw.githubusercontent.com/c2pa-org/conformance-public/main/trust-list/C2PA-TRUST-LIST.pem';
+const status=document.querySelector('#status'),results=document.querySelector('#results');
+function extract(s){
+  const x=s?.validation_results?.activeManifest??s?.validation_results?.active_manifest??null;
+  if(x)return Object.fromEntries(['success','informational','failure'].map(k=>[k,(x[k]||[]).map(v=>v.code??v.status??String(v))]));
+  return {legacy:s?.validation_status??[]};
+}
+async function run(){
+  results.replaceChildren();status.textContent='Analyse en cours…';window.__diagnosticDone=false;
+  try{
+    const {createC2pa,Reader,Context}=await import('https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.17.0/+esm');
+    const engine=await createC2pa({wasmSrc:'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.17.0/dist/resources/c2pa_bg.wasm'});
+    const res=await fetch(trustUrl,{cache:'no-store'});
+    if(!res.ok)throw new Error('Liste de confiance indisponible : '+res.status);
+    const pem=await res.text();
+    if(!pem.includes('-----BEGIN CERTIFICATE-----'))throw Error('Liste de confiance malformée');
+    const context=new Context({verify:{verifyTrust:true,verifyAfterReading:true,verifyTimestampTrust:true,ocspFetch:false},trust:{trustAnchors:pem}});
+    const output=[];
+    for(const name of files){
+      const r=await fetch('./PHOTOS/'+encodeURIComponent(name),{cache:'no-store'});
+      if(!r.ok)throw Error(name+' : HTTP '+r.status);
+      const blob=await r.blob();
+      let reader;
+      try{
+        reader=await Reader.fromBlob(engine,'image/png',blob,context);
+        if(!reader)throw Error('Manifeste absent');
+        const store=await reader.manifestStore();
+        const record={name,validationState:store?.validation_state??null,checks:extract(store)};
+        output.push(record);
+        const a=document.createElement('article');
+        const h=document.createElement('h2');h.textContent=name;
+        const p=document.createElement('pre');p.textContent=JSON.stringify(record,null,2);
+        a.append(h,p);results.append(a);
+      } finally {if(reader)await reader.free();}
+    }
+    window.__diagnosticResults=output;window.__diagnosticDone=true;
+    status.textContent='Diagnostic terminé. Les couleurs ne sont pas modifiées.';
+  }catch(e){status.textContent='Erreur : '+String(e.message||e);window.__diagnosticError=String(e);window.__diagnosticDone=true;}
+}
+document.querySelector('#run').addEventListener('click',run);
+if(new URLSearchParams(location.search).has('autorun'))run();
+</script>
+</html>

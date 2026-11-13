@@ -1,9 +1,9 @@
 /* AFP C2PA - Service Worker v2 : disponibilité réseau et octets d'origine.
    S'applique uniquement au site qui l'enregistre ; n'envoie aucune donnée. */
 const CACHE_PREFIX='afp-c2pa-';
-const SHELL='afp-c2pa-shell-v9-pixel-validation-v5';
+const SHELL='afp-c2pa-shell-v10-sdk-0170';
 const ORIGINALS='afp-c2pa-originals-v1';
-const SDK='afp-c2pa-sdk-v1';
+const SDK='afp-c2pa-sdk-v2';
 const MAX_ORIGINALS=32;
 const LIMIT_BYTES=28*1024*1024;
 const SHELL_URLS=['./','./index.html','./app.js','./curl.js','./photos.json','./logo-afp.png','./afp-gelule.png'];
@@ -78,8 +78,8 @@ self.addEventListener('fetch',event=>{
   const req=event.request;
   if(req.method!=='GET')return;
   const u=new URL(req.url);
-  // SDK 0.15.4 : code et WebAssembly figés, réutilisés après une première connexion réussie.
-  if(u.hostname==='cdn.jsdelivr.net'&&u.pathname.includes('@contentauth/c2pa-web@0.15.4')) {
+  // SDK 0.17.0 : code et WebAssembly figés, réutilisés après une première connexion réussie.
+  if(u.hostname==='cdn.jsdelivr.net'&&u.pathname.includes('@contentauth/c2pa-web@0.17.0')) {
     event.respondWith(sdkFirst(req));return;
   }
   if(u.origin!==self.location.origin)return;

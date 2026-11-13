@@ -8,7 +8,7 @@ try {
   const data=await page.evaluate(()=>({result:window.__diagnosticResults,error:window.__diagnosticError}));
   console.log(JSON.stringify(data,null,2));
   if(data.error)throw Error(data.error);
-  if(!Array.isArray(data.result)||data.result.length!==2)throw Error('Did not verify both images');
+  if(!Array.isArray(data.result)||data.result.length!==6)throw Error('Did not verify all images');
   for(const item of data.result){
     const results=item.checks;
     if(!results||!Object.values(results).some(v=>Array.isArray(v)&&v.length))throw Error('No C2PA validation codes for '+item.name);

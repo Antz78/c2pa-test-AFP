@@ -6,7 +6,7 @@ console.info('[C2PA AFP] Version filtres v3 chargée : badges À vérifier');
 //  B) Sinon, glissez le dossier PHOTOS/ (ou des photos) directement sur la page.
 // Version SDK fixée pour éviter les changements silencieux du CDN.
 // Le SDK C2PA est chargé à la demande : une panne du CDN ne bloque PLUS la galerie.
-const SDK_URL = 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.15.4/+esm';
+const SDK_URL = 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.16.1/+esm';
 let C2paReader = null;
 let C2paContext = null;
 let sdkFailure = null; // dernière panne temporaire, jamais mémorisée définitivement
@@ -679,7 +679,7 @@ function mountCurl(button, opts = {}) {
   return ctl;
 }
 
-const WASM_URL = 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.15.4/dist/resources/c2pa_bg.wasm';
+const WASM_URL = 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.16.1/dist/resources/c2pa_bg.wasm';
 const IMAGE_RE = /\.(jpe?g|png|webp|tiff?)$/i;
 
 const grid = document.querySelector('#grid');
@@ -983,7 +983,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.15.4-validation-results-20261113-v5';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.16.1-official-trust-20261113-v1';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -1206,7 +1206,11 @@ async function getBlob(photo) {
    mène réellement à l'une de ces autorités. Jamais de confiance par nom/exif. */
 const AFP_TRUST_PEM_URLS = Object.freeze({
   official: 'https://raw.githubusercontent.com/c2pa-org/conformance-public/main/trust-list/C2PA-TRUST-LIST.pem',
-  legacy: 'https://raw.githubusercontent.com/contentauth/verify-site/main/static/trust/anchors.pem'
+  legacy: 'https://contentcredentials.org/trust/anchors.pem'
+});
+const AFP_LEGACY_TRUST_FILES = Object.freeze({
+  config:'https://contentcredentials.org/trust/store.cfg',
+  allowed:'https://contentcredentials.org/trust/allowed.sha256.txt'
 });
 const afpTrustContexts = new Map();
 const afpTrustRetryAfter = Object.create(null);
@@ -1221,7 +1225,22 @@ async function afpTrustContext(source) {
       const pem = await response.text();
       if (!/-----BEGIN CERTIFICATE-----[\s\S]*-----END CERTIFICATE-----/.test(pem))
         throw new Error('Liste de confiance '+source+' : format de certificat inattendu');
-      return new C2paContext({ verify: {verifyTrust:true,verifyAfterReading:true}, trust: {trustAnchors:pem} });
+      // Keep current official and historical validation independent.
+      // The historical list requires its EKU config and end-entity allowlist.
+      const trust={trustAnchors:pem};
+      if(source==='legacy'){
+        const [configResponse,allowedResponse]=await Promise.all([
+          fetchWithTimeout(AFP_LEGACY_TRUST_FILES.config,{mode:'cors',cache:'no-cache'},8000),
+          fetchWithTimeout(AFP_LEGACY_TRUST_FILES.allowed,{mode:'cors',cache:'no-cache'},8000)
+        ]);
+        if(!configResponse.ok || !allowedResponse.ok) throw new Error('Configuration de confiance historique indisponible');
+        trust.trustConfig=await configResponse.text();
+        trust.allowedList=await allowedResponse.text();
+      }
+      return new C2paContext({
+        verify:{verifyTrust:true,verifyAfterReading:true,verifyTimestampTrust:true,ocspFetch:false},
+        trust
+      });
     })();
     afpTrustContexts.set(source, promise);
     // Une liste momentanément inaccessible peut être retentée à la prochaine analyse.
@@ -3373,14 +3392,21 @@ function afpAttachTrustDirectoryStatus(trust,signerName){
 
 /* Le détail technique est une seule surface à plat, sans sous-panneaux de statut. */
 function afpTrustListFields(photo) {
-  const map={trusted:'Reconnu',untrusted:'Non reconnu',failed:'Échec cryptographique',
+  const map={trusted:'Reconnu',untrusted:'Non reconnu',failed:'Validation C2PA en échec',
     unavailable:'Liste inaccessible',not_checked:'Non consulté'};
   const official=photo.trustChecks?.official?.status ?? 'not_checked';
   const legacy=photo.trustChecks?.legacy?.status ?? 'not_checked';
   const level=code=>code==='trusted'?'ok':code==='failed'?'bad':code==='untrusted'?'warn':'neutral';
+  const detail=source=>{
+    const check=photo.trustChecks?.[source];
+    if(!check)return '';
+    const codes=(check.codes||[]).filter(code=>
+      /(?:\.invalid|\.mismatch|\.untrusted|\.revoked|\.expired|\.unsupported|\.outsidevalidity)$/.test(code));
+    return codes.length?'Codes SDK : '+codes.join(', '):(check.reason||'');
+  };
   return [
-    field('Contrôle de confiance officiel',tr(map[official]||'Résultat non disponible'),level(official)),
-    field('Contrôle de confiance historique',tr(map[legacy]||'Résultat non disponible'),level(legacy))
+    field('Contrôle de confiance officiel',tr(map[official]||'Résultat non disponible'),level(official),detail('official')),
+    field('Contrôle de confiance historique',tr(map[legacy]||'Résultat non disponible'),level(legacy),detail('legacy'))
   ];
 }
 function afpManifestHistory(photo){

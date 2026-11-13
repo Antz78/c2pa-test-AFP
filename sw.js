@@ -1,7 +1,7 @@
 /* AFP C2PA - Service Worker v2 : disponibilité réseau et octets d'origine.
    S'applique uniquement au site qui l'enregistre ; n'envoie aucune donnée. */
 const CACHE_PREFIX='afp-c2pa-';
-const SHELL='afp-c2pa-shell-v6-dual-trust';
+const SHELL='afp-c2pa-shell-v8-reader-v4';
 const ORIGINALS='afp-c2pa-originals-v1';
 const SDK='afp-c2pa-sdk-v1';
 const MAX_ORIGINALS=32;

@@ -1,4 +1,4 @@
-console.info('[AFP Distinguo] Sources de confiance vérifiées et Z 9 : v20261112-dual-trust-v1');
+console.info('[AFP C2PA] Reader-first + full trust comparison v20261113-v4');
 console.info('[C2PA AFP] Version filtres v3 chargée : badges À vérifier');
 // Galerie C2PA : 100 % statique, fonctionne sur GitHub Pages.
 // Deux modes :
@@ -59,12 +59,12 @@ const TRANSLATIONS = {
   'Aucun certificat C2PA détecté dans ce fichier.': 'No C2PA certificate was detected in this file.',
   'Lecture du certificat C2PA indisponible.': 'C2PA certificate details are unavailable.',
   'Vérification du certificat en cours…': 'Checking the certificate…',
-  'Le C2PA (Coalition for Content Provenance and Authenticity) est un standard ouvert qui permet d’associer à une image des informations sur son origine, son auteur, sa date de création et les éventuelles modifications apportées.': 'C2PA (Coalition for Content Provenance and Authenticity) is an open standard for attaching information to an image about its origin, author, creation date, and any recorded changes.',
-  'C’est une démarche volontaire de transparence, qui témoigne d’une volonté de documenter la provenance d’un contenu.': 'It is a voluntary commitment to transparency that helps document where content comes from.',
-  'Il permet de mieux comprendre d’où vient une image et comment elle a été créée.': 'It helps explain where an image comes from and how it was created.',
-  'Il peut indiquer si une image a été modifiée ou générée par IA, lorsque cette information est déclarée.': 'It can indicate whether an image was edited or generated using AI, when this information is declared.',
-  'Il permet de vérifier l’intégrité des informations signées, mais ne garantit pas que la scène représentée est réelle.': 'It can verify the integrity of signed information, but does not guarantee that the depicted scene is real.',
-  'Un certificat non reconnu par le vérificateur ne signifie pas nécessairement que l’image a été falsifiée.': 'A certificate not recognized by the verifier does not necessarily mean that the image was altered.',
+  'Le C2PA (Coalition for Content Provenance and Authenticity) est un standard ouvert qui associe à chaque image des informations vérifiables sur son origine : son auteur, sa date de création et les modifications éventuellement apportées.': 'C2PA (Coalition for Content Provenance and Authenticity) is an open standard that associates each image with verifiable information about its origin: its author, creation date, and any subsequent changes.',
+  'C’est une démarche volontaire de transparence, qui témoigne d’une volonté de documenter la provenance d’un contenu.': 'It is a voluntary act of transparency, showing a commitment to documenting where content comes from.',
+  'Elle permet de retracer l’origine d’une image et les conditions de sa création.': 'It helps trace an image’s origin and the circumstances of its creation.',
+  'Il peut indiquer si une image a été modifiée ou générée par IA, lorsque cette information est déclarée.': 'It can indicate whether an image was edited or AI-generated, when this information is declared.',
+  'Elle garantit que l’image et les informations signées n’ont subi aucune altération depuis la signature.': 'It guarantees that the image and the signed information have not been altered since signing.',
+  'La fiabilité de la scène photographiée relève du travail journalistique, au-delà des seules garanties techniques. En apposant une seconde signature numérique après ses vérifications éditoriales, une agence de presse ou un média engage sa crédibilité et renforce la confiance dans l’authenticité de l’image.': 'The reliability of the photographed scene depends on journalistic work, beyond technical safeguards alone. By adding a second digital signature after its editorial checks, a news agency or media outlet puts its credibility behind the image and strengthens confidence in its authenticity.',
   'Informations techniques du manifeste': 'Technical manifest data',
   'Comprendre les couleurs': 'Understanding the colors',
   'Vert : Contrôle OK': 'Green : Check passed',
@@ -287,6 +287,48 @@ const TRANSLATIONS = {
   'Les photos ne se sont pas affichées. Vous pouvez ouvrir vos photos avec les boutons ci-dessous, puis vérifier le fichier photos.json et le script app.js sur GitHub.':
     'The photos have not appeared. You can open photos with the buttons below, then check photos.json and app.js on GitHub.'
 };
+const AFP_READER_EXTRA_TRANSLATIONS = {
+  'Résumé de la provenance': 'Provenance summary',
+  'Détails de vérification': 'Verification details',
+  'Contrôles de sécurité': 'Security checks',
+  'Listes de confiance C2PA': 'C2PA trust lists',
+  'Signature': 'Signature',
+  'Intégrité': 'Integrity',
+  'Non confirmée': 'Not confirmed',
+  'Échec': 'Failed',
+  'Vérifiée': 'Verified',
+  'Empreintes et signatures': 'Hashes and signatures',
+  'Résultats de validation C2PA': 'C2PA validation results',
+  'Informations du manifeste': 'Manifest information',
+  'Historique de provenance': 'Provenance history',
+  'Manifeste actif (version diffusée)': 'Active manifest (distributed version)',
+  'Manifeste antérieur': 'Earlier manifest',
+  'Manifeste': 'Manifest',
+  'Contrôle de confiance officiel': 'Official trust-list check',
+  'Contrôle de confiance historique': 'Legacy trust-list check',
+  'Reconnu': 'Trusted',
+  'Non reconnu': 'Not trusted',
+  'Échec cryptographique': 'Cryptographic check failed',
+  'Non consulté': 'Not checked',
+  'Liste inaccessible': 'List unavailable',
+  'Échec de vérification': 'Verification failed',
+  'Résultat non disponible': 'Result unavailable',
+  'Le certificat est reconnu par l’ancienne liste C2PA, mais pas par la liste officielle actuelle dans ce contrôle.':
+    'The certificate is trusted by the legacy C2PA list, but not by the current official list in this check.',
+  'Liste officielle actuelle': 'Current official list',
+  'Ancienne liste provisoire': 'Legacy interim list',
+  'Données techniques du manifeste (JSON)': 'Raw manifest data (JSON)',
+  'Comprendre le certificat': 'About the certificate',
+  'Afficher les explications': 'Show explanations',
+  'Informations non disponibles': 'Information unavailable',
+  'L’horodatage TSA, s’il est validé, indique la date de la signature et non la date de prise de vue EXIF.':
+    'A validated TSA timestamp dates the signature, not the EXIF capture time.',
+  'Les informations ci-dessous décrivent la signature, la confiance et les différentes étapes du fichier.':
+    'The details below describe the signature, trust and the file’s provenance steps.'
+};
+
+Object.assign(TRANSLATIONS, AFP_READER_EXTRA_TRANSLATIONS);
+
 let uiLanguage = 'fr';
 try { uiLanguage = localStorage.getItem('afp-c2pa-language') === 'en' ? 'en' : 'fr'; } catch (_) {}
 function tr(text) { return uiLanguage === 'en' ? (TRANSLATIONS[text] ?? text) : text; }
@@ -333,18 +375,9 @@ const STATIC_TRANSLATIONS = [
   ['#side-panel .note', 'Vert : information présente ou contrôle réussi. Orange : confiance à vérifier. Rouge : échec de contrôle. Une information renseignée ne garantit pas qu\'elle soit vraie.', 'Green: information available or a successful check. Amber: trust requires review. Red: a failed check. A declared value is not proof it is true.'],
   ['#bottom-sheet .bottom-sheet-note', 'Les Content Credentials décrivent une provenance déclarée et les contrôles effectués. Ils ne garantissent pas la véracité de la scène.', 'Content Credentials describe declared provenance and checks performed. They do not guarantee that the scene is true.'],
   ['#credentials .note', 'Les indicateurs verts signalent des informations présentes ou des contrôles réussis ; orange signifie « à vérifier » ; rouge indique un échec de contrôle. Une information renseignée ne prouve pas à elle seule qu’elle est vraie.', 'Green indicators show available information or successful checks; amber means review needed, and red indicates a failed check. A provided value does not, by itself, prove it is true.'],
-  ['#side-panel .c2pa-explainer h3', 'ⓘ Qu’est-ce que le C2PA ?', 'ⓘ What is C2PA?'],
-  ['#side-panel .c2pa-explainer p:nth-of-type(1)', 'Le C2PA (Coalition for Content Provenance and Authenticity) est un standard ouvert permettant d’associer des Content Credentials à un fichier : origine déclarée, historique et modifications enregistrées.', 'C2PA (Coalition for Content Provenance and Authenticity) is an open standard for attaching Content Credentials to a file: declared origin, history, and recorded edits.'],
-  ['#side-panel .c2pa-explainer li:nth-child(1)', 'Il contribue à la transparence sur la provenance.', 'It increases transparency about provenance.'],
-  ['#side-panel .c2pa-explainer li:nth-child(2)', 'Il peut signaler des modifications ou des étapes impliquant l’IA si elles ont été enregistrées.', 'It may describe edits or AI-related steps if they were recorded.'],
-  ['#side-panel .c2pa-explainer li:nth-child(3)', 'Il ne prouve pas la véracité de la scène ni la fiabilité de la source.', 'It does not prove that a scene is real or a source trustworthy.'],
-  ['#side-panel .c2pa-explainer p:nth-of-type(2)', 'Un certificat non reconnu comme fiable ne signifie pas automatiquement que l’image a été falsifiée.', 'An untrusted certificate does not automatically mean the image was manipulated.'],
+  // Le bloc « Qu’est-ce que le C2PA ? » est généré dans afpC2paAboutText()
+  // et traduit par TRANSLATIONS : plus de textes statiques divergents.
   ['#c2pa-explain-title', 'Qu’est-ce que le C2PA ?', 'What is C2PA?'],
-  ['#credentials .c2pa-explainer > p:nth-of-type(1)', 'Le C2PA (Coalition for Content Provenance and Authenticity) est un standard ouvert qui permet d’associer à un fichier des Content Credentials : des informations sur sa provenance et, lorsqu’elles sont renseignées, sur les étapes de sa création ou de ses modifications.', 'C2PA is an open standard for attaching Content Credentials to a file: information about its provenance and, when recorded, steps in its creation or editing.'],
-  ['#credentials .c2pa-explainer li:nth-child(1)', 'Il aide à retracer l’origine déclarée et l’historique d’un contenu.', 'It helps trace the declared origin and history of content.'],
-  ['#credentials .c2pa-explainer li:nth-child(2)', 'Il peut signaler certaines modifications ou utilisations d’outils d’IA, si elles ont été enregistrées.', 'It may disclose edits or the use of AI tools if recorded.'],
-  ['#credentials .c2pa-explainer li:nth-child(3)', 'Il ne garantit pas qu’une scène est vraie, ni qu’une source est digne de confiance.', 'It does not guarantee that a scene is true or that a source is trustworthy.'],
-  ['#credentials .c2pa-explainer > p:nth-of-type(2)', '« certificat non fiable » ne signifie pas automatiquement « image falsifiée ». Cela signifie que la confiance cryptographique n’a pas pu être établie par le système de vérification utilisé.', 'An “untrusted certificate” does not automatically mean an “altered image.” It means cryptographic trust could not be established by the verification system.', 'strong'],
   ['#cr-close', 'Fermer', 'Close'],
 ];
 const STATIC_ATTRIBUTES = [
@@ -945,7 +978,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.15.4-dual-trust-20261112-v1';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.15.4-trust-ui-20261113-v4';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -992,7 +1025,7 @@ async function afpWriteRecord(photo, digest) {
   try {
     record = JSON.stringify({ url, hash:digest, sdk:AFP_ENGINE_VERSION, savedAt:Date.now(),
       state:photo.state, store:photo.store ?? null, active:photo.active ?? null,
-      validation:photo.validation ?? [], trustSource:photo.trustSource ?? null,
+      validation:photo.validation ?? [], trustSource:photo.trustSource ?? null, trustChecks:photo.trustChecks ?? null,
       exif:photo.exif ?? null });
     if (record.length > AFP_MAX_METADATA_BYTES) return;
     record = JSON.parse(record);
@@ -1067,7 +1100,7 @@ function afpRefreshPhoto(photo) {
 function afpRestoreRecord(photo, rec, digest) {
   if (!rec || rec.sdk!==AFP_ENGINE_VERSION || rec.hash!==digest || !['ok','warn','bad','none'].includes(rec.state)) return false;
   photo.state=rec.state; photo.store=rec.store; photo.active=rec.active;
-  photo.validation=rec.validation || []; photo.trustSource=rec.trustSource || null;
+  photo.validation=rec.validation || []; photo.trustSource=rec.trustSource || null; photo.trustChecks=rec.trustChecks || null;
   photo.exif=rec.exif || null; photo.exifDate=photo.exif?.date;
   photo.cacheStatus='stored'; photo.cacheSavedAt=rec.savedAt; photo.error=null;
   photo.recheckingCache=false;
@@ -1201,51 +1234,66 @@ function afpHasTrustedCertificate(result) {
   return afpValidationCodes(result).some(c=>/^signingcredential\.trusted$/.test(c));
 }
 function afpHasCriticalFailure(result) {
-  return (result?.validation || []).some(v=>validationLevel(v)==='bad');
+  // Un ancrage absent d'une liste n'est pas un échec cryptographique.
+  // Même distinction pour l'OCSP non consulté ou les exclusions documentées.
+  return afpValidationCodes(result).some(code =>
+    validationLevel(code)==='bad' &&
+    !/^(?:signingcredential\.(?:untrusted|unknown|ocsp\.inaccessible)|algorithm\.unsupported)$/.test(code));
 }
 function afpBenignNotice(entry) {
   const code=String(typeof entry==='string'?entry:entry?.code??entry?.status??'').toLowerCase();
-  // Informations non bloquantes : aucun accès OCSP demandé, exclusions déclarées.
-  // Elles ne constituent ni une réussite cryptographique supplémentaire, ni un échec.
-  return /^(?:signingcredential\.ocsp\.skipped|assertion\.datahash\.additionalexclusionspresent)$/.test(code);
+  return /^(?:signingcredential\.ocsp\.skipped|assertion\.datahash\.additionalexclusionspresent|assertion\.redacted)$/.test(code);
 }
 async function afpReadC2pa(engine,mime,blob,source) {
   const ctx=source ? await afpTrustContext(source) : undefined;
-  let reader = null;
+  let reader=null;
   try {
-    reader = await C2paReader.fromBlob(engine,mime,blob,ctx);
-    if (!reader) return {store:null,active:null,validation:[]};
+    reader=await C2paReader.fromBlob(engine,mime,blob,ctx);
+    if(!reader) return {store:null,active:null,validation:[]};
     const store=await reader.manifestStore();
     const entries=store?.validation_status??store?.validationStatus??[];
     const active=await reader.activeManifest().catch(()=>null);
     return {store,active,validation:Array.isArray(entries)?entries:[]};
   } finally {
-    if (reader) try { await reader.free(); } catch (_) {}
+    if(reader) try {await reader.free();} catch (_) {}
   }
 }
+/* Deux validations distinctes : l'une avec les racines officielles,
+   l'autre, si nécessaire, avec les racines historiques. Les sources,
+   échecs réseau et éventuels échecs cryptographiques restent explicites. */
 async function afpValidateAgainstTrustLists(engine,mime,blob) {
+  const checks={official:{status:'unavailable'},legacy:{status:'not_checked'}};
   let official=null,legacy=null;
-  const issues=[];
-  try { official=await afpReadC2pa(engine,mime,blob,'official'); }
-  catch (error) { issues.push('official: '+(error?.message??String(error))); }
-  if (official && !official.store) return {...official,trustSource:null};
-  if (official && (afpHasTrustedCertificate(official) || afpHasCriticalFailure(official)))
-    return {...official,trustSource:afpHasTrustedCertificate(official)?'official':(issues.length?'incomplete':'untrusted')};
-  // L'ancienne liste n'est consultée qu'en cas de doute avec la liste officielle.
-  try { legacy=await afpReadC2pa(engine,mime,blob,'legacy'); }
-  catch (error) { issues.push('legacy: '+(error?.message??String(error))); }
-  if (legacy && !legacy.store) return {...legacy,trustSource:null};
-  if (legacy && afpHasTrustedCertificate(legacy) && !afpHasCriticalFailure(legacy))
-    return {...legacy,trustSource:'legacy'};
-  if (official || legacy) {
-    const chosen=official||legacy;
-    return {...chosen,trustSource:issues.length?'incomplete':'untrusted'};
+  try {
+    official=await afpReadC2pa(engine,mime,blob,'official');
+    checks.official={status:afpHasCriticalFailure(official)?'failed':afpHasTrustedCertificate(official)?'trusted':'untrusted',
+      codes:afpValidationCodes(official)};
+  }catch(error){checks.official={status:'unavailable',reason:String(error?.message||error)};}
+  if(official?.store && checks.official.status==='trusted') {
+    return {...official,trustSource:'official',trustChecks:checks};
   }
-  // L'échec du téléchargement des listes ne doit pas masquer un manifeste existant.
-  // On lit le C2PA sans attribuer une confiance non démontrée au certificat.
-  console.warn('[C2PA AFP] Listes de confiance indisponibles :',issues.join('; '));
+  try {
+    legacy=await afpReadC2pa(engine,mime,blob,'legacy');
+    checks.legacy={status:afpHasCriticalFailure(legacy)?'failed':afpHasTrustedCertificate(legacy)?'trusted':'untrusted',
+      codes:afpValidationCodes(legacy)};
+  }catch(error){checks.legacy={status:'unavailable',reason:String(error?.message||error)};}
+  // Une validation positive historique ne remplace JAMAIS un véritable échec
+  // d'intégrité/signature détecté dans les deux validations.
+  const cryptoFailure=[official,legacy].some(result=>result?.store && afpHasCriticalFailure(result));
+  if(legacy?.store && checks.legacy.status==='trusted' && !cryptoFailure) {
+    return {...legacy,trustSource:'legacy',trustChecks:checks};
+  }
+  if(official?.store || legacy?.store) {
+    const chosen=official?.store?official:legacy;
+    const statuses=[checks.official.status,checks.legacy.status];
+    const source=statuses.every(s=>s==='unavailable')?'unavailable':
+      statuses.includes('unavailable')?'incomplete':'untrusted';
+    return {...chosen,trustSource:source,trustChecks:checks};
+  }
+  // Les listes ne déterminent jamais à elles seules si le fichier est sans C2PA.
+  // En dernier recours, lire le manifeste sans vérification de confiance.
   const neutral=await afpReadC2pa(engine,mime,blob,null);
-  return {...neutral,trustSource:neutral.store?'unavailable':null};
+  return {...neutral,trustSource:neutral.store?'unavailable':null,trustChecks:checks};
 }
 
 async function analyze(photo) {
@@ -1277,7 +1325,7 @@ async function analyze(photo) {
       // Si la photo téléchargée a changé : ne JAMAIS reprendre son ancien statut.
       if (restore && digest!==cachedMetadata.hash) {
         restore=false; photo.cacheStatus=null; photo.cacheSavedAt=null;
-        photo.state='loading'; photo.store=null; photo.active=null; photo.validation=[]; photo.trustSource=null;
+        photo.state='loading'; photo.store=null; photo.active=null; photo.validation=[]; photo.trustSource=null; photo.trustChecks=null;
         afpRefreshPhoto(photo);
       }
       if (!photo.exif || !restore) {
@@ -1294,12 +1342,12 @@ async function analyze(photo) {
       const mime=({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',tif:'image/tiff',tiff:'image/tiff'})[ext]||blob.type;
       const check=await afpValidateAgainstTrustLists(engine,mime,blob);
       photo.store=check.store; photo.active=check.active; photo.validation=check.validation;
-      photo.trustSource=check.trustSource;
+      photo.trustSource=check.trustSource; photo.trustChecks=check.trustChecks;
       const levels=photo.validation.map(validationLevel);
       const certificateTrusted=afpHasTrustedCertificate(check);
       const unknownChecks=photo.validation.some(v=>validationLevel(v)==='neutral' && !afpBenignNotice(v));
       photo.state=!check.store?'none':levels.includes('bad')?'bad':
-        (!certificateTrusted || !['official','legacy'].includes(photo.trustSource) ||
+        (!certificateTrusted || photo.trustSource!=='official' ||
          levels.includes('warn') || unknownChecks)?'warn':'ok';
       photo.error=null;
       photo.cacheStatus=null;photo.cacheSavedAt=null;photo.recheckingCache=false;
@@ -2637,11 +2685,23 @@ function section(title, rows) {
   dl.append(...rows); block.append(heading, dl); return block;
 }
 function present(value) { return value === null || value === undefined || value === '' ? 'neutral' : 'ok'; }
+/* Les codes C2PA sont interprétés par leur identifiant exact, jamais via
+   'valid' ou 'revoked' contenus dans un nom (notRevoked, outsideValidity...).
+   Les extensions inconnues restent neutres jusqu'à interprétation explicite. */
 function validationLevel(v) {
-  const code = String(typeof v === 'string' ? v : v?.code ?? v?.status ?? '').toLowerCase();
-  if (/mismatch|invalid|tamper|failure|error|revoked/.test(code)) return 'bad';
-  if (/expired|untrusted|unknown|unsupported|warning|not.?trusted/.test(code)) return 'warn';
-  if (/success|valid|trusted|match/.test(code)) return 'ok';
+  const code = String(typeof v === 'string' ? v : v?.code ?? v?.status ?? '').trim().toLowerCase();
+  if (!code) return 'neutral';
+  const informational = new Set([
+    'signingcredential.ocsp.skipped','assertion.datahash.additionalexclusionspresent',
+    'ingredient.unknownprovenance','assertion.redacted',
+    'timeofsigning.untrusted','timeofsigning.unknown'
+  ]);
+  if (informational.has(code)) return 'neutral';
+  if (code === 'signingcredential.ocsp.notrevoked') return 'ok';
+  if (/^(?:signingcredential\.(?:untrusted|unknown|ocsp\.(?:unknown|inaccessible))|algorithm\.(?:unsupported|deprecated)|manifest\.inaccessible|claim\.missing|timestamp\.untrusted)$/.test(code)) return 'warn';
+  if (/^(?:claimsignature\.(?:outsidevalidity|mismatch|invalid)|signingcredential\.ocsp\.revoked)$/.test(code)) return 'bad';
+  if (/\.(?:mismatch|invalid|malformed|missing|revoked|failure|error|outofrange|outsidevalidity)$/.test(code)) return 'bad';
+  if (/\.(?:validated|trusted|match|insidevalidity|notrevoked|success)$/.test(code)) return 'ok';
   return 'neutral';
 }
 function signatureOf(a) {
@@ -2991,7 +3051,7 @@ function afpC2paAboutText() {
     block.append(p);
   };
   {
-    const line=tr('Le C2PA (Coalition for Content Provenance and Authenticity) est un standard ouvert qui permet d’associer à une image des informations sur son origine, son auteur, sa date de création et les éventuelles modifications apportées.');
+    const line=tr('Le C2PA (Coalition for Content Provenance and Authenticity) est un standard ouvert qui associe à chaque image des informations vérifiables sur son origine : son auteur, sa date de création et les modifications éventuellement apportées.');
     const named='C2PA (Coalition for Content Provenance and Authenticity)';
     const where=line.indexOf(named);
     const p=document.createElement('p');
@@ -3005,14 +3065,14 @@ function afpC2paAboutText() {
   sentence('C’est une démarche volontaire de transparence, qui témoigne d’une volonté de documenter la provenance d’un contenu.',true);
   const ul=document.createElement('ul');
   for(const copy of [
-    'Il permet de mieux comprendre d’où vient une image et comment elle a été créée.',
+    'Elle permet de retracer l’origine d’une image et les conditions de sa création.',
     'Il peut indiquer si une image a été modifiée ou générée par IA, lorsque cette information est déclarée.',
-    'Il permet de vérifier l’intégrité des informations signées, mais ne garantit pas que la scène représentée est réelle.'
+    'Elle garantit que l’image et les informations signées n’ont subi aucune altération depuis la signature.',
+    'La fiabilité de la scène photographiée relève du travail journalistique, au-delà des seules garanties techniques. En apposant une seconde signature numérique après ses vérifications éditoriales, une agence de presse ou un média engage sa crédibilité et renforce la confiance dans l’authenticité de l’image.'
   ]){
     const li=document.createElement('li');li.textContent=tr(copy);ul.append(li);
   }
   block.append(ul);
-  sentence('Un certificat non reconnu par le vérificateur ne signifie pas nécessairement que l’image a été falsifiée.',true);
   return block;
 }
 function refreshC2paAboutPanels(){
@@ -3020,41 +3080,20 @@ function refreshC2paAboutPanels(){
     const label=fold.querySelector(':scope > summary');
     if(label)label.textContent=tr('Qu’est-ce que le C2PA ?');
     const body=fold.querySelector(':scope > .afp-reader-fold-body');
-    if(!body)continue;
-    const raw=body.querySelector(':scope > .afp-reader-raw');
-    const rawOpen=raw?.open;
-    const oldLegend=body.querySelector(':scope > .afp-reader-legend');
-    const legendOpen=oldLegend?.open;
-    // Préserver le <pre> du manifeste et son contenu exact.
-    if(raw)raw.remove();
-    const legend=afpColorLegend();legend.classList.add('afp-reader-legend');
-    if(legendOpen)legend.open=true;
-    body.replaceChildren(afpC2paAboutText(),legend);
-    if(raw){
-      raw.querySelector('summary').textContent=tr('Informations techniques du manifeste');
-      raw.open=Boolean(rawOpen);
-      body.insertBefore(raw,legend); // « Comprendre les couleurs » juste sous les informations du manifeste.
-    }
+    if(body)body.replaceChildren(afpC2paAboutText());
   }
 }
 function foldReaderBoilerplate() {
   for(const holder of [document.querySelector('#side-panel'),document.querySelector('#credentials .credential-body'),document.querySelector('#bottom-sheet .bottom-sheet-scroll')]){
     if(!holder||holder.querySelector(':scope > .afp-reader-about'))continue;
-    const former=holder.querySelector(':scope > .c2pa-explainer');
-    if(former)former.remove();
-    const oldNote=holder.querySelector(':scope > .note, :scope > .bottom-sheet-note');
-    if(oldNote)oldNote.remove();
-    const raw=holder.querySelector(':scope > details:has(> pre)');
-    if(raw){
-      raw.remove();raw.className='afp-reader-fold afp-reader-raw';
-      raw.querySelector(':scope > summary').textContent=tr('Informations techniques du manifeste');
-    }
-    // Toujours en haut du contenu, après le sélecteur FR/EN et avant l'origine.
+    holder.querySelector(':scope > .c2pa-explainer')?.remove();
+    holder.querySelector(':scope > .note, :scope > .bottom-sheet-note')?.remove();
+    // Ces informations sont désormais rattachées au certificat de la photo.
+    holder.querySelector(':scope > details:has(> pre)')?.remove();
     const about=readerFold('Qu’est-ce que le C2PA ?');
     about.classList.add('afp-reader-about');
-    if(raw)about.querySelector('.afp-reader-fold-body').append(raw);
     const firstContent=holder.querySelector(':scope > #side-status, :scope > #lb-status, :scope > #bottom-status');
-    if(firstContent) holder.insertBefore(about,firstContent);
+    if(firstContent)holder.insertBefore(about,firstContent);
     else holder.prepend(about);
   }
   refreshC2paAboutPanels();
@@ -3072,65 +3111,89 @@ const AFP_TRUST_DIRECTORY_CACHE='afp-c2pa-public-trust-list-summary-v1';
 // Ces marques sont connues dans l'ancienne liste provisoire. Cela ne dit PAS
 // que le certificat précis du fichier appartient à cette liste.
 const AFP_LEGACY_SIGNER_BRANDS = new Set(['nikon','canon','sony','leica','fujifilm']);
+/* ===== Explication grand public : texte à trous pour tous les signataires =====
+   La marque vient du certificat/signataire, jamais de l'EXIF seul.
+   Aucun statut de confiance n'est inféré du nom d'une marque. */
 function afpSignerProfile(value) {
   const input=String(value??'').trim().replace(/[\u0000-\u001f]/g,'').slice(0,120);
-  const brands=[
-    ['nikon',/\bnikon\b/i,'Nikon','Nikon'],
-    ['canon',/\bcanon\b/i,'Canon','Canon'],
-    ['sony',/\bsony\b/i,'Sony','Sony'],
-    ['leica',/\bleica\b/i,'Leica','Leica'],
-    ['fujifilm',/\bfuji(?:film)?\b/i,'Fujifilm','Fujifilm'],
-    ['afp',/agence france.presse|\bAFP\b/i,'L’AFP','AFP'],
-    ['google',/\bgoogle\b/i,'Google','Google'],
+  // Pour les constructeurs, on peut parler d'« appareils ».
+  const cameraBrands=[
+    ['nikon',/\bnikon\b/i,'Nikon'],
+    ['canon',/\bcanon\b/i,'Canon'],
+    ['sony',/\bsony\b/i,'Sony'],
+    ['leica',/\bleica\b/i,'Leica'],
+    ['fujifilm',/\bfuji(?:film)?\b/i,'Fujifilm'],
+    ['panasonic',/\bpanasonic\b|\blumix\b/i,'Panasonic'],
+    ['olympus',/\bolympus\b/i,'Olympus'],
+    ['omsystem',/\bom[\s-]?system\b/i,'OM System'],
+    ['ricoh',/\bricoh\b/i,'Ricoh'],
+    ['pentax',/\bpentax\b/i,'Pentax'],
+    ['hasselblad',/\bhasselblad\b/i,'Hasselblad'],
+    ['gopro',/\bgo[\s-]?pro\b/i,'GoPro'],
+    ['dji',/\bdji\b/i,'DJI'],
+    ['phaseone',/\bphase[\s-]?one\b/i,'Phase One'],
+    ['sigma',/\bsigma\b/i,'Sigma'],
+    ['samsung',/\bsamsung\b/i,'Samsung']
+  ];
+  for(const [key,pattern,name] of cameraBrands){
+    if(pattern.test(input))return {key,fr:name,en:name,known:true,camera:true};
+  }
+  const organizations=[
+    ['afp',/agence france.presse|\bAFP\b/i,'l’AFP','AFP'],
     ['adobe',/\badobe\b/i,'Adobe','Adobe'],
     ['openai',/\bopenai\b/i,'OpenAI','OpenAI'],
+    ['microsoft',/\bmicrosoft\b/i,'Microsoft','Microsoft'],
+    ['google',/\bgoogle\b/i,'Google','Google'],
+    ['apple',/\bapple\b/i,'Apple','Apple']
   ];
-  for(const [key,pattern,fr,en] of brands)if(pattern.test(input))return {key,fr,en,known:true};
-  if(input)return {key:input.toLowerCase(),fr:input,en:input,known:true};
-  return {key:'unknown',fr:'Le signataire',en:'The signer',known:false};
+  for(const [key,pattern,fr,en] of organizations){
+    if(pattern.test(input))return {key,fr,en,known:true,camera:false};
+  }
+  // Signataire inconnu du dictionnaire : afficher son nom, ne pas inventer de boîtier.
+  if(input)return {key:input.toLowerCase(),fr:input,en:input,known:true,camera:false};
+  return {key:'unknown',fr:'',en:'',known:false,camera:false};
 }
 function afpSignerTrustExplanation(signer, trustLevel, isUntrusted, trustSource=null) {
   const who=afpSignerProfile(signer);
-  if (trustSource==='official' || trustSource==='legacy') {
-    const intro=uiLanguage==='fr'
-      ?`${who.fr} a signé ces informations C2PA. La galerie a contrôlé leur signature et leur intégrité avec un procédé cryptographique rigoureux.`
-      :`${who.en} signed these C2PA credentials. This gallery checked the signature and data integrity using rigorous cryptographic validation.`;
-    return intro;
+  const fr=uiLanguage!=='en';
+  // Seule la première phrase varie ; les trois autres conservent le wording demandé.
+  const opening=fr
+    ?(who.camera
+      ?`Les appareils ${who.fr} compatibles C2PA associent à chaque photo un **certificat numérique**, véritable acte de naissance de l’image.`
+      :who.known
+        ?`Les photos signées par ${who.fr} avec le C2PA sont associées à un **certificat numérique**, véritable acte de naissance de l’image.`
+        :'Les appareils et logiciels compatibles C2PA associent à chaque photo un **certificat numérique**, véritable acte de naissance de l’image.')
+    :(who.camera
+      ?`C2PA-compatible ${who.en} cameras associate a **digital certificate** with each photograph, much like a birth certificate for the image.`
+      :who.known
+        ?`Photos signed by ${who.en} using C2PA are associated with a **digital certificate**, much like a birth certificate for the image.`
+        :'C2PA-compatible cameras and software associate a **digital certificate** with each photograph, much like a birth certificate for the image.');
+  const paragraphs=fr?[
+    opening,
+    'Ce certificat permet d’identifier l’appareil ou l’organisme qui a signé la photo. Son authenticité est contrôlée à partir de **listes officielles de confiance, publiées en ligne par le C2PA**.',
+    'Un second contrôle compare l’empreinte numérique de la photo à celle enregistrée lors de sa création. **Si l’image a été modifiée sans nouvelle certification C2PA, cette correspondance est rompue et son intégrité ne peut plus être garantie.**',
+    'Lorsque ces vérifications sont concluantes, elles apportent une **preuve cryptographique rigoureuse et pratiquement irréfutable de l’intégrité des données signées**.'
+  ]:[
+    opening,
+    'This certificate identifies the camera or organization that signed the photo. Its authenticity is checked against **official trust lists published online by C2PA**.',
+    'A second check compares the photo’s digital fingerprint with the one recorded when it was created. **If the image has been changed without new C2PA certification, the fingerprints no longer match and its integrity cannot be guaranteed.**',
+    'When these checks are successful, they provide **rigorous, practically irrefutable cryptographic evidence of the integrity of the signed data**.'
+  ];
+  // Éviter de confondre cette explication générale et le résultat de CE fichier.
+  if(trustLevel==='bad'){
+    paragraphs.push(fr
+      ?'**Pour cette photo, au moins un contrôle a échoué : son intégrité ne peut pas être garantie.**'
+      :'**For this photo, at least one check failed: its integrity cannot be guaranteed.**');
+  }else if(isUntrusted || trustSource==='untrusted'){
+    paragraphs.push(fr
+      ?'**Pour cette photo, le certificat n’est pas reconnu par les listes consultées. Cela ne signifie pas que l’image a été modifiée.**'
+      :'**For this photo, the certificate is not trusted by the lists checked. This does not mean the image was modified.**');
+  }else if(trustLevel==='warn'){
+    paragraphs.push(fr
+      ?'**Pour cette photo, certaines vérifications restent à confirmer.**'
+      :'**For this photo, some checks still need confirmation.**');
   }
-  // Texte éditorial spécifique aux fichiers Canon dont le certificat est
-  // signalé non reconnu par le vérificateur C2PA. Ne pas l'appliquer à Nikon,
-  // à l'AFP ni à une signature Canon dont les contrôles sont concluants.
-  if(who.key==='canon' && isUntrusted && trustLevel!=='bad'){
-    return (uiLanguage==='fr' ? [
-      'Les appareils Canon compatibles C2PA associent à chaque photo un **certificat numérique**, véritable acte de naissance de l’image.',
-      'Ce certificat permet d’identifier l’appareil ou l’organisme qui a signé la photo. Son authenticité est contrôlée à partir de **listes officielles de confiance, publiées en ligne par le C2PA**.',
-      'Un second contrôle compare l’empreinte numérique de la photo à celle enregistrée lors de sa création. **Si l’image a été modifiée sans nouvelle certification C2PA, cette correspondance est rompue et son intégrité ne peut plus être garantie.**',
-      'Lorsque ces vérifications sont concluantes, elles apportent une **preuve cryptographique rigoureuse et pratiquement irréfutable de l’intégrité des données signées**.'
-    ] : [
-      'C2PA-compatible Canon cameras associate a **digital certificate** with each photograph, much like a birth certificate for the image.',
-      'This certificate identifies the camera or organization that signed the photo. Its authenticity is checked against **official trust lists published online by C2PA**.',
-      'A second check compares the photo’s digital fingerprint with the one recorded when it was created. **If the image has been changed without new C2PA certification, the fingerprints no longer match and its integrity cannot be guaranteed.**',
-      'When these checks are successful, they provide **rigorous, practically irrefutable cryptographic evidence of the integrity of the signed data**.'
-    ]).join('\n\n');
-  }
-  const isCameraBrand=['nikon','canon','sony','leica','fujifilm'].includes(who.key);
-  const intro=uiLanguage==='fr'
-    ?`${who.fr} ${isCameraBrand?'signe ses photos':'signe ce contenu'} avec un certificat numérique, comme une carte d’identité ou un bulletin de naissance. Le vérificateur contrôle la signature et cherche une chaîne de confiance reliée à une autorité reconnue par les listes C2PA, comme DigiCert ou Adobe.`
-    :`${who.en} ${isCameraBrand?'signs its photographs':'signs this content'} with a digital certificate, similar to an ID card or birth certificate. The verifier checks the signature and whether its certificate chain leads to an authority recognized by C2PA trust lists, such as DigiCert or Adobe.`;
-  if(trustLevel==='bad')return intro+' '+(uiLanguage==='fr'
-    ?'Dans le cas présent, au moins un contrôle C2PA a échoué. Les informations signées ne peuvent pas être considérées comme vérifiées.'
-    :'In this case, at least one C2PA check failed. The signed information cannot be treated as verified.');
-  if(isUntrusted){
-    return intro+' '+(uiLanguage==='fr'
-      ?'Dans le cas présent, la chaîne de certification n’a pas été reconnue par les listes consultées.'
-      :'In this case, the certificate chain was not recognized by the lists checked.');
-  }
-  if(trustLevel==='warn')return intro+' '+(uiLanguage==='fr'
-    ?'Dans le cas présent, la vérification n’a pas pu être entièrement confirmée.'
-    :'In this case, the checks could not be fully confirmed.');
-  return intro+' '+(uiLanguage==='fr'
-    ?'Dans le cas présent, le vérificateur ne signale pas de problème dans les contrôles retournés.'
-    :'In this case, the verifier reports no issue in the checks it returned.');
+  return paragraphs.join('\n\n');
 }
 
 function afpTrustSourceExplanation(trustSource) {
@@ -3246,12 +3309,45 @@ function afpAttachTrustDirectoryStatus(trust,signerName){
   }).catch(()=>updateEveryVisibleCopy(tr('Liste officielle C2PA : consultation impossible (connexion indisponible).')));
 }
 
+/* Le détail technique est une seule surface à plat, sans sous-panneaux de statut. */
+function afpTrustListFields(photo) {
+  const map={trusted:'Reconnu',untrusted:'Non reconnu',failed:'Échec cryptographique',
+    unavailable:'Liste inaccessible',not_checked:'Non consulté'};
+  const official=photo.trustChecks?.official?.status ?? 'not_checked';
+  const legacy=photo.trustChecks?.legacy?.status ?? 'not_checked';
+  const level=code=>code==='trusted'?'ok':code==='failed'?'bad':code==='untrusted'?'warn':'neutral';
+  return [
+    field('Contrôle de confiance officiel',tr(map[official]||'Résultat non disponible'),level(official)),
+    field('Contrôle de confiance historique',tr(map[legacy]||'Résultat non disponible'),level(legacy))
+  ];
+}
+function afpManifestHistory(photo){
+  const manifests=photo.store?.manifests;
+  const pairs=Array.isArray(manifests)?manifests.map((m,i)=>[m?.label||String(i),m]):
+    manifests&&typeof manifests==='object'?Object.entries(manifests):[];
+  if(!pairs.length)return null;
+  const active=String(photo.store?.active_manifest||photo.store?.activeManifest||'');
+  const rows=pairs.map(([id,m])=>{
+    const isActive=id===active;
+    const generator=firstValue(m?.claim_generator,m?.claimGenerator,m?.claim_generator_info?.[0]?.name,m?.claimGeneratorInfo?.[0]?.name);
+    return field(isActive?'Manifeste actif (version diffusée)':'Manifeste antérieur',
+      generator?readable(generator):String(id).slice(0,72),'neutral');
+  });
+  return section('Historique de provenance',rows);
+}
+function afpRawManifestFold(photo){
+  const pre=document.createElement('pre');pre.textContent=photo.store?JSON.stringify(photo.store,null,2):tr('Informations non disponibles');
+  const fold=readerFold('Données techniques du manifeste (JSON)',pre);
+  fold.classList.add('afp-reader-raw');
+  return fold;
+}
+
 /* ---------- Panneau Content Credentials (bouton logo AFP) ---------- */
 function fillDetails(photo) {
   const origin=originPanelSection(photo);
   if(photo.state==='loading'){
     setStatusLine('loading',tr('Vérification C2PA en cours…'));
-    lbSummary.replaceChildren(origin,readerOpenFold('Certificat',document.createTextNode(tr('Vérification du certificat en cours…'))));lbJson.textContent=tr('Chargement…');return;
+    lbSummary.replaceChildren(origin,readerOpenFold('Certificat',document.createTextNode(tr('Vérification du certificat en cours…'))),afpColorLegend());lbJson.textContent=tr('Chargement…');return;
   }
   if(photo.state==='none'||photo.state==='error'){
     setStatusLine(photo.state==='none'?'none':'error',photo.state==='none'?'Aucun manifeste C2PA intégré détecté.':
@@ -3259,7 +3355,7 @@ function fillDetails(photo) {
     const support=[];
     if(photo.exif?.artist)support.push(field('Auteur déclaré',photo.exif.artist,'neutral'));
     if(photo.exifDate)support.push(field('Date enregistrée par l’appareil',photo.exifDate,'neutral'));
-    lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),...(support.length?[readerFold('Informations sur la photo',section('Informations de production',support))]:[]),readerOpenFold('Certificat',document.createTextNode(tr(photo.state==='none'?'Aucun certificat C2PA détecté dans ce fichier.':'Lecture du certificat C2PA indisponible.'))));
+    lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),readerOpenFold('Certificat',document.createTextNode(tr(photo.state==='none'?'Aucun certificat C2PA détecté dans ce fichier.':'Lecture du certificat C2PA indisponible.'))),...(support.length?[readerFold('Informations sur la photo',section('Informations de production',support))]:[]),afpColorLegend());
     lbJson.textContent=photo.state==='none'?tr('Aucun manifeste trouvé.'):String(photo.error||'');return;
   }
   const entries=photo.validation??[];
@@ -3295,10 +3391,10 @@ function fillDetails(photo) {
     trustText=afpSignerTrustExplanation(signer,'bad',false,photo.trustSource);
     setStatusLine('error','Manifeste présent, mais une ou plusieurs vérifications ont échoué.','bad');
   }else if(verifiedTrustSource){
-    trustLevel='ok';
+    trustLevel=photo.trustSource==='official'?'ok':'warn';
     trustTitle=photo.trustSource==='official'?'Certificat reconnu (liste officielle C2PA)':'Certificat reconnu (ancienne liste C2PA)';
     trustText=afpSignerTrustExplanation(signer,'ok',false,photo.trustSource);
-    setStatusLine('ok','Contrôles C2PA retournés sans problème signalé. Cela ne prouve pas la véracité de la scène.');
+    setStatusLine(trustLevel==='ok'?'ok':'warn',trustLevel==='ok'?'Contrôles C2PA retournés sans problème signalé. Cela ne prouve pas la véracité de la scène.':'Manifeste présent, mais la confiance du signataire nécessite une vérification.');
   }else if(photo.trustSource==='untrusted' || hasUntrustedSigner){
     trustLevel='warn';trustTitle=photo.trustSource==='untrusted'?'Certificat non reconnu par les deux listes':'Certificat numérique à vérifier';
     trustText=afpSignerTrustExplanation(signer,'warn',true,photo.trustSource);
@@ -3312,12 +3408,25 @@ function fillDetails(photo) {
   const trust=document.createElement('section');trust.className='afp-reader-trust';trust.dataset.level=trustLevel;
   trust.setAttribute('aria-label',tr('Qui a signé ces informations ?'));
   const trustH=document.createElement('h3');trustH.className='afp-reader-trust-title';trustH.textContent=tr(trustTitle);
-  const trustP=afpTrustExplanationNode(trustText);
+  const trustP=readerFold('Comprendre le certificat',afpTrustExplanationNode(trustText));
+  trustP.classList.add('afp-reader-trust-more');
   const signerP=document.createElement('div');signerP.className='afp-reader-signer';
   const by=document.createElement('span');by.textContent=tr('Signé par')+' : ';
   const signerName=document.createElement('strong');signerName.textContent=signer?readable(signer):tr('Signataire non identifié');
-  signerP.append(by,signerName);trust.append(trustH,trustP,signerP);
+  const quick=document.createElement('div');quick.className='afp-reader-quickchecks';
+  for(const [title,valid,invalid] of [
+    ['Intégrité',codes.some(c=>/^(?:assertion\.(?:datahash|hasheduri|boxhash|bmffhash)\.match)$/.test(c)),hasIntegrityFailure],
+    ['Signature',codes.includes('claimsignature.validated'),hasSignatureFailure]
+  ]){
+    const status=invalid?'bad':valid?'ok':'neutral';
+    const label=document.createElement('span');label.className='afp-reader-mini-check '+status;
+    const sym=document.createElement('b');sym.textContent=invalid?'×':valid?'✓':'i';
+    label.append(sym,document.createTextNode(tr(title)+' : '+tr(invalid?'Échec':valid?'Vérifiée':'Non confirmée')));
+    quick.append(label);
+  }
+  signerP.append(by,signerName);trust.append(trustH,signerP,quick,trustP);
   afpAppendTrustSourceNote(trust,photo);
+  // Pas de recherche par simple nom de fabricant : un nom dans la liste ne valide pas la chaîne.
 
   const photoInfo=[];
   if(author)photoInfo.push(field('Auteur déclaré',`${author}${authorSource?' : '+authorSource:''}`,'neutral'));
@@ -3348,40 +3457,42 @@ function fillDetails(photo) {
   const certificateBad=hasCode(/^(?:signingcredential\.(?:ocsp\.revoked|invalid|expired|mismatch)|claimsignature\.outsidevalidity)$/);
   const integrityStatus=hasIntegrityFailure?'bad':integrityOk?'ok':'neutral';
   const signatureStatus=hasSignatureFailure?'bad':signatureOk?'ok':'neutral';
-  const certificateStatus=certificateBad?'bad':verifiedTrustSource?'ok':trustLevel==='warn'?'warn':'neutral';
+  const certificateStatus=certificateBad?'bad':photo.trustSource==='legacy'?'warn':verifiedTrustSource?'ok':trustLevel==='warn'?'warn':'neutral';
   const pIntro=document.createElement('p');pIntro.className='afp-reader-technical-intro';
   pIntro.textContent=tr('Ces vérifications portent sur les informations C2PA et leur signature, pas sur la réalité de la scène photographiée.');
   const pTsa=document.createElement('p');pTsa.className='afp-reader-technical-date';
   const tsaTitle=document.createElement('strong');tsaTitle.textContent=tr('Horodatage TSA et date de prise de vue')+' : ';
   pTsa.append(tsaTitle,document.createTextNode(tr('Une heure TSA validée certifie la date de signature. Elle ne remplace pas la date de prise de vue enregistrée par l’appareil (EXIF).')));
-  const rawIntro=document.createElement('p');rawIntro.className='afp-reader-technical-intro';
-  rawIntro.textContent=tr('Cette partie présente les résultats renvoyés par le vérificateur. Une information absente ne signifie pas automatiquement un échec.');
-  const rawFields=[
-    field('Signataire déclaré',signer,'neutral',tr('Signataire déclaré dans le certificat. Ce nom seul ne confirme pas son identité.')),
-    field('Générateur',generator,'neutral',tr('Appareil ou logiciel ayant créé le manifeste C2PA.')),
-    field('Identifiant du manifeste',manifest,'neutral')
-  ];
-  const detailedCodes=readerFold('Codes C2PA et identifiants (avancé)',rawIntro,section('Informations du manifeste',rawFields),section('Résultats techniques de validation',[validationList]));
-  detailedCodes.classList.add('afp-reader-technical-codes');
-  const technical=readerFold('Détails de vérification (technique)',
-    pIntro,
-    section('Comprendre les vérifications',[
-      field('Intégrité du fichier',tr(hasIntegrityFailure?'Différence détectée':integrityOk?'Données signées conformes':'Résultat explicite non communiqué'),integrityStatus,tr('Compare le fichier aux empreintes protégées par les Content Credentials.')),
-      field('Signature cryptographique',tr(hasSignatureFailure?'Signature incorrecte':signatureOk?'Signature vérifiée':'Résultat explicite non communiqué'),signatureStatus,tr('Vérifie que la signature cryptographique correspond aux données du manifeste.')),
-      field('Confiance dans le certificat',tr(certificateBad?'Certificat ou validation en échec':verifiedTrustSource?
-        (photo.trustSource==='official'?'Certificat reconnu (liste officielle C2PA)':'Certificat reconnu (ancienne liste C2PA)'):
-        photo.trustSource==='untrusted'?'Certificat non reconnu par les deux listes':
-        photo.trustSource==='unavailable'?'Contrôle des listes de confiance indisponible':
-        photo.trustSource==='incomplete'?'Contrôle des listes de confiance incomplet':
-        'Vérification à confirmer'),certificateStatus,tr('Vérifie si la chaîne du certificat mène à une autorité de confiance reconnue.'))
-    ]),
-    pTsa,
-    detailedCodes
-  );
-  // Deux volets ouverts par défaut : origine et certificat.
-  // L'aide C2PA, la légende et le JSON restent dans le volet explicatif final.
-  const trustFold=readerOpenFold('Certificat',trust);
-  lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),trustFold,...(photoFold?[photoFold]:[]),technical);
+const rawIntro=document.createElement('p');rawIntro.className='afp-reader-technical-intro';
+rawIntro.textContent=tr('Cette partie présente les résultats renvoyés par le vérificateur. Une information absente ne signifie pas automatiquement un échec.');
+const rawFields=[
+  field('Signataire déclaré',signer,'neutral',tr('Signataire déclaré dans le certificat. Ce nom seul ne confirme pas son identité.')),
+  field('Générateur',generator,'neutral',tr('Appareil ou logiciel ayant créé le manifeste C2PA.')),
+  field('Identifiant du manifeste',manifest,'neutral')
+];
+const technical=readerFold('Détails de vérification (technique)',
+  pIntro,
+  section('Contrôles de sécurité',[
+    field('Intégrité du fichier',tr(hasIntegrityFailure?'Différence détectée':integrityOk?'Données signées conformes':'Résultat explicite non communiqué'),integrityStatus,tr('Compare le fichier aux empreintes protégées par les Content Credentials.')),
+    field('Signature cryptographique',tr(hasSignatureFailure?'Signature incorrecte':signatureOk?'Signature vérifiée':'Résultat explicite non communiqué'),signatureStatus,tr('Vérifie que la signature cryptographique correspond aux données du manifeste.')),
+    field('Confiance dans le certificat',tr(certificateBad?'Certificat ou validation en échec':verifiedTrustSource?
+      (photo.trustSource==='official'?'Certificat reconnu (liste officielle C2PA)':'Certificat reconnu (ancienne liste C2PA)'):
+      photo.trustSource==='untrusted'?'Certificat non reconnu par les deux listes':
+      photo.trustSource==='unavailable'?'Contrôle des listes de confiance indisponible':
+      photo.trustSource==='incomplete'?'Contrôle des listes de confiance incomplet':
+      'Vérification à confirmer'),certificateStatus,tr('Vérifie si la chaîne du certificat mène à une autorité de confiance reconnue.'))
+  ]),
+  section('Listes de confiance C2PA',afpTrustListFields(photo)),
+  pTsa,
+  ...(afpManifestHistory(photo)?[afpManifestHistory(photo)]:[]),
+  section('Informations du manifeste',rawFields),
+  rawIntro,
+  section('Résultats de validation C2PA',[validationList])
+);
+technical.classList.add('afp-reader-technical-flat');
+const trustFold=readerOpenFold('Certificat',trust,afpRawManifestFold(photo));
+lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),
+  trustFold,...(photoFold?[photoFold]:[]),technical,afpColorLegend());
   lbJson.textContent=JSON.stringify(photo.store,null,2);
 }
 
@@ -3688,3 +3799,38 @@ function toggleTapReveal(photo){
 }
 document.querySelector('#tap-reveal-close').addEventListener('click',e=>{e.stopPropagation();hideTapReveal();});
 document.querySelector('#tap-reveal-more').addEventListener('click',e=>{e.stopPropagation();if(currentIdx>=0)openSidePanel(photos[currentIdx]);});
+
+/* AFP : architecture trois niveaux : origine/certificat, photo, vérification complète. */
+const afpReaderV4Style=document.createElement('style');
+afpReaderV4Style.textContent=`
+  #side-panel .afp-reader-trust-more, #credentials .afp-reader-trust-more,
+  .bottom-sheet .afp-reader-trust-more{margin:10px 0 0!important;border-color:rgba(138,163,193,.28)!important}
+  #side-panel .afp-reader-trust-more > summary, #credentials .afp-reader-trust-more > summary,
+  .bottom-sheet .afp-reader-trust-more > summary{font-size:11px!important;font-weight:600!important;opacity:.85!important;min-height:31px!important}
+  .afp-reader-trust .afp-reader-signer{margin-top:5px!important;padding-top:7px!important}
+  .afp-reader-quickchecks{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0 3px}
+  .afp-reader-mini-check{display:inline-flex;align-items:center;gap:5px;
+    font-size:11px;line-height:1.4;padding:5px 7px;border:1px solid rgba(147,162,183,.26);
+    border-radius:7px;color:var(--trust-text);background:rgba(17,28,42,.1)}
+  .afp-reader-mini-check b{display:inline-grid;place-items:center;font-size:11px;
+    width:14px;height:14px;border-radius:50%;background:#8293aa;color:white}
+  .afp-reader-mini-check.ok b{background:#278c60}
+  .afp-reader-mini-check.bad b{background:#ce4b55}
+
+  .afp-reader-technical-flat > .afp-reader-fold-body > .credential-section{
+    margin:10px 0 15px!important;
+  }
+  .afp-reader-technical-flat > .afp-reader-fold-body > .credential-section h3{
+    font-size:12px!important;font-weight:750!important;letter-spacing:.01em;margin:0 0 7px!important;
+  }
+  .afp-reader-technical-flat .validation-list{max-height:none!important;overflow:visible!important}
+  .afp-reader-technical-flat .validation-item{gap:7px!important;padding:9px 8px!important;flex-wrap:wrap!important}
+  .afp-reader-technical-flat .validation-item span:nth-child(2){font-size:11.5px!important}
+  .afp-reader-technical-flat .validation-pill{font-size:10px!important}
+  .afp-reader-raw > .afp-reader-fold-body pre{max-height:400px!important;white-space:pre-wrap!important;
+    overflow-wrap:anywhere!important;font:11px/1.5 ui-monospace,SFMono-Regular,monospace!important}
+  .afp-reader-fold.afp-reader-legend{margin-top:15px!important}
+  .afp-reader-about{margin-bottom:14px!important}
+  .afp-reader-trust-more .afp-reader-fold-body{padding:9px 10px!important}
+`;
+document.head.append(afpReaderV4Style);

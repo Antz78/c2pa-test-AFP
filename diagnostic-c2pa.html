@@ -23,8 +23,20 @@ async function run(){
     const res=await fetch(trustUrl,{cache:'no-store'});
     if(!res.ok)throw new Error('Liste de confiance indisponible : '+res.status);
     const pem=await res.text();
+    const tsaResponse=await fetch('https://raw.githubusercontent.com/c2pa-org/conformance-public/main/trust-list/C2PA-TSA-TRUST-LIST.pem',{cache:'no-store'});
+    if(!tsaResponse.ok) throw Error('TSA trust list unavailable '+tsaResponse.status);
+    const tsaPem=await tsaResponse.text();
     if(!pem.includes('-----BEGIN CERTIFICATE-----'))throw Error('Liste de confiance malformée');
     const context=new Context({verify:{verifyTrust:true,verifyAfterReading:true,verifyTimestampTrust:true,ocspFetch:false},trust:{trustAnchors:pem}});
+    class FullTrustContext extends Context {
+      async toJson() {
+        const settings=JSON.parse(await super.toJson());
+        if(!settings.trust?.anchors?.length)throw Error('Manifest trust anchors missing from SDK configuration');
+        settings.trust.anchors.push({trust_anchors:tsaPem,trust_kind:'tsa',trust_uri:'c2pa_tsa_official'});
+        return JSON.stringify(settings);
+      }
+    }
+    const fullContext=new FullTrustContext({verify:{verifyTrust:true,verifyAfterReading:true,verifyTimestampTrust:true,ocspFetch:false},trust:{trustAnchors:pem}});
     const output=[];
     for(const name of files){
       const r=await fetch('./PHOTOS/'+encodeURIComponent(name),{cache:'no-store'});
@@ -36,6 +48,15 @@ async function run(){
         if(!reader){output.push({name,error:'Manifeste absent'});continue;}
         const store=await reader.manifestStore();
         const record={name,validationState:store?.validation_state??null,checks:extract(store)};
+        let readerFull=null;
+        try {
+          readerFull=await Reader.fromBlob(engine,/\.png$/i.test(name)?'image/png':'image/jpeg',blob,fullContext);
+          if(readerFull){
+            const fullStore=await readerFull.manifestStore();
+            record.withOfficialTsa={validationState:fullStore?.validation_state??null,checks:extract(fullStore)};
+          }else record.withOfficialTsa={error:'No manifest'};
+        }catch(err){record.withOfficialTsa={error:String(err?.message||err)};}
+        finally {if(readerFull)await readerFull.free();}
         output.push(record);
         const a=document.createElement('article');
         const h=document.createElement('h2');h.textContent=name;

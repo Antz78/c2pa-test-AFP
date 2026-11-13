@@ -1247,7 +1247,7 @@ function afpExtractValidationResults(store) {
     if(!raw)return;
     const code=String(typeof raw==='string'?raw:raw?.code??raw?.status??'').trim();
     if(!code)return;
-    const key=code.toLowerCase()+'|'+String(raw?.url??'');
+    const key=kind+'|'+code.toLowerCase()+'|'+String(raw?.url??'');
     if(seen.has(key))return;
     seen.add(key);
     entries.push({...((raw && typeof raw==='object')?raw:{}),code,afpResultKind:kind});
@@ -1284,9 +1284,11 @@ function afpHasTrustedCertificate(result) {
 function afpHasCriticalFailure(result) {
   // Un ancrage absent d'une liste n'est pas un échec cryptographique.
   // Même distinction pour l'OCSP non consulté ou les exclusions documentées.
-  return afpValidationCodes(result).some(code =>
-    validationLevel(code)==='bad' &&
-    !/^(?:signingcredential\.(?:untrusted|unknown|ocsp\.inaccessible)|algorithm\.unsupported)$/.test(code));
+  return (result?.validation||[]).some(entry => {
+    const code=String(typeof entry==='string'?entry:entry?.code??entry?.status??'').toLowerCase();
+    return validationLevel(entry)==='bad' &&
+      !/^(?:signingcredential\.(?:untrusted|unknown|ocsp\.inaccessible)|algorithm\.unsupported)$/.test(code);
+  });
 }
 function afpBenignNotice(entry) {
   const code=String(typeof entry==='string'?entry:entry?.code??entry?.status??'').toLowerCase();
@@ -1392,6 +1394,12 @@ async function analyze(photo) {
       photo.store=check.store; photo.active=check.active; photo.validation=check.validation; photo.validationState=check.validationState;
       photo.trustSource=check.trustSource; photo.trustChecks=check.trustChecks;
       const levels=photo.validation.map(validationLevel);
+      // Never suppress the exact SDK reason behind a red result.
+      const blockingCodes=photo.validation.filter(v=>validationLevel(v)==='bad')
+        .map(v=>String(typeof v==='string'?v:v?.code??v?.status??''));
+      if(blockingCodes.length) console.warn('[AFP C2PA] Échecs bloquants',photo.name,{
+        blockingCodes,trustChecks:photo.trustChecks,validationState:photo.validationState
+      });
       const certificateTrusted=afpHasTrustedCertificate(check);
       const unknownChecks=photo.validation.some(v=>validationLevel(v)==='neutral' && !afpBenignNotice(v));
       photo.state=!check.store?'none':levels.includes('bad')?'bad':
@@ -3418,8 +3426,10 @@ function fillDetails(photo) {
   const hasUntrustedSigner=codes.some(c=>/signingcredential\.(?:untrusted|unknown)|signer\.untrusted/.test(c));
   const verifiedTrustSource=['official','legacy'].includes(photo.trustSource) &&
     (photo.validationState==='trusted' || codes.includes('signingcredential.trusted'));
-  const hasIntegrityFailure=codes.some(c=>/assertion\.datahash\.mismatch|assertion\.bmffhash\.mismatch|assertion\.hasheduri\.mismatch|assertion\.boxhash\.mismatch|hash\.mismatch/.test(c));
-  const hasSignatureFailure=codes.some(c=>/claimsignature\.mismatch|claimsignature\.invalid|signature\.invalid/.test(c));
+  const failingEntries=entries.filter(e=>validationLevel(e)==='bad');
+  const failingCodes=failingEntries.map(e=>String(typeof e==='string'?e:e?.code??e?.status??'').toLowerCase());
+  const hasIntegrityFailure=failingCodes.some(c=>/assertion\.datahash\.mismatch|assertion\.bmffhash\.mismatch|assertion\.hasheduri\.mismatch|assertion\.boxhash\.mismatch|hash\.mismatch/.test(c));
+  const hasSignatureFailure=failingCodes.some(c=>/claimsignature\.mismatch|claimsignature\.invalid|signature\.invalid/.test(c));
   const a=photo.active??{};
   const sig=signatureOf(a);
   const signer=firstValue(sig.name,sig.issuer,sig.organization,a.signer);
@@ -3441,8 +3451,11 @@ function fillDetails(photo) {
 
   let trustLevel='neutral',trustTitle,trustText;
   if(levels.includes('bad')){
+    const failingCodes=entries.filter(e=>validationLevel(e)==='bad').map(validationText);
     trustLevel='bad';trustTitle='Une vérification de provenance a échoué.';
     trustText=afpSignerTrustExplanation(signer,'bad',false,photo.trustSource);
+    // Give the exact failed SDK checks instead of attributing a failure to a trust list.
+    if(failingCodes.length) trustText += '\n\nCodes C2PA en échec : '+failingCodes.join(', ');
     setStatusLine('error','Manifeste présent, mais une ou plusieurs vérifications ont échoué.','bad');
   }else if(verifiedTrustSource){
     trustLevel=photo.trustSource==='official'?'ok':'warn';
@@ -3508,7 +3521,7 @@ function fillDetails(photo) {
   const integrityOk=hasCode(/^(?:assertion\.(?:datahash|bmffhash|boxhash|hasheduri)\.match)$/) || photo.validationState==='trusted';
   const signatureOk=hasCode(/^claimsignature\.validated$/) || photo.validationState==='trusted';
   const certificateOk=hasCode(/^signingcredential\.trusted$/);
-  const certificateBad=hasCode(/^(?:signingcredential\.(?:ocsp\.revoked|invalid|expired|mismatch)|claimsignature\.outsidevalidity)$/);
+  const certificateBad=failingCodes.some(c=>/^(?:signingcredential\.(?:ocsp\.revoked|invalid|expired|mismatch)|claimsignature\.outsidevalidity)$/.test(c));
   const integrityStatus=hasIntegrityFailure?'bad':integrityOk?'ok':'neutral';
   const signatureStatus=hasSignatureFailure?'bad':signatureOk?'ok':'neutral';
   const certificateStatus=certificateBad?'bad':photo.trustSource==='legacy'?'warn':verifiedTrustSource?'ok':trustLevel==='warn'?'warn':'neutral';

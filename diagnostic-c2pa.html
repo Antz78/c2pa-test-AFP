@@ -7,7 +7,7 @@
 <button id="run">Comparer les deux PNG</button><p id="status" aria-live="polite"></p><div id="results"></div>
 <script type="module">
 const version='0.17.0';
-const files=['Dragon au-dessus de DC.png','Homme en feu devant un mur de briques.png'];
+const files=['PXL_20260919_120202065.jpg.jpeg','PXL_20260928_145658138.jpg.jpeg','PXL_20261007_114640615.jpg.jpeg','Pixel-10.jpg','Dragon au-dessus de DC.png','Homme en feu devant un mur de briques.png'];
 const trustUrl='https://raw.githubusercontent.com/c2pa-org/conformance-public/main/trust-list/C2PA-TRUST-LIST.pem';
 const status=document.querySelector('#status'),results=document.querySelector('#results');
 function extract(s){
@@ -32,7 +32,7 @@ async function run(){
       const blob=await r.blob();
       let reader;
       try{
-        reader=await Reader.fromBlob(engine,'image/png',blob,context);
+        reader=await Reader.fromBlob(engine,/\.png$/i.test(name)?'image/png':'image/jpeg',blob,context);
         if(!reader)throw Error('Manifeste absent');
         const store=await reader.manifestStore();
         const record={name,validationState:store?.validation_state??null,checks:extract(store)};

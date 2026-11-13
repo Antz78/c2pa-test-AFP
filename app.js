@@ -3475,6 +3475,11 @@ function fillDetails(photo) {
   const author=firstValue(c2paAuthor,photo.exif?.artist,photo.exif?.copyright);
   const authorSource=c2paAuthor?'C2PA':photo.exif?.artist?'EXIF Artist':photo.exif?.copyright?tr('EXIF Copyright (crédit déclaré)'):null;
 
+  // The lead status is the GLOBAL photo result, not only certificate trust.
+  // A trusted signer can coexist with an untrusted TSA (orange overall).
+  const hasTsaWarning=codes.includes('timestamp.untrusted') ||
+    codes.includes('timeofsigning.untrusted');
+  const hasExpiredCredential=failingCodes.includes('signingcredential.expired');
   let trustLevel='neutral',trustTitle,trustText;
   if(levels.includes('bad')){
     const failingCodes=entries.filter(e=>validationLevel(e)==='bad').map(validationText);
@@ -3482,12 +3487,28 @@ function fillDetails(photo) {
     trustText=afpSignerTrustExplanation(signer,'bad',false,photo.trustSource);
     // Give the exact failed SDK checks instead of attributing a failure to a trust list.
     if(failingCodes.length) trustText += '\n\nCodes C2PA en échec : '+failingCodes.join(', ');
+    if(hasExpiredCredential) {
+      trustTitle=uiLanguage==='en'?'Signing certificate expired — validation failed':'Certificat de signature expiré — validation en échec';
+      trustText += uiLanguage==='en'
+        ? '\n\nThe SDK reports an expired signing certificate. The available timestamp is not trusted, so the certificate cannot be validated retrospectively. This is not proof that the image pixels were changed.'
+        : '\n\nLe SDK signale un certificat de signature expiré. L’horodatage disponible n’étant pas reconnu, la validité du certificat à la date de signature ne peut pas être établie. Cela ne prouve pas que les pixels ont été modifiés.';
+    }
     setStatusLine('error','Manifeste présent, mais une ou plusieurs vérifications ont échoué.','bad');
   }else if(verifiedTrustSource){
-    trustLevel=photo.trustSource==='official'?'ok':'warn';
-    trustTitle=photo.trustSource==='official'?'Certificat reconnu (liste officielle C2PA)':'Certificat reconnu (ancienne liste C2PA)';
+    // Match the main panel accent to the same global state as the image badge.
+    // The independent certificate row below remains green when it is trusted.
+    trustLevel=photo.state==='warn'?'warn':photo.trustSource==='official'?'ok':'warn';
+    trustTitle=hasTsaWarning
+      ? (uiLanguage==='en'?'Signature trusted — timestamp requires review':'Signature reconnue — horodatage à vérifier')
+      :photo.trustSource==='official'?'Certificat reconnu (liste officielle C2PA)':'Certificat reconnu (ancienne liste C2PA)';
     trustText=afpSignerTrustExplanation(signer,'ok',false,photo.trustSource);
-    setStatusLine(trustLevel==='ok'?'ok':'warn',trustLevel==='ok'?'Contrôles C2PA retournés sans problème signalé. Cela ne prouve pas la véracité de la scène.':'Manifeste présent, mais la confiance du signataire nécessite une vérification.');
+    if(hasTsaWarning) trustText += uiLanguage==='en'
+      ? '\n\nThe signature certificate is trusted, but the timestamp authority is not. This is why the overall image badge is amber, while the certificate check is green.'
+      : '\n\nLe certificat de signature est reconnu, mais l’autorité d’horodatage ne l’est pas. La pastille de l’image est donc orange, tandis que le contrôle du certificat reste vert.';
+    setStatusLine(trustLevel==='ok'?'ok':'warn',
+      hasTsaWarning
+        ? (uiLanguage==='en'?'Signature trusted; timestamp authority not trusted.':'Signature reconnue ; autorité d’horodatage non reconnue.')
+        : trustLevel==='ok'?'Contrôles C2PA retournés sans problème signalé. Cela ne prouve pas la véracité de la scène.':'Manifeste présent, mais la confiance du signataire nécessite une vérification.');
   }else if(photo.trustSource==='untrusted' || hasUntrustedSigner){
     trustLevel='warn';trustTitle=photo.trustSource==='untrusted'?'Certificat non reconnu par les deux listes':'Certificat numérique à vérifier';
     trustText=afpSignerTrustExplanation(signer,'warn',true,photo.trustSource);

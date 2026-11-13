@@ -6,7 +6,7 @@ try {
   await page.goto('http://127.0.0.1:8765/index.html',{waitUntil:'domcontentloaded'});
   await page.waitForFunction(()=>{
     const cards=Array.from(document.querySelectorAll('#grid [data-idx]'));
-    return cards.length===2 && cards.every(c=>{
+    return cards.length===5 && cards.every(c=>{
       const tag=c.querySelector('.tag');
       return tag && !tag.classList.contains('loading');
     });
@@ -16,7 +16,10 @@ try {
     caption:c.textContent?.trim().slice(0,140)
   })));
   console.log('Gallery integration:',JSON.stringify(results,null,2));
-  if(results.length!==2)throw Error('Expected two gallery cards');
-  if(results.some(item=>!['ok','warn'].includes(item.state)))
-    throw Error('Gallery classified an OpenAI example as an invalid signature or unreadable file');
+  if(results.length!==5)throw Error('Expected five gallery cards');
+  for(let i=0;i<results.length;i++){
+    const expected=i<3?'ok':'warn';
+    if(results[i].state!==expected)
+      throw Error('Unexpected C2PA status for '+results[i].caption+': '+results[i].state+' instead of '+expected);
+  }
 }finally{await browser.close();}

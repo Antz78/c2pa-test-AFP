@@ -6,7 +6,7 @@ console.info('[C2PA AFP] Version filtres v3 chargée : badges À vérifier');
 //  B) Sinon, glissez le dossier PHOTOS/ (ou des photos) directement sur la page.
 // Version SDK fixée pour éviter les changements silencieux du CDN.
 // Le SDK C2PA est chargé à la demande : une panne du CDN ne bloque PLUS la galerie.
-const SDK_URL = 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.16.1/+esm';
+const SDK_URL = 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.17.0/+esm';
 let C2paReader = null;
 let C2paContext = null;
 let sdkFailure = null; // dernière panne temporaire, jamais mémorisée définitivement
@@ -679,7 +679,7 @@ function mountCurl(button, opts = {}) {
   return ctl;
 }
 
-const WASM_URL = 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.16.1/dist/resources/c2pa_bg.wasm';
+const WASM_URL = 'https://cdn.jsdelivr.net/npm/@contentauth/c2pa-web@0.17.0/dist/resources/c2pa_bg.wasm';
 const IMAGE_RE = /\.(jpe?g|png|webp|tiff?)$/i;
 
 const grid = document.querySelector('#grid');
@@ -983,7 +983,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.16.1-official-trust-20261113-v1';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-official-trust-20261113-v1';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {

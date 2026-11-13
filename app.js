@@ -51,6 +51,11 @@ const TRANSLATIONS = {
   'Appareil ou logiciel ayant créé le manifeste C2PA.': 'Device or software that created the C2PA manifest.',
   'Codes C2PA et identifiants (avancé)': 'C2PA status codes and identifiers (advanced)',
   'Horodatage TSA et date de prise de vue': 'TSA timestamp and capture date',
+  'Horodatage TSA': 'TSA time stamp',
+  'Horodatage certifié et reconnu': 'Certified, trusted time stamp',
+  'Horodatage à vérifier': 'Time stamp needs review',
+  'Horodatage valide, confiance à confirmer': 'Valid time stamp, trust not confirmed',
+  'Aucun contrôle TSA confirmé': 'No confirmed TSA check',
   'Une heure TSA validée certifie la date de signature. Elle ne remplace pas la date de prise de vue enregistrée par l’appareil (EXIF).': 'A validated TSA timestamp certifies the signing time. It does not replace the capture date recorded by the camera (EXIF).',
   'Cette partie présente les résultats renvoyés par le vérificateur. Une information absente ne signifie pas automatiquement un échec.': 'This section shows the verifier’s results. A missing result does not automatically mean a failed check.',
 
@@ -978,7 +983,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.15.4-trust-ui-20261113-v4';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.15.4-validation-results-20261113-v5';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -1025,7 +1030,7 @@ async function afpWriteRecord(photo, digest) {
   try {
     record = JSON.stringify({ url, hash:digest, sdk:AFP_ENGINE_VERSION, savedAt:Date.now(),
       state:photo.state, store:photo.store ?? null, active:photo.active ?? null,
-      validation:photo.validation ?? [], trustSource:photo.trustSource ?? null, trustChecks:photo.trustChecks ?? null,
+      validation:photo.validation ?? [], validationState:photo.validationState ?? null, trustSource:photo.trustSource ?? null, trustChecks:photo.trustChecks ?? null,
       exif:photo.exif ?? null });
     if (record.length > AFP_MAX_METADATA_BYTES) return;
     record = JSON.parse(record);
@@ -1100,7 +1105,7 @@ function afpRefreshPhoto(photo) {
 function afpRestoreRecord(photo, rec, digest) {
   if (!rec || rec.sdk!==AFP_ENGINE_VERSION || rec.hash!==digest || !['ok','warn','bad','none'].includes(rec.state)) return false;
   photo.state=rec.state; photo.store=rec.store; photo.active=rec.active;
-  photo.validation=rec.validation || []; photo.trustSource=rec.trustSource || null; photo.trustChecks=rec.trustChecks || null;
+  photo.validation=rec.validation || []; photo.validationState=rec.validationState || null; photo.trustSource=rec.trustSource || null; photo.trustChecks=rec.trustChecks || null;
   photo.exif=rec.exif || null; photo.exifDate=photo.exif?.date;
   photo.cacheStatus='stored'; photo.cacheSavedAt=rec.savedAt; photo.error=null;
   photo.recheckingCache=false;
@@ -1227,11 +1232,54 @@ async function afpTrustContext(source) {
   }
   return afpTrustContexts.get(source);
 }
+/* Le SDK renvoie deux formats distincts :
+   - validation_results.activeManifest : les succès, avertissements et échecs ;
+   - validation_status (ancien format) : principalement les erreurs.
+   Lire seulement validation_status masquait les contrôles réussis, notamment
+   les certificats Google Pixel, la signature, l'empreinte et le TSA. */
+function afpExtractValidationResults(store) {
+  const results=store?.validation_results??store?.validationResults;
+  const active=results?.activeManifest??results?.active_manifest??null;
+  const old=store?.validation_status??store?.validationStatus??[];
+  const entries=[];
+  const seen=new Set();
+  const add=(raw,kind)=>{
+    if(!raw)return;
+    const code=String(typeof raw==='string'?raw:raw?.code??raw?.status??'').trim();
+    if(!code)return;
+    const key=code.toLowerCase()+'|'+String(raw?.url??'');
+    if(seen.has(key))return;
+    seen.add(key);
+    entries.push({...((raw && typeof raw==='object')?raw:{}),code,afpResultKind:kind});
+  };
+  if(active && typeof active==='object') {
+    // Conserver les catégories officielles sans deviner le succès par le nom du code.
+    for(const key of ['success','informational','failure']) {
+      for(const item of (Array.isArray(active[key])?active[key]:[]))add(item,key);
+    }
+  }
+  // Certains SDK anciens ne fournissent pas les succès, mais uniquement
+  // validation_status. Les incorporer sans perdre les résultats modernes.
+  for(const item of (Array.isArray(old)?old:[])){
+    const code=String(typeof item==='string'?item:item?.code??'').toLowerCase();
+    let kind='informational';
+    if(item?.success===true)kind='success';
+    else if(item?.success===false)kind='failure';
+    else if(/^(?:signingcredential\.(?:untrusted|unknown|ocsp\.inaccessible)|algorithm\.unsupported)$/.test(code))kind='failure';
+    else if(/(?:\.mismatch|\.invalid|\.malformed|\.revoked|\.expired|\.outsidevalidity)$/.test(code))kind='failure';
+    add(item,kind);
+  }
+  const rawState=store?.validation_state??store?.validationState??null;
+  const state=typeof rawState==='string'?rawState.toLowerCase():
+    typeof rawState==='object'&&rawState?String(rawState.state??rawState.status??'').toLowerCase():null;
+  return {entries,state};
+}
 function afpValidationCodes(result) {
-  return (result?.validation || []).map(v=>String(typeof v==='string'?v:v?.code??v?.status??'').toLowerCase());
+  return (result?.validation||[]).map(v=>String(typeof v==='string'?v:v?.code??v?.status??'').toLowerCase());
 }
 function afpHasTrustedCertificate(result) {
-  return afpValidationCodes(result).some(c=>/^signingcredential\.trusted$/.test(c));
+  if (result?.validationState==='trusted') return true;
+  return afpValidationCodes(result).some(c=>c==='signingcredential.trusted');
 }
 function afpHasCriticalFailure(result) {
   // Un ancrage absent d'une liste n'est pas un échec cryptographique.
@@ -1249,11 +1297,11 @@ async function afpReadC2pa(engine,mime,blob,source) {
   let reader=null;
   try {
     reader=await C2paReader.fromBlob(engine,mime,blob,ctx);
-    if(!reader) return {store:null,active:null,validation:[]};
+    if(!reader) return {store:null,active:null,validation:[],validationState:null};
     const store=await reader.manifestStore();
-    const entries=store?.validation_status??store?.validationStatus??[];
+    const {entries, state}=afpExtractValidationResults(store);
     const active=await reader.activeManifest().catch(()=>null);
-    return {store,active,validation:Array.isArray(entries)?entries:[]};
+    return {store,active,validation:entries,validationState:state};
   } finally {
     if(reader) try {await reader.free();} catch (_) {}
   }
@@ -1325,7 +1373,7 @@ async function analyze(photo) {
       // Si la photo téléchargée a changé : ne JAMAIS reprendre son ancien statut.
       if (restore && digest!==cachedMetadata.hash) {
         restore=false; photo.cacheStatus=null; photo.cacheSavedAt=null;
-        photo.state='loading'; photo.store=null; photo.active=null; photo.validation=[]; photo.trustSource=null; photo.trustChecks=null;
+        photo.state='loading'; photo.store=null; photo.active=null; photo.validation=[]; photo.validationState=null; photo.trustSource=null; photo.trustChecks=null;
         afpRefreshPhoto(photo);
       }
       if (!photo.exif || !restore) {
@@ -1341,7 +1389,7 @@ async function analyze(photo) {
       const engine=await ensureC2pa();
       const mime=({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',tif:'image/tiff',tiff:'image/tiff'})[ext]||blob.type;
       const check=await afpValidateAgainstTrustLists(engine,mime,blob);
-      photo.store=check.store; photo.active=check.active; photo.validation=check.validation;
+      photo.store=check.store; photo.active=check.active; photo.validation=check.validation; photo.validationState=check.validationState;
       photo.trustSource=check.trustSource; photo.trustChecks=check.trustChecks;
       const levels=photo.validation.map(validationLevel);
       const certificateTrusted=afpHasTrustedCertificate(check);
@@ -2691,6 +2739,9 @@ function present(value) { return value === null || value === undefined || value 
 function validationLevel(v) {
   const code = String(typeof v === 'string' ? v : v?.code ?? v?.status ?? '').trim().toLowerCase();
   if (!code) return 'neutral';
+  // Catégories explicites du SDK (en conservant l'orange pédagogique pour untrusted).
+  if (v?.afpResultKind==='informational') return 'neutral';
+  if (v?.afpResultKind==='success') return 'ok';
   const informational = new Set([
     'signingcredential.ocsp.skipped','assertion.datahash.additionalexclusionspresent',
     'ingredient.unknownprovenance','assertion.redacted',
@@ -2702,6 +2753,7 @@ function validationLevel(v) {
   if (/^(?:claimsignature\.(?:outsidevalidity|mismatch|invalid)|signingcredential\.ocsp\.revoked)$/.test(code)) return 'bad';
   if (/\.(?:mismatch|invalid|malformed|missing|revoked|failure|error|outofrange|outsidevalidity)$/.test(code)) return 'bad';
   if (/\.(?:validated|trusted|match|insidevalidity|notrevoked|success)$/.test(code)) return 'ok';
+  if (v?.afpResultKind==='failure') return 'bad';
   return 'neutral';
 }
 function signatureOf(a) {
@@ -3363,7 +3415,7 @@ function fillDetails(photo) {
   const codes=entries.map(v=>String(typeof v==='string'?v:v?.code??v?.status??'').toLowerCase());
   const hasUntrustedSigner=codes.some(c=>/signingcredential\.(?:untrusted|unknown)|signer\.untrusted/.test(c));
   const verifiedTrustSource=['official','legacy'].includes(photo.trustSource) &&
-    codes.some(c=>/^signingcredential\.trusted$/.test(c));
+    (photo.validationState==='trusted' || codes.includes('signingcredential.trusted'));
   const hasIntegrityFailure=codes.some(c=>/assertion\.datahash\.mismatch|assertion\.bmffhash\.mismatch|assertion\.hasheduri\.mismatch|assertion\.boxhash\.mismatch|hash\.mismatch/.test(c));
   const hasSignatureFailure=codes.some(c=>/claimsignature\.mismatch|claimsignature\.invalid|signature\.invalid/.test(c));
   const a=photo.active??{};
@@ -3415,8 +3467,8 @@ function fillDetails(photo) {
   const signerName=document.createElement('strong');signerName.textContent=signer?readable(signer):tr('Signataire non identifié');
   const quick=document.createElement('div');quick.className='afp-reader-quickchecks';
   for(const [title,valid,invalid] of [
-    ['Intégrité',codes.some(c=>/^(?:assertion\.(?:datahash|hasheduri|boxhash|bmffhash)\.match)$/.test(c)),hasIntegrityFailure],
-    ['Signature',codes.includes('claimsignature.validated'),hasSignatureFailure]
+    ['Intégrité',(codes.some(c=>/^(?:assertion\.(?:datahash|hasheduri|boxhash|bmffhash)\.match)$/.test(c)) || photo.validationState==='trusted'),hasIntegrityFailure],
+    ['Signature',(codes.includes('claimsignature.validated') || photo.validationState==='trusted'),hasSignatureFailure]
   ]){
     const status=invalid?'bad':valid?'ok':'neutral';
     const label=document.createElement('span');label.className='afp-reader-mini-check '+status;
@@ -3451,13 +3503,17 @@ function fillDetails(photo) {
   // N'attribuer du vert qu'à un contrôle effectivement communiqué comme réussi.
   // La simple absence de code d'échec ne suffit pas à déclarer une validation.
   const hasCode=(pattern)=>codes.some(code=>pattern.test(code));
-  const integrityOk=hasCode(/^(?:assertion\.(?:datahash|bmffhash|boxhash|hasheduri)\.match)$/);
-  const signatureOk=hasCode(/^claimsignature\.validated$/);
+  const integrityOk=hasCode(/^(?:assertion\.(?:datahash|bmffhash|boxhash|hasheduri)\.match)$/) || photo.validationState==='trusted';
+  const signatureOk=hasCode(/^claimsignature\.validated$/) || photo.validationState==='trusted';
   const certificateOk=hasCode(/^signingcredential\.trusted$/);
   const certificateBad=hasCode(/^(?:signingcredential\.(?:ocsp\.revoked|invalid|expired|mismatch)|claimsignature\.outsidevalidity)$/);
   const integrityStatus=hasIntegrityFailure?'bad':integrityOk?'ok':'neutral';
   const signatureStatus=hasSignatureFailure?'bad':signatureOk?'ok':'neutral';
   const certificateStatus=certificateBad?'bad':photo.trustSource==='legacy'?'warn':verifiedTrustSource?'ok':trustLevel==='warn'?'warn':'neutral';
+  const tsaValidated=hasCode(/^timestamp\.validated$/);
+  const tsaTrusted=hasCode(/^timestamp\.trusted$/);
+  const tsaIssue=hasCode(/^timestamp\.(?:mismatch|invalid|untrusted|outsidevalidity)$/);
+  const tsaStatus=tsaIssue?'warn':(tsaValidated&&tsaTrusted)?'ok':tsaValidated?'warn':'neutral';
   const pIntro=document.createElement('p');pIntro.className='afp-reader-technical-intro';
   pIntro.textContent=tr('Ces vérifications portent sur les informations C2PA et leur signature, pas sur la réalité de la scène photographiée.');
   const pTsa=document.createElement('p');pTsa.className='afp-reader-technical-date';
@@ -3480,7 +3536,8 @@ const technical=readerFold('Détails de vérification (technique)',
       photo.trustSource==='untrusted'?'Certificat non reconnu par les deux listes':
       photo.trustSource==='unavailable'?'Contrôle des listes de confiance indisponible':
       photo.trustSource==='incomplete'?'Contrôle des listes de confiance incomplet':
-      'Vérification à confirmer'),certificateStatus,tr('Vérifie si la chaîne du certificat mène à une autorité de confiance reconnue.'))
+      'Vérification à confirmer'),certificateStatus,tr('Vérifie si la chaîne du certificat mène à une autorité de confiance reconnue.')),
+    field('Horodatage TSA',tr(tsaStatus==='ok'?'Horodatage certifié et reconnu':tsaIssue?'Horodatage à vérifier':tsaValidated?'Horodatage valide, confiance à confirmer':'Aucun contrôle TSA confirmé'),tsaStatus)
   ]),
   section('Listes de confiance C2PA',afpTrustListFields(photo)),
   pTsa,

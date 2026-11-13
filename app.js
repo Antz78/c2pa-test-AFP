@@ -983,7 +983,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-official-trust-20261113-v1';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-separate-official-tsa-20261113-v2';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -1212,6 +1212,21 @@ const AFP_LEGACY_TRUST_FILES = Object.freeze({
   config:'https://contentcredentials.org/trust/store.cfg',
   allowed:'https://contentcredentials.org/trust/allowed.sha256.txt'
 });
+const AFP_TSA_TRUST_PEM_URL = 'https://raw.githubusercontent.com/c2pa-org/conformance-public/main/trust-list/C2PA-TSA-TRUST-LIST.pem';
+let afpTsaTrustPemPromise=null;
+async function afpTsaTrustPem(){
+  if(!afpTsaTrustPemPromise) {
+    afpTsaTrustPemPromise=(async()=>{
+      const response=await fetchWithTimeout(AFP_TSA_TRUST_PEM_URL,{mode:'cors',cache:'no-cache'},8000);
+      if(!response.ok)throw new Error('Liste de confiance TSA : HTTP '+response.status);
+      const pem=await response.text();
+      if(!/-----BEGIN CERTIFICATE-----[\s\S]*-----END CERTIFICATE-----/.test(pem))
+        throw new Error('Liste de confiance TSA : format inattendu');
+      return pem;
+    })().catch(error=>{afpTsaTrustPemPromise=null;throw error;});
+  }
+  return afpTsaTrustPemPromise;
+}
 const afpTrustContexts = new Map();
 const afpTrustRetryAfter = Object.create(null);
 async function afpTrustContext(source) {
@@ -1237,7 +1252,22 @@ async function afpTrustContext(source) {
         trust.trustConfig=await configResponse.text();
         trust.allowedList=await allowedResponse.text();
       }
-      return new C2paContext({
+      const tsaPem=await afpTsaTrustPem();
+      // c2pa-web 0.17 exposes signer/CAWG anchors through Context, but not TSA
+      // anchors. Preserve its official settings serialization and append a
+      // separate, purpose-scoped TSA anchor at the WASM configuration boundary.
+      class AfpTsaContext extends C2paContext {
+        async toJson(options){
+          const settings=JSON.parse(await super.toJson(options));
+          if(!Array.isArray(settings.trust?.anchors)||!settings.trust.anchors.length)
+            throw new Error('Ancres de signature C2PA absentes');
+          settings.trust.anchors.push({
+            trust_anchors:tsaPem,trust_kind:'tsa',trust_uri:'c2pa_tsa_official'
+          });
+          return JSON.stringify(settings);
+        }
+      }
+      return new AfpTsaContext({
         verify:{verifyTrust:true,verifyAfterReading:true,verifyTimestampTrust:true,ocspFetch:false},
         trust
       });

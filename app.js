@@ -3229,60 +3229,107 @@ function afpFourCheckPanel(checks,{historical=false}={}){
   for(const check of checks)list.append(afpFourCheckCard(check,historical));
   return list;
 }
-/* Le manifeste Nikon parent a SES propres résultats de vérification transmis par
-   l'assertion d'ingrédient. Ne jamais copier les états du manifeste AFP actif. */
+/* Afficher la chaîne dans l'ordre de provenance, des manifestes parents
+   vers la signature active. Jamais par priorité supposée du signataire. */
+function afpChronologicalManifestPairs(store){
+  const raw=store?.manifests;
+  const pairs=Array.isArray(raw)?raw.map((m,i)=>[m?.label??String(i),m]):
+    raw&&typeof raw==='object'?Object.entries(raw):[];
+  const lookup=new Map(pairs);
+  const visited=new Set(),visiting=new Set(),ordered=[];
+  const visit=id=>{
+    if(!lookup.has(id)||visited.has(id)||visiting.has(id))return;
+    visiting.add(id);
+    for(const ing of Array.isArray(lookup.get(id)?.ingredients)?lookup.get(id).ingredients:[]){
+      const parent=ing?.active_manifest??ing?.activeManifest;
+      if(typeof parent==='string')visit(parent);
+    }
+    visiting.delete(id);visited.add(id);ordered.push([id,lookup.get(id)]);
+  };
+  const active=store?.active_manifest??store?.activeManifest;
+  if(typeof active==='string')visit(active);
+  for(const [id] of pairs)visit(id);
+  return ordered;
+}
 function afpHistoricalSignaturePanels(photo){
   const stored=photo?.store?.manifests;
   if(!stored||typeof stored!=='object')return [];
-  const pairs=Array.isArray(stored)?stored.map((m,i)=>[m?.label||String(i),m]):Object.entries(stored);
+  const pairs=afpChronologicalManifestPairs(photo.store);
   const activeKey=String(photo.store.active_manifest??photo.store.activeManifest??'');
   const activeObj=c2paActiveManifest(photo);
   const panels=[];
   for(const [id,manifest] of pairs){
-    if(!manifest||typeof manifest!=='object'||id===activeKey||manifest===activeObj)continue;
+    if(!manifest||typeof manifest!=='object'||String(id)===activeKey||manifest===activeObj)continue;
     const sig=signatureOf(manifest);
     const signer=firstValue(sig?.name,sig?.issuer,sig?.signer,sig?.organization,manifest?.signer);
     if(typeof signer!=='string'||!signer.trim())continue;
     const linked=afpHistoricalVerification(photo.store,id);
     const checks=afpFourChecksFromValidation(linked?.entries??[]);
     const byKey=Object.fromEntries(checks.map(c=>[c.key,c.state]));
-    const label=uiLanguage==='en'?'Earlier C2PA signature — ':'Signature C2PA antérieure — ';
-    const title=label+signer;
-    const intro=document.createElement('p');intro.className='afp-reader-historical-notice';
-    if(linked && byKey.signature==='ok' && byKey.integrity==='ok'){
-      intro.textContent=uiLanguage==='en'
-        ?'This earlier signature and its original manifest hashes were verified. The check applies to the Nikon version, not directly to the pixels of the later AFP file.'
-        :'La signature antérieure et les empreintes du manifeste Nikon original ont été vérifiées. Ce résultat porte sur la version Nikon, pas directement sur les pixels du fichier AFP final.';
-    }else if(linked){
-      intro.textContent=uiLanguage==='en'
-        ?'The SDK returned independent checks for this earlier C2PA manifest.'
-        :'Le SDK a retourné des contrôles indépendants pour ce manifeste C2PA antérieur.';
-    }else{
-      intro.textContent=uiLanguage==='en'
-        ?'Earlier signed manifest present; no separate validation outcome available here.'
-        :'Manifeste signé antérieur présent ; aucun résultat de validation indépendant disponible ici.';
-    }
-    const details=document.createElement('p');details.className='afp-reader-historical-notice';
+    const level=checks.some(c=>c.state==='bad')?'bad':
+      checks.some(c=>c.state==='warn')?'warn':
+      checks.every(c=>c.state==='ok')?'ok':'neutral';
+    const fr=uiLanguage!=='en';
+    const trust=document.createElement('section');
+    trust.className='afp-reader-trust afp-reader-historical-trust';
+    trust.dataset.level=level;
+    const head=document.createElement('h3');head.className='afp-reader-trust-title';
+    head.textContent=level==='bad'
+      ?(fr?'Un contrôle C2PA a échoué':'A C2PA verification failed')
+      :level==='warn'
+        ?(fr?'Certificat numérique à vérifier':'Digital certificate needs verification')
+        :level==='ok'
+          ?(fr?'Vérifications C2PA reconnues':'C2PA checks trusted')
+          :(fr?'Validation historique non confirmée':'Earlier verification not confirmed');
+    const signed=document.createElement('div');signed.className='afp-reader-signer';
+    const by=document.createElement('span');by.textContent=fr?'Signé par : ':'Signed by: ';
+    const name=document.createElement('strong');name.textContent=signer;
+    signed.append(by,name);
+    const four=afpFourCheckPanel(checks,{historical:true});
+    const expl=afpSignerTrustExplanation(signer,level,byKey.certificate==='warn',
+      byKey.certificate==='warn'?'untrusted':null);
+    const about=readerFold(fr?'Comprendre le certificat':'About the certificate',
+      afpTrustExplanationNode(expl));
+    about.classList.add('afp-reader-trust-more');
+    const scope=document.createElement('p');scope.className='afp-reader-historical-notice';
+    scope.textContent=linked&&byKey.integrity==='ok'&&byKey.signature==='ok'
+      ?(fr
+        ?'La signature et les empreintes du manifeste Nikon d’origine ont été vérifiées. Elles concernent la version Nikon, pas directement les pixels de la version AFP.'
+        :'The original Nikon manifest signature and hashes were verified. These checks apply to the Nikon version, not directly to the later AFP image pixels.')
+      :linked
+        ?(fr?'Les résultats affichés concernent uniquement ce manifeste antérieur.':
+          'These results apply only to this earlier manifest.')
+        :(fr?'Ce manifeste antérieur est présent, mais ses résultats de validation indépendants ne sont pas disponibles.':
+          'This earlier manifest is present, but independent verification results are unavailable.');
+    // This link reports availability of a trust service, not a claim that
+    // a certificate is invalid, revoked, or a photo has been falsified.
     if(byKey.certificate==='warn'){
-      details.textContent=uiLanguage==='en'
-        ?'Amber: the Nikon signing certificate is not recognised by the trust lists used. The digital signature can still be valid.'
-        :'Orange : le certificat Nikon n’est pas reconnu par les listes de confiance utilisées. Sa signature numérique peut néanmoins être valide.';
-    }else if(byKey.certificate==='bad'){
-      details.textContent=uiLanguage==='en'
-        ?'Red: the earlier signing certificate failed a blocking validation check.'
-        :'Rouge : le certificat antérieur a échoué à un contrôle bloquant.';
-    }else if(!linked){
-      details.textContent='';
+      const directory=document.createElement('div');directory.className='afp-reader-directory-status';
+      const note=document.createElement('p');
+      note.textContent=fr
+        ?'La confiance dans le certificat de cette signature antérieure n’est pas établie par les listes consultées.'
+        :'Trust in this earlier signing certificate is not established by the lists checked.';
+      const link=document.createElement('a');link.href=AFP_CONFORMANCE_EXPLORER;
+      link.target='_blank';link.rel='noopener noreferrer';
+      link.textContent=fr?'Consulter les listes C2PA':'Browse C2PA lists';
+      directory.append(note,link);
+      trust.append(head,signed,four,about,scope,directory);
     }else{
-      details.textContent=uiLanguage==='en'?'The four checks apply only to this earlier manifest.':
-        'Ces quatre contrôles concernent uniquement ce manifeste antérieur.';
+      trust.append(head,signed,four,about,scope);
     }
-    const info=document.createElement('p');info.className='afp-reader-historical-id';
-    info.textContent=(uiLanguage==='en'?'Manifest ID: ':'Identifiant du manifeste : ')+id;
-    const panel=readerFold(title,intro,afpFourCheckPanel(checks,{historical:true}),...(details.textContent?[details]:[]),info);
+    // Important: this is the actual embedded Nikon manifest, not the AFP
+    // manifest store or a reconstructed copy of the final JPEG.
+    const pre=document.createElement('pre');pre.textContent=JSON.stringify(manifest,null,2);
+    const raw=readerFold(fr?'Données brutes du manifeste (JSON)':'Raw manifest data (JSON)',pre);
+    raw.classList.add('afp-reader-raw');
+    raw.dataset.manifestId=String(id);
+    const panel=readerOpenFold((fr?'Vérification C2PA — ':'C2PA verification — ')+signer,
+      trust,raw);
     panel.classList.add('afp-reader-historical-signature');
     panel.dataset.historicalSigner=signer;
+    panel.dataset.historicalManifestId=String(id);
     panel.dataset.historicalValidation=linked?'independent':'unavailable';
+    panel.dataset.historicalLevel=level;
     panels.push(panel);
   }
   return panels;
@@ -3849,7 +3896,7 @@ function fillDetails(photo) {
   const signerName=document.createElement('strong');signerName.textContent=signer?readable(signer):tr('Signataire non identifié');
   const fourChecks=afpFourChecks(photo);
   const quick=afpFourCheckPanel(fourChecks);
-  const colorExplanation=afpVisibleC2paColorExplanation(photo,fourChecks);
+  // La signification des couleurs est expliquée une seule fois, dans la légende.
   const extraFailure=entries.filter(entry=>validationLevel(entry)==='bad'&&
     !/^(?:assertion\.(?:datahash|hasheduri|bmffhash|boxhash|boxeshash)\.|claimsignature\.|signingcredential\.)/i.test(String(entry?.code??entry?.status??'')));
   if(extraFailure.length){
@@ -3859,7 +3906,7 @@ function fillDetails(photo) {
       :'Autre contrôle C2PA en échec — voir les détails techniques.';
     quick.append(p);
   }
-  signerP.append(by,signerName);trust.append(trustH,signerP,quick,colorExplanation,trustP);
+  signerP.append(by,signerName);trust.append(trustH,signerP,quick,trustP);
   afpAppendTrustSourceNote(trust,photo);
   // Pas de recherche par simple nom de fabricant : un nom dans la liste ne valide pas la chaîne.
 
@@ -3948,7 +3995,7 @@ const trustFold=readerOpenFold(trustLabel,trust,afpRawManifestFold(photo));
 trustFold.classList.add('afp-reader-active-verification');
 const otherSignatures=afpHistoricalSignaturePanels(photo);
 lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),
-  trustFold,...otherSignatures,...(photoFold?[photoFold]:[]),technical,afpColorLegend());
+  ...otherSignatures,trustFold,...(photoFold?[photoFold]:[]),technical,afpColorLegend());
   lbJson.textContent=JSON.stringify(photo.store,null,2);
 }
 

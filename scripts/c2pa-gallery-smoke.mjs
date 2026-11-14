@@ -35,9 +35,13 @@ try {
     const report=await page.locator('#side-panel').evaluate(panel=>{
       const section=Array.from(panel.querySelectorAll('section.credential-section')).find(x=>
         x.querySelector('h3')?.textContent.includes('Filigrane invisible'));
-      const findField=(name)=>Array.from(section.querySelectorAll('.credential-row'))
-        .find(x=>x.querySelector('.field-label')?.textContent.trim()===name)
-        ?.querySelector('.field-value')?.textContent.trim()??null;
+      const findField=(name)=>{
+        const row=Array.from(section.querySelectorAll('.credential-row'))
+          .find(x=>x.querySelector('.field-label')?.textContent.trim()===name);
+        const value=row?.querySelector('.field-value');
+        return value?Array.from(value.childNodes)
+          .filter(n=>n.nodeType===Node.TEXT_NODE).map(n=>n.textContent).join('').trim():null;
+      };
       return {
         watermark:findField('Filigrane invisible'), brand:findField('Marque'),
         technology:findField('Technologie'),

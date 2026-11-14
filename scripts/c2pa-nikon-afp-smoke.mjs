@@ -28,19 +28,33 @@ try {
       return {
         activeTitle:active?.querySelector(':scope>summary')?.textContent,
         activeOpen:active?.open,
+        activeCertificateInfo:Boolean(active?.querySelector('.afp-reader-trust-more > summary')),
         activeChecks:checks(active),
-        explanation:active?.querySelector('.afp-reader-color-explanation')?.textContent??'',
+        duplicateColorNotes:panel.querySelectorAll('.afp-reader-color-explanation').length,
         otherFailure:Boolean(active?.querySelector('.afp-reader-other-failure')),
-        previous:historical.map(n=>({title:n.querySelector('summary')?.textContent,
-          validation:n.dataset.historicalValidation,checks:checks(n),
-          note:n.querySelector('.afp-reader-historical-notice')?.textContent??''})),
+        order:Array.from(panel.querySelectorAll('.afp-reader-historical-signature,.afp-reader-active-verification')).map(n=>
+          n.querySelector(':scope > summary')?.textContent),
+        previous:historical.map(n=>{
+          const raw=n.querySelector('.afp-reader-raw');
+          let parsed=null;try{parsed=JSON.parse(raw?.querySelector('pre')?.textContent??'');}catch(_){}
+          return {title:n.querySelector('summary')?.textContent,
+            open:n.open,validation:n.dataset.historicalValidation,checks:checks(n),
+            background:n.querySelector('.afp-reader-historical-trust')?.dataset.level,
+            certificateInfo:Boolean(n.querySelector('.afp-reader-trust-more > summary')),
+            note:n.querySelector('.afp-reader-historical-notice')?.textContent??'',
+            rawManifest:raw?.querySelector('summary')?.textContent??'',
+            rawSignature:parsed?.signature_info?.issuer??parsed?.signatureInfo?.issuer??'',
+            rawIsIndividual:parsed && !Object.hasOwn(parsed,'manifests'),
+            hasId:raw?.dataset.manifestId===n.dataset.historicalManifestId};
+        }),
         caWG:Array.from(panel.querySelectorAll('.validation-item')).filter(x=>
           x.querySelector('span:nth-child(2)')?.textContent?.trim()==='cawg.x509.credential.untrusted').map(x=>
           ({warning:x.querySelector('.validation-pill')?.classList.contains('warn'),text:x.textContent?.trim()}))
       };
     });
     console.log(files[i],JSON.stringify(data));
-    if(!data.activeOpen||!data.explanation.startsWith('Orange :'))throw Error('Incorrect active amber explanation '+files[i]);
+    if(!data.activeOpen||data.duplicateColorNotes!==0)throw Error('Signers should be open without repeated color explanations: '+files[i]);
+    if(!data.activeCertificateInfo)throw Error('Active certificate help missing');
     if(data.activeChecks.integrity!=='ok'||data.activeChecks.signature!=='ok'||
        data.activeChecks.certificate!=='warn')throw Error('Incorrect active four-check summary '+files[i]);
     if(data.otherFailure)throw Error('Untrusted CAWG identity misleadingly shown as cryptographic failure '+files[i]);
@@ -55,8 +69,16 @@ try {
       const c=data.previous[0].checks;
       if(c.integrity!=='ok'||c.signature!=='ok'||c.certificate!=='warn'||c.timestamp!=='neutral')
         throw Error('Wrong Nikon historical C2PA checks '+JSON.stringify(c));
-      if(!data.previous[0].note.includes('empreintes du manifeste Nikon original'))
-        throw Error('Nikon parent verification scope missing');
+      if(!data.previous[0].note.includes('empreintes du manifeste Nikon') ||
+         !data.previous[0].open || data.previous[0].background!=='warn' ||
+         !data.previous[0].certificateInfo || !data.previous[0].rawIsIndividual ||
+         !data.previous[0].rawManifest.includes('JSON') ||
+         !data.previous[0].rawSignature.includes('NIKON CORPORATION') ||
+         !data.previous[0].hasId)
+        throw Error('Nikon must open first, amber, with its own certificate help and embedded JSON');
+      if(data.order.length!==2 || !data.order[0].includes('NIKON CORPORATION') ||
+         !data.order[1].includes('AGENCE FRANCE-PRESSE'))
+        throw Error('Signatures are not in chronological Nikon-to-AFP order');
       if(!data.caWG.length||!data.caWG.every(x=>x.warning))
         throw Error('CAWG identity certificate trust should be amber');
     }

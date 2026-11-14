@@ -56,6 +56,9 @@ try {
       const active=panel.querySelector('.afp-reader-active-verification');
       return {
         found:Boolean(active), open:active?.open, title:active?.querySelector(':scope > summary')?.textContent??'',
+        visibleExplanation:active?.querySelector('.afp-reader-color-explanation')?.textContent??'',
+        explanationWidth:active?.querySelector('.afp-reader-color-explanation')?.getBoundingClientRect().width??0,
+        technicalCollapsed:Array.from(panel.querySelectorAll('.afp-reader-technical-flat')).every(x=>!x.open),
         statuses:Array.from(active?.querySelectorAll('.afp-reader-check-card')??[]).map(node=>({
           key:node.dataset.check,state:node.dataset.checkState,
           hasHelp:Boolean(node.querySelector('.afp-reader-check-info > summary'))
@@ -68,6 +71,10 @@ try {
     });
     console.log('Four-check verification',i,JSON.stringify(verification));
     if(!verification.found || !verification.open)throw Error('Current signer verification must be open');
+    const expectedLead=i===3||i===4?'Orange :':'Vert :';
+    if(!verification.visibleExplanation.startsWith(expectedLead) ||
+       verification.explanationWidth<50 || !verification.technicalCollapsed)
+      throw Error('Missing visible color explanation or technical fold incorrect for '+i);
     if(!verification.title.includes(i===5?'Google':'OpenAI') && i>=3)
       throw Error('Signer not identified dynamically '+i+' '+verification.title);
     if(verification.statuses.length!==4 ||
@@ -101,6 +108,7 @@ try {
     console.log('Help control geometry:',JSON.stringify(infoLayout));
     await info.locator('summary').click();
     if(!(await info.getAttribute('open')!==null))throw Error('The TSA help button did not open');
+    if(!(await info.locator('p').isVisible()))throw Error('TSA public explanation not visible when opened');
     const description=await info.locator('p').textContent();
     if(!description || description.length<40)throw Error('No plain-language TSA explanation');
     await info.locator('summary').click();

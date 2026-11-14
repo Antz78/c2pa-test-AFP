@@ -305,6 +305,14 @@ const AFP_READER_EXTRA_TRANSLATIONS = {
   'Empreintes et signatures': 'Hashes and signatures',
   'Résultats de validation C2PA': 'C2PA validation results',
   'Informations du manifeste': 'Manifest information',
+  'Filigrane invisible (déclaration C2PA)': 'Invisible watermark (C2PA declaration)',
+  'Filigrane invisible': 'Invisible watermark',
+  'Filigrane déclaré': 'Watermark declared',
+  'Filigrane absent': 'Watermark absent',
+  'Marque': 'Brand',
+  'Technologie': 'Technology',
+  'Description déclarée': 'Declared description',
+  'SynthID (selon OpenAI)': 'SynthID (according to OpenAI)',
   'Historique de provenance': 'Provenance history',
   'Manifeste actif (version diffusée)': 'Active manifest (distributed version)',
   'Manifeste antérieur': 'Earlier manifest',
@@ -2769,7 +2777,7 @@ function field(label, value, level = 'ok', help = '') {
   const name = document.createElement('div'); name.className = 'field-label';
   const labelText = document.createElement('span'); labelText.textContent = tr(label);
   name.append(labelText);
-  const detail = document.createElement('div'); detail.className = 'field-value'; detail.textContent = readable(value);
+  const detail = document.createElement('div'); detail.className = 'field-value'; detail.textContent = value == null || value === '' ? '' : readable(value);
   if (help) { const note = document.createElement('small'); note.textContent = help; detail.append(note); }
   row.append(marker, name, detail);
   if (C2PA_FIELD_HELP[label]) {
@@ -3144,9 +3152,9 @@ function originTechnicalSection(photo) {
   return readerFold('Méthode d’identification (détails)',
     section('D’où vient cette conclusion ?', [
       field('Méthode de classification',tr(pending?'Analyse en cours':basis),'neutral'),
-      field('Valeur exacte du champ',detail.raw??tr('Non renseigné dans le manifeste'),'neutral'),
-      field('Emplacement dans le manifeste',detail.source??tr('Non renseigné dans le manifeste'),'neutral'),
-      field('Action C2PA',detail.action??tr('Non renseigné'),'neutral'),
+      field('Valeur exacte du champ',detail.raw??null,'neutral'),
+      field('Emplacement dans le manifeste',detail.source??null,'neutral'),
+      field('Action C2PA',detail.action??null,'neutral'),
       ...(detail.inferred?[field('Appareil identifié',detail.cameraModel,'neutral'),field('Générateur déclaré',detail.generator,'neutral')]:[])
     ])
   );
@@ -3439,6 +3447,72 @@ function afpTrustListFields(photo) {
     field('Contrôle de confiance historique',tr(map[legacy]||'Résultat non disponible'),level(legacy),detail('legacy'))
   ];
 }
+
+/* Filigrane : déclaration signée dans c2pa.actions / c2pa.actions.v2.
+   Ne jamais interpréter l'absence de déclaration comme une analyse des pixels. */
+function afpWatermarkDeclaration(photo){
+  const manifest=c2paActiveManifest(photo);
+  if(!manifest)return {available:false,declared:false,brand:'',technology:'',source:'',description:'',technologySource:''};
+  const key=photo?.store?.active_manifest??photo?.store?.activeManifest;
+  const stored=key&&photo?.store?.manifests&&!Array.isArray(photo.store.manifests)
+    ? photo.store.manifests[key]:null;
+  const manifests=[manifest,...(stored&&stored!==manifest?[stored]:[])];
+  function decode(value){
+    if(typeof value==='string'&&/^\s*[\[{]/.test(value)){
+      try{return JSON.parse(value);}catch(_){return null;}
+    }
+    return value;
+  }
+  const entries=[];
+  for(const current of manifests){
+    const assertions=decode(current?.assertions);
+    const list=Array.isArray(assertions)?assertions:
+      assertions&&typeof assertions==='object'?Object.entries(assertions).map(([label,data])=>({label,data})):[];
+    const candidates=list.filter(assertion=>/^(?:c2pa\.)?actions(?:\.v\d+)?(?:__\d+)?$/i.test(
+      String(assertion?.label??assertion?.type??assertion?.name??'')));
+    const sources=[...candidates.map(a=>decode(a?.data??a?.value??a?.payload??a)),decode(current?.actions)];
+    for(const source of sources){
+      const actions=Array.isArray(source)?source:source?.actions;
+      if(!Array.isArray(actions))continue;
+      for(const e of actions){
+        const action=decode(e);
+        if(!action||typeof action!=='object')continue;
+        const code=String(action.action??action.name??'');
+        const description=String(action.description??action.details??'');
+        const isWatermark=/^c2pa\.watermarked(?:\.[\w-]+)?$/i.test(code) ||
+          /(?:synth\s*id|watermark|filigran)/i.test(description);
+        if(isWatermark)entries.push({code,description});
+      }
+    }
+  }
+  if(!entries.length)return {available:true,declared:false,brand:'',technology:'',source:'',description:'',technologySource:''};
+  const signal=entries.find(e=>/synth\s*id/i.test(e.description))??entries[0];
+  const signature=signatureOf(manifest);
+  const actor=String(firstValue(signature?.name,signature?.organization,manifest?.signer,
+    manifest?.claim_generator,manifest?.claimGenerator)??'');
+  const brand=/openai/i.test(actor)?'OpenAI':/google/i.test(actor)?'Google':'';
+  const synthDeclared=entries.some(e=>/synth\s*id/i.test(e.description));
+  // OpenAI documents SynthID on supported images, but its C2PA action does
+  // not name the technology. This is not a pixel-level watermark detection.
+  const technology=synthDeclared?'SynthID':brand==='OpenAI'?'SynthID (selon OpenAI)':'';
+  const technologySource=synthDeclared?'Mentionné dans le manifeste C2PA':
+    brand==='OpenAI'?'Documentation OpenAI ; non précisé dans le manifeste':'';
+  return {available:true,declared:true,brand,technology,technologySource,
+    source:signal.code,description:signal.description};
+}
+function afpWatermarkFields(photo){
+  const wm=afpWatermarkDeclaration(photo);
+  return [
+    field('Filigrane invisible',wm.declared?'Filigrane déclaré':wm.available?'Filigrane absent':null,
+      'neutral',wm.declared
+        ? 'Déclaration C2PA signée ; le filigrane n’est pas détecté dans les pixels par cette galerie.'
+        : wm.available?'Aucune déclaration de filigrane dans ce manifeste. Cela ne prouve pas son absence dans les pixels.':''),
+    field('Marque',wm.brand||null,'neutral'),
+    field('Technologie',wm.technology||null,'neutral',wm.technology?wm.technologySource:''),
+    field('Action C2PA',wm.source||null,'neutral'),
+    field('Description déclarée',wm.description||null,'neutral')
+  ];
+}
 function afpManifestHistory(photo){
   const manifests=photo.store?.manifests;
   const pairs=Array.isArray(manifests)?manifests.map((m,i)=>[m?.label||String(i),m]):
@@ -3581,10 +3655,21 @@ function fillDetails(photo) {
 
   const validationList=document.createElement('div');validationList.className='validation-list';
   if(entries.length){
+    // Regrouper l'affichage par code ET gravité sans perdre les résultats bruts.
+    const grouped=new Map();
     for(const entry of entries){
-      const level=validationLevel(entry),item=document.createElement('div');item.className='validation-item';
-      const marker=document.createElement('span');marker.className='signal '+level;marker.textContent=level==='ok'?'✓':level==='warn'?'!':level==='bad'?'×':'i';
-      const code=document.createElement('span');code.textContent=validationText(entry);
+      const level=validationLevel(entry),name=String(validationText(entry));
+      const id=level+'|'+name;
+      if(!grouped.has(id))grouped.set(id,{level,name,count:0});
+      grouped.get(id).count++;
+    }
+    for(const {level,name,count} of grouped.values()){
+      const item=document.createElement('div');item.className='validation-item';
+      const marker=document.createElement('span');marker.className='signal '+level;
+      marker.textContent=level==='ok'?'✓':level==='warn'?'!':level==='bad'?'×':'i';
+      const code=document.createElement('span');
+      code.textContent=name+(count>1?' × '+count:'');
+      if(count>1)code.title=count+' contrôles distincts (détails conservés dans le JSON)';
       const badge=document.createElement('span');badge.className='validation-pill '+level;
       badge.textContent=tr(level==='ok'?'Validé':level==='warn'?'À vérifier':level==='bad'?'Échec':'Indéterminé');
       item.append(marker,code,badge);validationList.append(item);
@@ -3635,6 +3720,7 @@ const technical=readerFold('Détails de vérification (technique)',
   pTsa,
   ...(afpManifestHistory(photo)?[afpManifestHistory(photo)]:[]),
   section('Informations du manifeste',rawFields),
+  section('Filigrane invisible (déclaration C2PA)',afpWatermarkFields(photo)),
   rawIntro,
   section('Résultats de validation C2PA',[validationList])
 );

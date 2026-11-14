@@ -1315,10 +1315,14 @@ function afpExtractValidationResults(store) {
       for(const item of (Array.isArray(active[key])?active[key]:[]))add(item,key);
     }
   }
-  // Certains SDK anciens ne fournissent pas les succès, mais uniquement
-  // validation_status. Les incorporer sans perdre les résultats modernes.
+  // validation_status est un champ de compatibilité pouvant répéter un
+  // résultat déjà catégorisé par validation_results.activeManifest.
+  // Ne pas afficher le même code/URL une deuxième fois avec une autre gravité.
+  const structuredKeys=new Set(entries.map(e=>
+    e.code.toLowerCase()+'|'+String(e.url??'')));
   for(const item of (Array.isArray(old)?old:[])){
     const code=String(typeof item==='string'?item:item?.code??'').toLowerCase();
+    if(structuredKeys.has(code+'|'+String(item?.url??'')))continue;
     let kind='informational';
     if(item?.success===true)kind='success';
     else if(item?.success===false)kind='failure';

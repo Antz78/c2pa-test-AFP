@@ -3488,8 +3488,10 @@ function afpWatermarkDeclaration(photo){
   if(!entries.length)return {available:true,declared:false,brand:'',technology:'',source:'',description:'',technologySource:''};
   const signal=entries.find(e=>/synth\s*id/i.test(e.description))??entries[0];
   const signature=signatureOf(manifest);
-  const actor=String(firstValue(signature?.name,signature?.organization,manifest?.signer,
-    manifest?.claim_generator,manifest?.claimGenerator)??'');
+  // Le SDK renseigne généralement 'issuer', et non 'name', pour le signataire.
+  const actor=String(firstValue(signature?.name,signature?.issuer,signature?.signer,
+    signature?.organization,manifest?.signer,manifest?.claim_generator,
+    manifest?.claimGenerator,sourceLabel(photo))??'');
   const brand=/openai/i.test(actor)?'OpenAI':/google/i.test(actor)?'Google':'';
   const synthDeclared=entries.some(e=>/synth\s*id/i.test(e.description));
   // OpenAI documents SynthID on supported images, but its C2PA action does

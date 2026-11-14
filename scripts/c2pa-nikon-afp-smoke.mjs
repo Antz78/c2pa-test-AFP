@@ -35,8 +35,8 @@ try {
           validation:n.dataset.historicalValidation,checks:checks(n),
           note:n.querySelector('.afp-reader-historical-notice')?.textContent??''})),
         caWG:Array.from(panel.querySelectorAll('.validation-item')).filter(x=>
-          x.textContent?.includes('cawg.x509.credential.untrusted')).map(x=>
-          ({warning:x.querySelector('.validation-pill')?.classList.contains('warn')}))
+          x.querySelector('span:nth-child(2)')?.textContent?.trim()==='cawg.x509.credential.untrusted').map(x=>
+          ({warning:x.querySelector('.validation-pill')?.classList.contains('warn'),text:x.textContent?.trim()}))
       };
     });
     console.log(files[i],JSON.stringify(data));

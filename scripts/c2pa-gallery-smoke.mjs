@@ -3,6 +3,8 @@ const browser=await chromium.launch({headless:true});
 try {
   const page=await browser.newPage();
   page.on('console',m=>{if(m.type()==='error')console.error('Gallery browser:',m.text());});
+  page.on('pageerror',e=>console.error('Uncaught page error:',String(e.stack||e)));
+
   await page.goto('http://127.0.0.1:8765/index.html',{waitUntil:'domcontentloaded'});
   await page.waitForFunction(()=>{
     const cards=Array.from(document.querySelectorAll('#grid [data-idx]'));

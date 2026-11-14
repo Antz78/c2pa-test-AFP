@@ -3073,6 +3073,113 @@ function readerOpenFold(title,...children) {
   fold.open=true;
   return fold;
 }
+
+/* Quatre axes pédagogiques de vérification du manifeste actif.
+   La norme C2PA prévoit davantage de phases : ces contrôles n'en remplacent
+   ni les résultats complets, ni les validations des manifestes ingrédients. */
+function afpFourChecks(photo){
+  if(!photo)return ['integrity','signature','certificate','timestamp'].map(key=>({key,state:'neutral'}));
+  const validation=photo.validation??[];
+  const entries=validation.map(e=>({
+    code:String(typeof e==='string'?e:e?.code??e?.status??'').toLowerCase(),
+    level:validationLevel(e)
+  }));
+  const codeIs=(name,levels)=>entries.some(e=>e.code===name && (!levels||levels.includes(e.level)));
+  const failed=regexp=>entries.some(e=>e.level==='bad'&&regexp.test(e.code));
+  const passed=regexp=>entries.some(e=>e.level==='ok'&&regexp.test(e.code));
+  const integrityFailed=failed(/^(?:assertion\.(?:datahash|hasheduri|bmffhash|boxhash|boxeshash)\.(?:mismatch|invalid)|ingredient\.(?:manifest|claimsignature)\.mismatch)$/);
+  const signatureFailed=failed(/^claimsignature\.(?:mismatch|invalid)$/);
+  const credentialFailed=failed(/^(?:signingcredential\.(?:invalid|expired|mismatch|ocsp\.revoked)|claimsignature\.outsidevalidity)$/);
+  const integrityOk=passed(/^assertion\.(?:datahash|hasheduri|bmffhash|boxhash|boxeshash)\.match$/) || photo.validationState==='trusted';
+  const signatureOk=codeIs('claimsignature.validated',['ok']) || photo.validationState==='trusted';
+  const certificateOk=codeIs('signingcredential.trusted',['ok']) && photo.trustSource==='official';
+  const certificateWarn=codeIs('signingcredential.untrusted') || codeIs('signingcredential.unknown') ||
+    photo.trustSource==='legacy'||photo.trustSource==='untrusted'||
+    photo.trustSource==='unavailable'||photo.trustSource==='incomplete';
+  const timestampIssue=entries.some(e=>/^timestamp\.(?:untrusted|malformed|mismatch|outsidevalidity|credentialinvalid|invalid)$/.test(e.code));
+  const timestampOk=codeIs('timestamp.validated',['ok'])&&codeIs('timestamp.trusted',['ok'])&&!timestampIssue;
+  const timestampPartial=codeIs('timestamp.validated')||codeIs('timestamp.trusted');
+  return [
+    {key:'integrity',state:integrityFailed?'bad':integrityOk?'ok':'neutral'},
+    {key:'signature',state:signatureFailed?'bad':signatureOk?'ok':'neutral'},
+    {key:'certificate',state:credentialFailed?'bad':certificateOk?'ok':certificateWarn?'warn':'neutral'},
+    {key:'timestamp',state:timestampOk?'ok':timestampIssue||timestampPartial?'warn':'neutral'}
+  ];
+}
+function afpFourCheckCard({key,state},historical=false){
+  const fr=uiLanguage!=='en';
+  const names={integrity:fr?'Intégrité':'Integrity',signature:fr?'Signature':'Signature',
+    certificate:fr?'Certificat':'Certificate',timestamp:fr?'Horodatage TSA':'TSA timestamp'};
+  const tips={
+    integrity:fr?'Vérifie que les données protégées et les empreintes correspondent au contenu signé.':'Checks that protected data and hashes match the signed content.',
+    signature:fr?'Vérifie que la signature numérique correspond aux informations du manifeste.':'Checks that the digital signature matches the manifest data.',
+    certificate:fr?'Vérifie si le certificat du signataire est valide et reconnu par une autorité de confiance.':'Checks whether the signer’s certificate is valid and trusted.',
+    timestamp:fr?'Vérifie qu’une autorité reconnue atteste la date de signature. Ce n’est pas la date de prise de vue.':'Checks whether a trusted authority confirms signing time, not when the photo was taken.'
+  };
+  const values={
+    ok:{integrity:fr?'Conforme':'Match',signature:fr?'Valide':'Valid',
+      certificate:fr?'Reconnu':'Trusted',timestamp:fr?'Reconnu':'Trusted'},
+    warn:{integrity:fr?'À vérifier':'Needs review',signature:fr?'À vérifier':'Needs review',
+      certificate:fr?'À vérifier':'Needs review',timestamp:fr?'À vérifier':'Needs review'},
+    bad:{integrity:fr?'Échec':'Failed',signature:fr?'Échec':'Failed',
+      certificate:fr?'Échec':'Failed',timestamp:fr?'Échec':'Failed'},
+    neutral:{integrity:fr?'Non confirmé':'Not confirmed',signature:fr?'Non confirmé':'Not confirmed',
+      certificate:fr?'Non confirmé':'Not confirmed',timestamp:fr?'Non confirmé':'Not confirmed'}
+  };
+  const card=document.createElement('div');card.className='afp-reader-check-card '+state;
+  card.dataset.check=key;card.dataset.checkState=state;
+  const top=document.createElement('div');top.className='afp-reader-check-top';
+  const glyph=document.createElement('span');glyph.className='afp-reader-check-glyph '+state;
+  glyph.textContent=state==='ok'?'✓':state==='bad'?'×':state==='warn'?'!':'i';
+  glyph.setAttribute('aria-hidden','true');
+  const words=document.createElement('span');words.className='afp-reader-check-words';
+  const name=document.createElement('strong');name.textContent=names[key];
+  const value=document.createElement('span');value.className='afp-reader-check-status';value.textContent=values[state][key];
+  words.append(name,value);
+  const help=document.createElement('details');help.className='afp-reader-check-info';
+  const toggle=document.createElement('summary');toggle.textContent='i';
+  toggle.setAttribute('aria-label',(fr?'Comprendre : ':'Explain: ')+names[key]);
+  const copy=document.createElement('p');
+  copy.textContent=tips[key]+(historical
+    ? (fr?' Aucun contrôle individuel de cette signature n’est confirmé ici.':' This signature has no separately confirmed check here.')
+    : '');
+  help.append(toggle,copy);top.append(glyph,words,help);card.append(top);
+  return card;
+}
+function afpFourCheckPanel(checks,{historical=false}={}){
+  const list=document.createElement('div');list.className='afp-reader-fourchecks';
+  for(const check of checks)list.append(afpFourCheckCard(check,historical));
+  return list;
+}
+/* Un manifeste historique n'est pas la signature du fichier actuel :
+   ne jamais lui attribuer les coches provenant du manifeste actif. */
+function afpHistoricalSignaturePanels(photo){
+  const stored=photo?.store?.manifests;
+  if(!stored||typeof stored!=='object')return [];
+  const pairs=Array.isArray(stored)?stored.map((m,i)=>[m?.label||String(i),m]):Object.entries(stored);
+  const activeKey=String(photo.store.active_manifest??photo.store.activeManifest??'');
+  const activeObj=c2paActiveManifest(photo);
+  const panels=[];
+  for(const [id,manifest] of pairs){
+    if(!manifest||typeof manifest!=='object'||id===activeKey||manifest===activeObj)continue;
+    const sig=signatureOf(manifest);
+    const signer=firstValue(sig?.name,sig?.issuer,sig?.signer,sig?.organization,manifest?.signer);
+    // An actual signing credential must be present; a claim generator alone is not one.
+    if(typeof signer!=='string'||!signer.trim())continue;
+    const title=(uiLanguage==='en'?'Other signed manifest — ':'Autre manifeste signé — ')+signer;
+    const intro=document.createElement('p');intro.className='afp-reader-historical-notice';
+    intro.textContent=uiLanguage==='en'
+      ?'This signed manifest is embedded in the asset, but this reader does not provide four independent verification outcomes for it. Grey means unconfirmed, not failed.'
+      :'Ce manifeste signé est intégré au fichier, mais le lecteur ne dispose pas ici de quatre résultats indépendants permettant de le vérifier. Gris signifie non confirmé, pas échec.';
+    const info=document.createElement('p');info.className='afp-reader-historical-id';
+    info.textContent=(uiLanguage==='en'?'Manifest ID: ':'Identifiant du manifeste : ')+id;
+    const checks=afpFourCheckPanel(afpFourChecks(null),{historical:true});
+    const panel=readerFold(title,intro,checks,info);
+    panel.classList.add('afp-reader-historical-signature');
+    panels.push(panel);
+  }
+  return panels;
+}
 function afpColorLegend() {
   // Légende éditoriale AFP. N'affecte ni le statut C2PA, ni la couleur calculée.
   const items=[
@@ -3541,7 +3648,7 @@ function fillDetails(photo) {
   const origin=originPanelSection(photo);
   if(photo.state==='loading'){
     setStatusLine('loading',tr('Vérification C2PA en cours…'));
-    lbSummary.replaceChildren(origin,readerOpenFold('Certificat',document.createTextNode(tr('Vérification du certificat en cours…'))),afpColorLegend());lbJson.textContent=tr('Chargement…');return;
+    lbSummary.replaceChildren(origin,readerOpenFold(uiLanguage==='en'?'C2PA verification':'Vérification C2PA',document.createTextNode(tr('Vérification du certificat en cours…'))),afpColorLegend());lbJson.textContent=tr('Chargement…');return;
   }
   if(photo.state==='none'||photo.state==='error'){
     setStatusLine(photo.state==='none'?'none':'error',photo.state==='none'?'Aucun manifeste C2PA intégré détecté.':
@@ -3549,7 +3656,7 @@ function fillDetails(photo) {
     const support=[];
     if(photo.exif?.artist)support.push(field('Auteur déclaré',photo.exif.artist,'neutral'));
     if(photo.exifDate)support.push(field('Date enregistrée par l’appareil',photo.exifDate,'neutral'));
-    lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),readerOpenFold('Certificat',document.createTextNode(tr(photo.state==='none'?'Aucun certificat C2PA détecté dans ce fichier.':'Lecture du certificat C2PA indisponible.'))),...(support.length?[readerFold('Informations sur la photo',section('Informations de production',support))]:[]),afpColorLegend());
+    lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),readerOpenFold(uiLanguage==='en'?'C2PA verification':'Vérification C2PA',document.createTextNode(tr(photo.state==='none'?'Aucun certificat C2PA détecté dans ce fichier.':'Lecture du certificat C2PA indisponible.'))),...(support.length?[readerFold('Informations sur la photo',section('Informations de production',support))]:[]),afpColorLegend());
     lbJson.textContent=photo.state==='none'?tr('Aucun manifeste trouvé.'):String(photo.error||'');return;
   }
   const entries=photo.validation??[];
@@ -3633,16 +3740,15 @@ function fillDetails(photo) {
   const signerP=document.createElement('div');signerP.className='afp-reader-signer';
   const by=document.createElement('span');by.textContent=tr('Signé par')+' : ';
   const signerName=document.createElement('strong');signerName.textContent=signer?readable(signer):tr('Signataire non identifié');
-  const quick=document.createElement('div');quick.className='afp-reader-quickchecks';
-  for(const [title,valid,invalid] of [
-    ['Intégrité',(codes.some(c=>/^(?:assertion\.(?:datahash|hasheduri|boxhash|bmffhash)\.match)$/.test(c)) || photo.validationState==='trusted'),hasIntegrityFailure],
-    ['Signature',(codes.includes('claimsignature.validated') || photo.validationState==='trusted'),hasSignatureFailure]
-  ]){
-    const status=invalid?'bad':valid?'ok':'neutral';
-    const label=document.createElement('span');label.className='afp-reader-mini-check '+status;
-    const sym=document.createElement('b');sym.textContent=invalid?'×':valid?'✓':'i';
-    label.append(sym,document.createTextNode(tr(title)+' : '+tr(invalid?'Échec':valid?'Vérifiée':'Non confirmée')));
-    quick.append(label);
+  const quick=afpFourCheckPanel(afpFourChecks(photo));
+  const extraFailure=entries.filter(entry=>validationLevel(entry)==='bad'&&
+    !/^(?:assertion\.(?:datahash|hasheduri|bmffhash|boxhash|boxeshash)\.|claimsignature\.|signingcredential\.)/i.test(String(entry?.code??entry?.status??'')));
+  if(extraFailure.length){
+    const p=document.createElement('p');p.className='afp-reader-other-failure';
+    p.textContent=uiLanguage==='en'
+      ?'Other C2PA check(s) failed — see technical verification details.'
+      :'Autre contrôle C2PA en échec — voir les détails techniques.';
+    quick.append(p);
   }
   signerP.append(by,signerName);trust.append(trustH,signerP,quick,trustP);
   afpAppendTrustSourceNote(trust,photo);
@@ -3727,9 +3833,13 @@ const technical=readerFold('Détails de vérification (technique)',
   section('Résultats de validation C2PA',[validationList])
 );
 technical.classList.add('afp-reader-technical-flat');
-const trustFold=readerOpenFold('Certificat',trust,afpRawManifestFold(photo));
+const trustLabel=(uiLanguage==='en'?'C2PA verification — ':'Vérification C2PA — ')+
+  (signer?String(signer):tr('Signataire non identifié'));
+const trustFold=readerOpenFold(trustLabel,trust,afpRawManifestFold(photo));
+trustFold.classList.add('afp-reader-active-verification');
+const otherSignatures=afpHistoricalSignaturePanels(photo);
 lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),
-  trustFold,...(photoFold?[photoFold]:[]),technical,afpColorLegend());
+  trustFold,...otherSignatures,...(photoFold?[photoFold]:[]),technical,afpColorLegend());
   lbJson.textContent=JSON.stringify(photo.store,null,2);
 }
 
@@ -4070,4 +4180,5 @@ afpReaderV4Style.textContent=`
   .afp-reader-about{margin-bottom:14px!important}
   .afp-reader-trust-more .afp-reader-fold-body{padding:9px 10px!important}
 `;
+afpReaderV4Style.textContent += "\n/* Résumé C2PA : quatre axes autonomes, avec explications natives\n   accessibles au clavier et conservées lors du clonage des panneaux. */\n.afp-reader-fourchecks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:11px 0}\n.afp-reader-check-card{min-width:0;padding:9px;border:1px solid rgba(147,162,183,.3);\n  border-radius:9px;background:rgba(17,28,42,.12);color:var(--trust-text)}\n.afp-reader-check-top{display:flex;align-items:center;gap:7px;min-width:0}\n.afp-reader-check-glyph{display:grid;place-items:center;flex:0 0 17px;width:17px;height:17px;\n  font-size:11px;font-weight:750;line-height:1;border-radius:50%;background:#8293aa;color:white}\n.afp-reader-check-glyph.ok{background:#278c60}\n.afp-reader-check-glyph.warn{background:#ce921d;color:#231b0c}\n.afp-reader-check-glyph.bad{background:#ce4b55}\n.afp-reader-check-words{min-width:0;display:flex;flex:1;flex-direction:column;gap:2px}\n.afp-reader-check-words strong{font-size:11px;line-height:1.3;overflow-wrap:anywhere}\n.afp-reader-check-status{font-size:10.5px;opacity:.86}\n.afp-reader-check-info{position:relative;flex:0 0 auto;margin:0!important;padding:0!important;border:0!important}\n.afp-reader-check-info > summary{list-style:none;display:grid;place-items:center;width:19px;height:19px;\n  font-size:12px!important;font-weight:750!important;line-height:1!important;cursor:pointer;border-radius:50%;\n  color:var(--trust-text);background:rgba(130,150,175,.22);border:1px solid rgba(170,187,207,.42)}\n.afp-reader-check-info > summary::-webkit-details-marker{display:none}\n.afp-reader-check-info > summary:focus-visible{outline:2px solid #7bb2ff;outline-offset:2px}\n.afp-reader-check-info > p{position:absolute;top:24px;right:0;z-index:25;min-width:195px;\n  max-width:min(255px,80vw);margin:0!important;padding:9px 10px;border:1px solid #546982;\n  border-radius:9px;background:#182435;color:#f2f5fa;font-size:11px;line-height:1.48;\n  font-weight:400;box-shadow:0 10px 25px #0008}\n.afp-reader-historical-notice{font-size:12px;line-height:1.5;margin:8px 0 10px;color:#acb9c9}\n.afp-reader-historical-id{font-size:10px;overflow-wrap:anywhere;opacity:.7}\n.afp-reader-historical-signature .afp-reader-fourchecks{margin:10px 0}\n.afp-reader-other-failure{grid-column:1 / -1;padding:9px;border:1px solid #d97676;border-radius:7px;\n  color:#ffb3b3;font-size:11px}\n@media(max-width:360px){.afp-reader-fourchecks{grid-template-columns:1fr}}\n";
 document.head.append(afpReaderV4Style);

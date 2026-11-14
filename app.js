@@ -3146,6 +3146,42 @@ function afpFourCheckCard({key,state},historical=false){
   help.append(toggle,copy);top.append(glyph,words,help);card.append(top);
   return card;
 }
+function afpVisibleC2paColorExplanation(photo,checks){
+  const fr=uiLanguage!=='en';
+  const global=photo.state==='ok'?'ok':photo.state==='warn'?'warn':
+    ['bad','error'].includes(photo.state)?'bad':'neutral';
+  const statuses=Object.fromEntries(checks.map(c=>[c.key,c.state]));
+  let reason='';
+  if(global==='ok'){
+    reason=statuses.timestamp==='ok'
+      ?(fr?'Intégrité, signature, certificat et horodatage reconnus. Aucun échec bloquant signalé.':'Integrity, signature, certificate and timestamp checks passed. No blocking failure reported.')
+      :(fr?'Les contrôles essentiels sont validés. L’horodatage facultatif n’est pas confirmé.':'The essential checks passed; optional timestamp was not confirmed.');
+  }else if(global==='warn'&&statuses.timestamp==='warn'&&statuses.certificate==='ok'){
+    reason=fr
+      ?'La signature, l’intégrité et le certificat sont reconnus. L’autorité d’horodatage ne l’est pas : la date de signature reste à confirmer.'
+      :'Signature, integrity and certificate are trusted. The timestamp authority is not: signing time remains unconfirmed.';
+  }else if(global==='warn'&&statuses.certificate==='warn'){
+    reason=fr
+      ?'La confiance dans le certificat du signataire n’est pas établie, même si la signature et l’intégrité peuvent être conformes.'
+      :'Trust in the signer’s certificate is not established even if signature and integrity checks pass.';
+  }else if(global==='warn'){
+    reason=fr?'Une vérification reste incomplète ou non reconnue. Voir les détails techniques.':
+      'A verification is incomplete or not trusted. See technical details.';
+  }else if(global==='bad'){
+    const labels={integrity:fr?'intégrité':'integrity',signature:'signature',
+      certificate:fr?'certificat':'certificate',timestamp:fr?'horodatage':'timestamp'};
+    const failures=checks.filter(x=>x.state==='bad').map(x=>labels[x.key]);
+    reason=failures.length
+      ?(fr?'Échec de vérification : ':'Verification failed: ')+failures.join(', ')+'.'
+      :(fr?'Un contrôle bloquant a échoué hors de ce résumé. Voir les détails techniques.':
+        'A blocking check outside this summary failed. See technical details.');
+  }else reason=fr?'Résultat de validation insuffisant.':'Insufficient validation results.';
+  const p=document.createElement('p');p.className='afp-reader-color-explanation '+global;
+  const lead=document.createElement('strong');lead.textContent=
+    ({ok:fr?'Vert':'Green',warn:fr?'Orange':'Amber',bad:fr?'Rouge':'Red',neutral:fr?'Gris':'Grey'})[global]+' : ';
+  p.append(lead,document.createTextNode(reason));
+  return p;
+}
 function afpFourCheckPanel(checks,{historical=false}={}){
   const list=document.createElement('div');list.className='afp-reader-fourchecks';
   for(const check of checks)list.append(afpFourCheckCard(check,historical));
@@ -3740,7 +3776,9 @@ function fillDetails(photo) {
   const signerP=document.createElement('div');signerP.className='afp-reader-signer';
   const by=document.createElement('span');by.textContent=tr('Signé par')+' : ';
   const signerName=document.createElement('strong');signerName.textContent=signer?readable(signer):tr('Signataire non identifié');
-  const quick=afpFourCheckPanel(afpFourChecks(photo));
+  const fourChecks=afpFourChecks(photo);
+  const quick=afpFourCheckPanel(fourChecks);
+  const colorExplanation=afpVisibleC2paColorExplanation(photo,fourChecks);
   const extraFailure=entries.filter(entry=>validationLevel(entry)==='bad'&&
     !/^(?:assertion\.(?:datahash|hasheduri|bmffhash|boxhash|boxeshash)\.|claimsignature\.|signingcredential\.)/i.test(String(entry?.code??entry?.status??'')));
   if(extraFailure.length){
@@ -3750,7 +3788,7 @@ function fillDetails(photo) {
       :'Autre contrôle C2PA en échec — voir les détails techniques.';
     quick.append(p);
   }
-  signerP.append(by,signerName);trust.append(trustH,signerP,quick,trustP);
+  signerP.append(by,signerName);trust.append(trustH,signerP,quick,colorExplanation,trustP);
   afpAppendTrustSourceNote(trust,photo);
   // Pas de recherche par simple nom de fabricant : un nom dans la liste ne valide pas la chaîne.
 
@@ -4181,4 +4219,5 @@ afpReaderV4Style.textContent=`
   .afp-reader-trust-more .afp-reader-fold-body{padding:9px 10px!important}
 `;
 afpReaderV4Style.textContent += "\n/* Résumé C2PA : quatre axes autonomes, avec explications natives\n   accessibles au clavier et conservées lors du clonage des panneaux. */\n.afp-reader-fourchecks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:11px 0}\n.afp-reader-check-card{min-width:0;padding:9px;border:1px solid rgba(147,162,183,.3);\n  border-radius:9px;background:rgba(17,28,42,.12);color:var(--trust-text)}\n.afp-reader-check-top{display:flex;align-items:center;gap:7px;min-width:0}\n.afp-reader-check-glyph{display:grid;place-items:center;flex:0 0 17px;width:17px;height:17px;\n  font-size:11px;font-weight:750;line-height:1;border-radius:50%;background:#8293aa;color:white}\n.afp-reader-check-glyph.ok{background:#278c60}\n.afp-reader-check-glyph.warn{background:#ce921d;color:#231b0c}\n.afp-reader-check-glyph.bad{background:#ce4b55}\n.afp-reader-check-words{min-width:0;display:flex;flex:1;flex-direction:column;gap:2px}\n.afp-reader-check-words strong{font-size:11px;line-height:1.3;overflow-wrap:anywhere}\n.afp-reader-check-status{font-size:10.5px;opacity:.86}\n.afp-reader-check-info{position:relative;flex:0 0 auto;margin:0!important;padding:0!important;border:0!important}\n.afp-reader-check-info > summary{list-style:none;display:grid;place-items:center;width:19px;height:19px;\n  font-size:12px!important;font-weight:750!important;line-height:1!important;cursor:pointer;border-radius:50%;\n  color:var(--trust-text);background:rgba(130,150,175,.22);border:1px solid rgba(170,187,207,.42)}\n.afp-reader-check-info > summary::-webkit-details-marker{display:none}\n.afp-reader-check-info > summary:focus-visible{outline:2px solid #7bb2ff;outline-offset:2px}\n.afp-reader-check-info > p{position:absolute;top:24px;right:0;z-index:25;min-width:195px;\n  max-width:min(255px,80vw);margin:0!important;padding:9px 10px;border:1px solid #546982;\n  border-radius:9px;background:#182435;color:#f2f5fa;font-size:11px;line-height:1.48;\n  font-weight:400;box-shadow:0 10px 25px #0008}\n.afp-reader-historical-notice{font-size:12px;line-height:1.5;margin:8px 0 10px;color:#acb9c9}\n.afp-reader-historical-id{font-size:10px;overflow-wrap:anywhere;opacity:.7}\n.afp-reader-historical-signature .afp-reader-fourchecks{margin:10px 0}\n.afp-reader-other-failure{grid-column:1 / -1;padding:9px;border:1px solid #d97676;border-radius:7px;\n  color:#ffb3b3;font-size:11px}\n@media(max-width:360px){.afp-reader-fourchecks{grid-template-columns:1fr}}\n";
+afpReaderV4Style.textContent += ".afp-reader-color-explanation{margin:10px 0!important;padding:9px 11px;border-radius:9px;border:1px solid rgba(164,178,195,.28);font-size:11.5px;line-height:1.55;background:rgba(17,28,42,.11);color:var(--trust-text)}\n.afp-reader-color-explanation strong{font-weight:800}\n.afp-reader-color-explanation.ok strong{color:#81e1aa}\n.afp-reader-color-explanation.warn strong{color:#f3c766}\n.afp-reader-color-explanation.bad strong{color:#ff9f9f}";
 document.head.append(afpReaderV4Style);

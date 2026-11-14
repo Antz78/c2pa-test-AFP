@@ -60,5 +60,6 @@ try {
       if(!data.caWG.length||!data.caWG.every(x=>x.warning))
         throw Error('CAWG identity certificate trust should be amber');
     }
+    await page.locator('#lb-close').click();
   }
 }finally{await browser.close();}

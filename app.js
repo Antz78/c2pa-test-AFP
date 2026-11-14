@@ -3951,7 +3951,7 @@ function refreshSidePanel(photo) {
   status.dataset.c2paStatus = lbStatus.dataset.c2paStatus;
   status.textContent = lbStatus.textContent;
   document.querySelector('#side-summary').replaceChildren(...[...lbSummary.childNodes].map(n => n.cloneNode(true)));
-  document.querySelector('#side-json').textContent = lbJson.textContent;
+  const sideJson=document.querySelector('#side-json');if(sideJson)sideJson.textContent=lbJson.textContent;
   if (!bottomSheet.hidden && bottomPhoto === photo) refreshBottomSheet(photo);
 }
 function openSidePanel(photo) {
@@ -4110,7 +4110,7 @@ function refreshBottomSheet(photo){
   const s=document.querySelector('#bottom-status');
   s.className=lbStatus.className; s.dataset.c2paStatus=lbStatus.dataset.c2paStatus; s.textContent=lbStatus.textContent;
   document.querySelector('#bottom-summary').replaceChildren(...[...lbSummary.childNodes].map(n=>n.cloneNode(true)));
-  document.querySelector('#bottom-json').textContent=lbJson.textContent;
+  const bottomJson=document.querySelector('#bottom-json');if(bottomJson)bottomJson.textContent=lbJson.textContent;
 }
 function openBottomSheet(photo){
   bottomPhoto=photo;bottomSheet.hidden=false;

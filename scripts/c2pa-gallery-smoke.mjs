@@ -49,6 +49,43 @@ try {
       };
     });
     console.log('Watermark report',i,JSON.stringify(report));
+
+    const verification=await page.locator('#side-panel').evaluate(panel=>{
+      const active=panel.querySelector('.afp-reader-active-verification');
+      return {
+        found:Boolean(active), open:active?.open, title:active?.querySelector(':scope > summary')?.textContent??'',
+        statuses:Array.from(active?.querySelectorAll('.afp-reader-check-card')??[]).map(node=>({
+          key:node.dataset.check,state:node.dataset.checkState,
+          hasHelp:Boolean(node.querySelector('.afp-reader-check-info > summary'))
+        })),
+        additional:Array.from(panel.querySelectorAll('.afp-reader-historical-signature')).map(n=>({
+          title:n.querySelector('summary')?.textContent,open:n.open,
+          states:Array.from(n.querySelectorAll('.afp-reader-check-card')).map(n=>n.dataset.checkState)
+        }))
+      };
+    });
+    console.log('Four-check verification',i,JSON.stringify(verification));
+    if(!verification.found || !verification.open)throw Error('Current signer verification must be open');
+    if(!verification.title.includes(i===5?'Google':'OpenAI') && i>=3)
+      throw Error('Signer not identified dynamically '+i+' '+verification.title);
+    if(verification.statuses.length!==4 ||
+       !verification.statuses.every(x=>x.hasHelp) ||
+       verification.statuses.map(x=>x.key).join(',')!=='integrity,signature,certificate,timestamp')
+      throw Error('Missing four accessible controls '+i);
+    const expectedTsa=i===3||i===4?'warn':'ok';
+    if(verification.statuses.find(x=>x.key==='timestamp').state!==expectedTsa)
+      throw Error('TSA mismatch '+i+' '+JSON.stringify(verification.statuses));
+    if(!verification.statuses.filter(x=>x.key!=='timestamp').every(x=>x.state==='ok'))
+      throw Error('Signature/integrity/certificate mismatch '+i);
+    if(!verification.additional.every(x=>!x.open&&x.states.length===4&&x.states.every(s=>s==='neutral')))
+      throw Error('Historical signatures must not inherit active manifest verification');
+    const info=page.locator('#side-panel .afp-reader-active-verification [data-check="timestamp"] details');
+    await info.locator('summary').click();
+    if(!(await info.getAttribute('open')!==null))throw Error('The TSA help button did not open');
+    const description=await info.locator('p').textContent();
+    if(!description || description.length<40)throw Error('No plain-language TSA explanation');
+    await info.locator('summary').click();
+
     const declared=i>=3;
     if(report.watermark!==(declared?'Filigrane déclaré':'Filigrane absent'))
       throw Error('Incorrect watermark declaration for '+i+' : '+report.watermark);

@@ -80,6 +80,16 @@ try {
     if(!verification.additional.every(x=>!x.open&&x.states.length===4&&x.states.every(s=>s==='neutral')))
       throw Error('Historical signatures must not inherit active manifest verification');
     const info=page.locator('#side-panel .afp-reader-active-verification [data-check="timestamp"] details');
+    const infoLayout=await info.locator('summary').evaluate(el=>{
+      const a=[];
+      for(let p=el;p&&a.length<6;p=p.parentElement){
+        const style=getComputedStyle(p),r=p.getBoundingClientRect();
+        a.push({tag:p.tagName,cls:p.className,display:style.display,visibility:style.visibility,
+          overflow:style.overflow,opacity:style.opacity,w:r.width,h:r.height,x:r.x,y:r.y});
+      }
+      return a;
+    });
+    console.log('Help control geometry:',JSON.stringify(infoLayout));
     await info.locator('summary').click();
     if(!(await info.getAttribute('open')!==null))throw Error('The TSA help button did not open');
     const description=await info.locator('p').textContent();

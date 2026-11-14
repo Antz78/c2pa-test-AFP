@@ -991,7 +991,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-separate-official-tsa-20261113-v2';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-nikon-parent-cawg-trust-20261114-v3';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {

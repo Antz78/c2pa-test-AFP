@@ -71,10 +71,8 @@ try {
     });
     console.log('Four-check verification',i,JSON.stringify(verification));
     if(!verification.found || !verification.open)throw Error('Current signer verification must be open');
-    const expectedLead=i===3||i===4?'Orange :':'Vert :';
-    if(!verification.visibleExplanation.startsWith(expectedLead) ||
-       verification.explanationWidth<50 || !verification.technicalCollapsed)
-      throw Error('Missing visible color explanation or technical fold incorrect for '+i);
+    if(verification.visibleExplanation!=='' || !verification.technicalCollapsed)
+      throw Error('Repeated color explanation must be removed from signer panels '+i);
     if(!verification.title.includes(i===5?'Google':'OpenAI') && i>=3)
       throw Error('Signer not identified dynamically '+i+' '+verification.title);
     if(verification.statuses.length!==4 ||
@@ -86,8 +84,8 @@ try {
       throw Error('TSA mismatch '+i+' '+JSON.stringify(verification.statuses));
     if(!verification.statuses.filter(x=>x.key!=='timestamp').every(x=>x.state==='ok'))
       throw Error('Signature/integrity/certificate mismatch '+i);
-    if(!verification.additional.every(x=>!x.open&&x.states.length===4&&x.states.every(s=>s==='neutral')))
-      throw Error('Historical signatures must not inherit active manifest verification');
+    if(!verification.additional.every(x=>x.open&&x.states.length===4))
+      throw Error('Historical signature panels must be open with distinct controls');
     const info=page.locator('#side-panel .afp-reader-active-verification [data-check="timestamp"] details');
     console.log('Viewport visibility',JSON.stringify(await page.evaluate(()=>{
       const d=document.querySelector('#lightbox'),p=document.querySelector('#side-panel'),

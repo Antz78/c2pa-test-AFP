@@ -24,7 +24,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Verify both signed PNGs with the actual browser SDK
         run: |
-          printf '{"photos":["PHOTOS/PXL_20260919_120202065.jpg.jpeg","PHOTOS/PXL_20260928_145658138.jpg.jpeg","PHOTOS/PXL_20261007_114640615.jpg.jpeg","PHOTOS/Dragon au-dessus de DC.png","PHOTOS/Homme en feu devant un mur de briques.png"]}' > photos.json
+          printf '{"photos":["PHOTOS/PXL_20260919_120202065.jpg.jpeg","PHOTOS/PXL_20260928_145658138.jpg.jpeg","PHOTOS/PXL_20261007_114640615.jpg.jpeg","PHOTOS/Dragon au-dessus de DC.png","PHOTOS/Homme en feu devant un mur de briques.png","PHOTOS/Dragon.jpg"]}' > photos.json
           python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/c2pa-http.log 2>&1 &
           node scripts/c2pa-smoke.mjs
           node scripts/c2pa-gallery-smoke.mjs

@@ -10,6 +10,21 @@ const version='0.17.0';
 const files=['D36K4MF-org.jpg','QH3TP_redactParentExif.jpg','QH3TP_redactParentThumbnail.jpg'];
 const trustUrl='https://raw.githubusercontent.com/c2pa-org/conformance-public/main/trust-list/C2PA-TRUST-LIST.pem';
 const status=document.querySelector('#status'),results=document.querySelector('#results');
+function briefManifest(m){
+  const assertions=Array.isArray(m?.assertions)?m.assertions:[];
+  const actions=assertions.filter(x=>/c2pa\.actions/.test(String(x?.label??''))).flatMap(x=>{
+    const payload=x?.data??{};return Array.isArray(payload?.actions)?payload.actions:[];
+  }).map(x=>({action:x.action,parameters:x.parameters,description:x.description}));
+  return {issuer:m?.signature_info?.issuer,claimGenerator:m?.claim_generator,
+    redactedAssertions:m?.redacted_assertions,actions,
+    assertionLabels:assertions.map(x=>x?.label),
+    ingredientRelationships:m?.ingredients?.map(x=>({
+      relationship:x.relationship,active_manifest:x.active_manifest,
+      validation:x.validation_results?.activeManifest?
+      {success:x.validation_results.activeManifest.success?.map(x=>x.code),
+       failure:x.validation_results.activeManifest.failure?.map(x=>x.code)}:null
+    }))};
+}
 function extract(s){
   const x=s?.validation_results?.activeManifest??s?.validation_results?.active_manifest??null;
   if(x)return Object.fromEntries(['success','informational','failure'].map(k=>[k,(x[k]||[]).map(v=>v.code??v.status??String(v))]));
@@ -47,13 +62,13 @@ async function run(){
         reader=await Reader.fromBlob(engine,/\.png$/i.test(name)?'image/png':'image/jpeg',blob,context);
         if(!reader){output.push({name,error:'Manifeste absent'});continue;}
         const store=await reader.manifestStore();
-        const record={name,validationState:store?.validation_state??null,checks:extract(store),originalResults:store?.validation_results??store?.validationResults,originalStatus:store?.validation_status??store?.validationStatus,manifests:Object.entries(store?.manifests??{}).map(([k,m])=>({id:k,issuer:m?.signature_info?.issuer,ingredients:m?.ingredients,validation:m?.validation_status}))};
+        const record={name,validationState:store?.validation_state??null,checks:extract(store),originalResults:store?.validation_results??store?.validationResults,originalStatus:store?.validation_status??store?.validationStatus,manifests:Object.entries(store?.manifests??{}).map(([k,m])=>({id:k,...briefManifest(m)}))};
         let readerFull=null;
         try {
           readerFull=await Reader.fromBlob(engine,/\.png$/i.test(name)?'image/png':'image/jpeg',blob,fullContext);
           if(readerFull){
             const fullStore=await readerFull.manifestStore();
-            record.withOfficialTsa={validationState:fullStore?.validation_state??null,checks:extract(fullStore),fullResults:fullStore?.validation_results??fullStore?.validationResults,validationStatus:fullStore?.validation_status??fullStore?.validationStatus,manifests:Object.entries(fullStore?.manifests??{}).map(([k,m])=>({id:k,issuer:m?.signature_info?.issuer,ingredients:m?.ingredients,validation:m?.validation_status}))};
+            record.withOfficialTsa={validationState:fullStore?.validation_state??null,checks:extract(fullStore),fullResults:fullStore?.validation_results??fullStore?.validationResults,validationStatus:fullStore?.validation_status??fullStore?.validationStatus,manifests:Object.entries(fullStore?.manifests??{}).map(([k,m])=>({id:k,...briefManifest(m)}))};
           }else record.withOfficialTsa={error:'No manifest'};
         }catch(err){record.withOfficialTsa={error:String(err?.message||err)};}
         finally {if(readerFull)await readerFull.free();}

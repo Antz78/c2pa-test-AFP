@@ -80,9 +80,16 @@ try {
     if(!verification.additional.every(x=>!x.open&&x.states.length===4&&x.states.every(s=>s==='neutral')))
       throw Error('Historical signatures must not inherit active manifest verification');
     const info=page.locator('#side-panel .afp-reader-active-verification [data-check="timestamp"] details');
+    console.log('Viewport visibility',JSON.stringify(await page.evaluate(()=>{
+      const d=document.querySelector('#lightbox'),p=document.querySelector('#side-panel'),
+        active=document.querySelector('#side-panel .afp-reader-active-verification');
+      const simple=e=>e?({hidden:e.hidden,open:e.open,display:getComputedStyle(e).display,
+        width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height}):null;
+      return {lightbox:simple(d),panel:simple(p),active:simple(active)};
+    })));
     const infoLayout=await info.locator('summary').evaluate(el=>{
       const a=[];
-      for(let p=el;p&&a.length<6;p=p.parentElement){
+      for(let p=el;p&&a.length<16;p=p.parentElement){
         const style=getComputedStyle(p),r=p.getBoundingClientRect();
         a.push({tag:p.tagName,cls:p.className,display:style.display,visibility:style.visibility,
           overflow:style.overflow,opacity:style.opacity,w:r.width,h:r.height,x:r.x,y:r.y});

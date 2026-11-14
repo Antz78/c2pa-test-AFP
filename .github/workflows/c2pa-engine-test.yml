@@ -1,7 +1,7 @@
 name: C2PA reader smoke test
 on:
   pull_request:
-    paths: ['app.js', 'sw.js', 'diagnostic-c2pa.html', 'scripts/c2pa-smoke.mjs', 'scripts/c2pa-gallery-smoke.mjs', '.github/workflows/c2pa-engine-test.yml']
+    paths: ['app.js', 'sw.js', 'diagnostic-c2pa.html', 'scripts/c2pa-smoke.mjs', 'scripts/c2pa-gallery-smoke.mjs', 'scripts/c2pa-nikon-afp-smoke.mjs', '.github/workflows/c2pa-engine-test.yml']
   workflow_dispatch:
 jobs:
   test:
@@ -18,6 +18,7 @@ jobs:
           node --check sw.js
           node --check scripts/c2pa-smoke.mjs
           node --check scripts/c2pa-gallery-smoke.mjs
+          node --check scripts/c2pa-nikon-afp-smoke.mjs
       - name: Install Playwright and Chromium
         run: |
           npm install --no-save playwright@1.56.1
@@ -28,3 +29,5 @@ jobs:
           python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/c2pa-http.log 2>&1 &
           node scripts/c2pa-smoke.mjs
           node scripts/c2pa-gallery-smoke.mjs
+          printf '{"photos":["PHOTOS/D36K4MF-org.jpg","PHOTOS/QH3TP_redactParentExif.jpg","PHOTOS/QH3TP_redactParentThumbnail.jpg"]}' > photos.json
+          node scripts/c2pa-nikon-afp-smoke.mjs

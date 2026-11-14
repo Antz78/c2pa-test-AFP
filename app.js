@@ -991,7 +991,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-separate-official-tsa-20261113-v2';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-nikon-parent-cawg-trust-20261114-v3';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -1315,10 +1315,14 @@ function afpExtractValidationResults(store) {
       for(const item of (Array.isArray(active[key])?active[key]:[]))add(item,key);
     }
   }
-  // Certains SDK anciens ne fournissent pas les succès, mais uniquement
-  // validation_status. Les incorporer sans perdre les résultats modernes.
+  // validation_status est un champ de compatibilité pouvant répéter un
+  // résultat déjà catégorisé par validation_results.activeManifest.
+  // Ne pas afficher le même code/URL une deuxième fois avec une autre gravité.
+  const structuredKeys=new Set(entries.map(e=>
+    e.code.toLowerCase()+'|'+String(e.url??'')));
   for(const item of (Array.isArray(old)?old:[])){
     const code=String(typeof item==='string'?item:item?.code??'').toLowerCase();
+    if(structuredKeys.has(code+'|'+String(item?.url??'')))continue;
     let kind='informational';
     if(item?.success===true)kind='success';
     else if(item?.success===false)kind='failure';
@@ -2815,6 +2819,9 @@ function validationLevel(v) {
     'timeofsigning.untrusted','timeofsigning.unknown'
   ]);
   if (informational.has(code)) return 'neutral';
+  // CAWG identity trust is a separate certificate-chain recognition check.
+  // Not being on a trust list is NOT an invalid cryptographic signature.
+  if (/^(?:cawg\.x509\.credential\.untrusted|cawg\.identity\.credential\.untrusted)$/.test(code)) return 'warn';
   if (code === 'signingcredential.ocsp.notrevoked') return 'ok';
   if (/^(?:signingcredential\.(?:untrusted|unknown|ocsp\.(?:unknown|inaccessible))|algorithm\.(?:unsupported|deprecated)|manifest\.inaccessible|claim\.missing|timestamp\.untrusted)$/.test(code)) return 'warn';
   if (/^(?:claimsignature\.(?:outsidevalidity|mismatch|invalid)|signingcredential\.ocsp\.revoked)$/.test(code)) return 'bad';
@@ -3077,9 +3084,9 @@ function readerOpenFold(title,...children) {
 /* Quatre axes pédagogiques de vérification du manifeste actif.
    La norme C2PA prévoit davantage de phases : ces contrôles n'en remplacent
    ni les résultats complets, ni les validations des manifestes ingrédients. */
-function afpFourChecks(photo){
-  if(!photo)return ['integrity','signature','certificate','timestamp'].map(key=>({key,state:'neutral'}));
-  const validation=photo.validation??[];
+function afpFourChecksFromValidation(validation,{trustSource=null,validationState=null}={}){
+  if(!Array.isArray(validation)||!validation.length)
+    return ['integrity','signature','certificate','timestamp'].map(key=>({key,state:'neutral'}));
   const entries=validation.map(e=>({
     code:String(typeof e==='string'?e:e?.code??e?.status??'').toLowerCase(),
     level:validationLevel(e)
@@ -3090,12 +3097,13 @@ function afpFourChecks(photo){
   const integrityFailed=failed(/^(?:assertion\.(?:datahash|hasheduri|bmffhash|boxhash|boxeshash)\.(?:mismatch|invalid)|ingredient\.(?:manifest|claimsignature)\.mismatch)$/);
   const signatureFailed=failed(/^claimsignature\.(?:mismatch|invalid)$/);
   const credentialFailed=failed(/^(?:signingcredential\.(?:invalid|expired|mismatch|ocsp\.revoked)|claimsignature\.outsidevalidity)$/);
-  const integrityOk=passed(/^assertion\.(?:datahash|hasheduri|bmffhash|boxhash|boxeshash)\.match$/) || photo.validationState==='trusted';
-  const signatureOk=codeIs('claimsignature.validated',['ok']) || photo.validationState==='trusted';
-  const certificateOk=codeIs('signingcredential.trusted',['ok']) && photo.trustSource==='official';
+  const integrityOk=passed(/^assertion\.(?:datahash|hasheduri|bmffhash|boxhash|boxeshash)\.match$/) || validationState==='trusted';
+  const signatureOk=codeIs('claimsignature.validated',['ok']) || validationState==='trusted';
   const certificateWarn=codeIs('signingcredential.untrusted') || codeIs('signingcredential.unknown') ||
-    photo.trustSource==='legacy'||photo.trustSource==='untrusted'||
-    photo.trustSource==='unavailable'||photo.trustSource==='incomplete';
+    trustSource==='legacy'||trustSource==='untrusted'||
+    trustSource==='unavailable'||trustSource==='incomplete';
+  const certificateOk=codeIs('signingcredential.trusted',['ok']) && !certificateWarn &&
+    (trustSource===null||trustSource==='official');
   const timestampIssue=entries.some(e=>/^timestamp\.(?:untrusted|malformed|mismatch|outsidevalidity|credentialinvalid|invalid)$/.test(e.code));
   const timestampOk=codeIs('timestamp.validated',['ok'])&&codeIs('timestamp.trusted',['ok'])&&!timestampIssue;
   const timestampPartial=codeIs('timestamp.validated')||codeIs('timestamp.trusted');
@@ -3105,6 +3113,36 @@ function afpFourChecks(photo){
     {key:'certificate',state:credentialFailed?'bad':certificateOk?'ok':certificateWarn?'warn':'neutral'},
     {key:'timestamp',state:timestampOk?'ok':timestampIssue||timestampPartial?'warn':'neutral'}
   ];
+}
+function afpFourChecks(photo){
+  if(!photo)return afpFourChecksFromValidation([]);
+  return afpFourChecksFromValidation(photo.validation??[],
+    {trustSource:photo.trustSource,validationState:photo.validationState});
+}
+function afpHistoricalValidationEntries(group){
+  const entries=[];
+  if(!group || typeof group!=='object')return entries;
+  for(const kind of ['success','informational','failure']){
+    for(const value of Array.isArray(group[kind])?group[kind]:[]){
+      const code=String(typeof value==='string'?value:value?.code??value?.status??'').trim();
+      if(code)entries.push({...((value&&typeof value==='object')?value:{}),code,afpResultKind:kind});
+    }
+  }
+  return entries;
+}
+function afpHistoricalVerification(store,manifestId){
+  // The reader returns independent outcomes for an ingredient in the PARENT
+  // manifest's ingredient.validation_results. Never borrow the current photo's checks.
+  for(const parent of Object.values(store?.manifests??{})){
+    for(const ingredient of Array.isArray(parent?.ingredients)?parent.ingredients:[]){
+      const id=ingredient?.active_manifest??ingredient?.activeManifest;
+      if(id!==manifestId)continue;
+      const results=ingredient?.validation_results??ingredient?.validationResults;
+      const active=results?.activeManifest??results?.active_manifest;
+      if(active)return {entries:afpHistoricalValidationEntries(active),relationship:ingredient.relationship};
+    }
+  }
+  return null;
 }
 function afpFourCheckCard({key,state},historical=false){
   const fr=uiLanguage!=='en';
@@ -3140,8 +3178,8 @@ function afpFourCheckCard({key,state},historical=false){
   const toggle=document.createElement('summary');toggle.textContent='i';
   toggle.setAttribute('aria-label',(fr?'Comprendre : ':'Explain: ')+names[key]);
   const copy=document.createElement('p');
-  copy.textContent=tips[key]+(historical
-    ? (fr?' Aucun contrôle individuel de cette signature n’est confirmé ici.':' This signature has no separately confirmed check here.')
+  copy.textContent=tips[key]+(historical && state==='neutral'
+    ? (fr?' Aucun résultat indépendant disponible pour ce contrôle.':' No independent outcome available for this check.')
     : '');
   help.append(toggle,copy);top.append(glyph,words);card.append(top,help);
   return card;
@@ -3161,9 +3199,13 @@ function afpVisibleC2paColorExplanation(photo,checks){
       ?'La signature, l’intégrité et le certificat sont reconnus. L’autorité d’horodatage ne l’est pas : la date de signature reste à confirmer.'
       :'Signature, integrity and certificate are trusted. The timestamp authority is not: signing time remains unconfirmed.';
   }else if(global==='warn'&&statuses.certificate==='warn'){
+    const identityUntrusted=(photo.validation??[]).some(x=>
+      String(x?.code??x?.status??'').toLowerCase()==='cawg.x509.credential.untrusted');
     reason=fr
-      ?'La confiance dans le certificat du signataire n’est pas établie, même si la signature et l’intégrité peuvent être conformes.'
-      :'Trust in the signer’s certificate is not established even if signature and integrity checks pass.';
+      ?'La signature et l’intégrité sont conformes, mais la confiance dans le certificat du signataire'+
+        (identityUntrusted?' et le certificat d’identité CAWG':'')+' n’est pas établie.'
+      :'Signature and integrity passed, but trust in the signing certificate'+
+        (identityUntrusted?' and the CAWG identity certificate':'')+' is not established.';
   }else if(global==='warn'){
     reason=fr?'Une vérification reste incomplète ou non reconnue. Voir les détails techniques.':
       'A verification is incomplete or not trusted. See technical details.';
@@ -3187,8 +3229,8 @@ function afpFourCheckPanel(checks,{historical=false}={}){
   for(const check of checks)list.append(afpFourCheckCard(check,historical));
   return list;
 }
-/* Un manifeste historique n'est pas la signature du fichier actuel :
-   ne jamais lui attribuer les coches provenant du manifeste actif. */
+/* Le manifeste Nikon parent a SES propres résultats de vérification transmis par
+   l'assertion d'ingrédient. Ne jamais copier les états du manifeste AFP actif. */
 function afpHistoricalSignaturePanels(photo){
   const stored=photo?.store?.manifests;
   if(!stored||typeof stored!=='object')return [];
@@ -3200,18 +3242,47 @@ function afpHistoricalSignaturePanels(photo){
     if(!manifest||typeof manifest!=='object'||id===activeKey||manifest===activeObj)continue;
     const sig=signatureOf(manifest);
     const signer=firstValue(sig?.name,sig?.issuer,sig?.signer,sig?.organization,manifest?.signer);
-    // An actual signing credential must be present; a claim generator alone is not one.
     if(typeof signer!=='string'||!signer.trim())continue;
-    const title=(uiLanguage==='en'?'Other signed manifest — ':'Autre manifeste signé — ')+signer;
+    const linked=afpHistoricalVerification(photo.store,id);
+    const checks=afpFourChecksFromValidation(linked?.entries??[]);
+    const byKey=Object.fromEntries(checks.map(c=>[c.key,c.state]));
+    const label=uiLanguage==='en'?'Earlier C2PA signature — ':'Signature C2PA antérieure — ';
+    const title=label+signer;
     const intro=document.createElement('p');intro.className='afp-reader-historical-notice';
-    intro.textContent=uiLanguage==='en'
-      ?'This signed manifest is embedded in the asset, but this reader does not provide four independent verification outcomes for it. Grey means unconfirmed, not failed.'
-      :'Ce manifeste signé est intégré au fichier, mais le lecteur ne dispose pas ici de quatre résultats indépendants permettant de le vérifier. Gris signifie non confirmé, pas échec.';
+    if(linked && byKey.signature==='ok' && byKey.integrity==='ok'){
+      intro.textContent=uiLanguage==='en'
+        ?'This earlier signature and its original manifest hashes were verified. The check applies to the Nikon version, not directly to the pixels of the later AFP file.'
+        :'La signature antérieure et les empreintes du manifeste Nikon original ont été vérifiées. Ce résultat porte sur la version Nikon, pas directement sur les pixels du fichier AFP final.';
+    }else if(linked){
+      intro.textContent=uiLanguage==='en'
+        ?'The SDK returned independent checks for this earlier C2PA manifest.'
+        :'Le SDK a retourné des contrôles indépendants pour ce manifeste C2PA antérieur.';
+    }else{
+      intro.textContent=uiLanguage==='en'
+        ?'Earlier signed manifest present; no separate validation outcome available here.'
+        :'Manifeste signé antérieur présent ; aucun résultat de validation indépendant disponible ici.';
+    }
+    const details=document.createElement('p');details.className='afp-reader-historical-notice';
+    if(byKey.certificate==='warn'){
+      details.textContent=uiLanguage==='en'
+        ?'Amber: the Nikon signing certificate is not recognised by the trust lists used. The digital signature can still be valid.'
+        :'Orange : le certificat Nikon n’est pas reconnu par les listes de confiance utilisées. Sa signature numérique peut néanmoins être valide.';
+    }else if(byKey.certificate==='bad'){
+      details.textContent=uiLanguage==='en'
+        ?'Red: the earlier signing certificate failed a blocking validation check.'
+        :'Rouge : le certificat antérieur a échoué à un contrôle bloquant.';
+    }else if(!linked){
+      details.textContent='';
+    }else{
+      details.textContent=uiLanguage==='en'?'The four checks apply only to this earlier manifest.':
+        'Ces quatre contrôles concernent uniquement ce manifeste antérieur.';
+    }
     const info=document.createElement('p');info.className='afp-reader-historical-id';
     info.textContent=(uiLanguage==='en'?'Manifest ID: ':'Identifiant du manifeste : ')+id;
-    const checks=afpFourCheckPanel(afpFourChecks(null),{historical:true});
-    const panel=readerFold(title,intro,checks,info);
+    const panel=readerFold(title,intro,afpFourCheckPanel(checks,{historical:true}),...(details.textContent?[details]:[]),info);
     panel.classList.add('afp-reader-historical-signature');
+    panel.dataset.historicalSigner=signer;
+    panel.dataset.historicalValidation=linked?'independent':'unavailable';
     panels.push(panel);
   }
   return panels;

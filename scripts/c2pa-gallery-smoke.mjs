@@ -3,6 +3,8 @@ const browser=await chromium.launch({headless:true});
 try {
   const page=await browser.newPage();
   page.on('console',m=>{if(m.type()==='error')console.error('Gallery browser:',m.text());});
+  page.on('pageerror',e=>console.error('Uncaught page error:',String(e.stack||e)));
+
   await page.goto('http://127.0.0.1:8765/index.html',{waitUntil:'domcontentloaded'});
   await page.waitForFunction(()=>{
     const cards=Array.from(document.querySelectorAll('#grid [data-idx]'));
@@ -49,6 +51,68 @@ try {
       };
     });
     console.log('Watermark report',i,JSON.stringify(report));
+
+    const verification=await page.locator('#side-panel').evaluate(panel=>{
+      const active=panel.querySelector('.afp-reader-active-verification');
+      return {
+        found:Boolean(active), open:active?.open, title:active?.querySelector(':scope > summary')?.textContent??'',
+        visibleExplanation:active?.querySelector('.afp-reader-color-explanation')?.textContent??'',
+        explanationWidth:active?.querySelector('.afp-reader-color-explanation')?.getBoundingClientRect().width??0,
+        technicalCollapsed:Array.from(panel.querySelectorAll('.afp-reader-technical-flat')).every(x=>!x.open),
+        statuses:Array.from(active?.querySelectorAll('.afp-reader-check-card')??[]).map(node=>({
+          key:node.dataset.check,state:node.dataset.checkState,
+          hasHelp:Boolean(node.querySelector('.afp-reader-check-info > summary'))
+        })),
+        additional:Array.from(panel.querySelectorAll('.afp-reader-historical-signature')).map(n=>({
+          title:n.querySelector('summary')?.textContent,open:n.open,
+          states:Array.from(n.querySelectorAll('.afp-reader-check-card')).map(n=>n.dataset.checkState)
+        }))
+      };
+    });
+    console.log('Four-check verification',i,JSON.stringify(verification));
+    if(!verification.found || !verification.open)throw Error('Current signer verification must be open');
+    const expectedLead=i===3||i===4?'Orange :':'Vert :';
+    if(!verification.visibleExplanation.startsWith(expectedLead) ||
+       verification.explanationWidth<50 || !verification.technicalCollapsed)
+      throw Error('Missing visible color explanation or technical fold incorrect for '+i);
+    if(!verification.title.includes(i===5?'Google':'OpenAI') && i>=3)
+      throw Error('Signer not identified dynamically '+i+' '+verification.title);
+    if(verification.statuses.length!==4 ||
+       !verification.statuses.every(x=>x.hasHelp) ||
+       verification.statuses.map(x=>x.key).join(',')!=='integrity,signature,certificate,timestamp')
+      throw Error('Missing four accessible controls '+i);
+    const expectedTsa=i===3||i===4?'warn':'ok';
+    if(verification.statuses.find(x=>x.key==='timestamp').state!==expectedTsa)
+      throw Error('TSA mismatch '+i+' '+JSON.stringify(verification.statuses));
+    if(!verification.statuses.filter(x=>x.key!=='timestamp').every(x=>x.state==='ok'))
+      throw Error('Signature/integrity/certificate mismatch '+i);
+    if(!verification.additional.every(x=>!x.open&&x.states.length===4&&x.states.every(s=>s==='neutral')))
+      throw Error('Historical signatures must not inherit active manifest verification');
+    const info=page.locator('#side-panel .afp-reader-active-verification [data-check="timestamp"] details');
+    console.log('Viewport visibility',JSON.stringify(await page.evaluate(()=>{
+      const d=document.querySelector('#lightbox'),p=document.querySelector('#side-panel'),
+        active=document.querySelector('#side-panel .afp-reader-active-verification');
+      const simple=e=>e?({hidden:e.hidden,open:e.open,display:getComputedStyle(e).display,
+        width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height}):null;
+      return {lightbox:simple(d),panel:simple(p),active:simple(active)};
+    })));
+    const infoLayout=await info.locator('summary').evaluate(el=>{
+      const a=[];
+      for(let p=el;p&&a.length<16;p=p.parentElement){
+        const style=getComputedStyle(p),r=p.getBoundingClientRect();
+        a.push({tag:p.tagName,cls:p.className,display:style.display,visibility:style.visibility,
+          overflow:style.overflow,opacity:style.opacity,w:r.width,h:r.height,x:r.x,y:r.y});
+      }
+      return a;
+    });
+    console.log('Help control geometry:',JSON.stringify(infoLayout));
+    await info.locator('summary').click();
+    if(!(await info.getAttribute('open')!==null))throw Error('The TSA help button did not open');
+    if(!(await info.locator('p').isVisible()))throw Error('TSA public explanation not visible when opened');
+    const description=await info.locator('p').textContent();
+    if(!description || description.length<40)throw Error('No plain-language TSA explanation');
+    await info.locator('summary').click();
+
     const declared=i>=3;
     if(report.watermark!==(declared?'Filigrane déclaré':'Filigrane absent'))
       throw Error('Incorrect watermark declaration for '+i+' : '+report.watermark);

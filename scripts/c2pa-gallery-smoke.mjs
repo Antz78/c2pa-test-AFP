@@ -23,9 +23,9 @@ try {
       throw Error('Unexpected C2PA status for '+results[i].caption+': '+results[i].state+' instead of '+expected);
   }
 
+  await page.locator('#presentation-mode').selectOption('direct');
   for(let i=0;i<results.length;i++){
     await page.locator('#grid [data-idx]').nth(i).click();
-    await page.locator('#cr-badge').click({force:true});
     await page.waitForFunction(()=>{
       const panel=document.querySelector('#side-panel');
       return panel && !panel.hidden &&

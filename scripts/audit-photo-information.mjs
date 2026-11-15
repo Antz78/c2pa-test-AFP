@@ -41,9 +41,17 @@ try{
            })))
        };
      }catch(e){history.error=String(e);}
-     return {lines,history};
+     const proofs=Array.from(panel.querySelectorAll('.afp-reader-technical-flat .credential-row'))
+       .filter(r=>(r.querySelector('.field-label > span')?.textContent??'').includes('SHA-256'))
+       .map(r=>({label:r.querySelector('.field-label > span')?.textContent?.trim(),
+         value:Array.from(r.querySelector('.field-value')?.childNodes??[])
+           .filter(x=>x.nodeType===Node.TEXT_NODE).map(x=>x.textContent).join('').trim()}));
+     return {lines,history,proofs};
    });
    console.log('PHOTO_METADATA_AUDIT',i,JSON.stringify(out));
+   if(!out.proofs.some(p=>p.label.includes('Liste officielle')&&/^[0-9a-f]{64}$/.test(p.value)) ||
+      !out.proofs.some(p=>p.label.includes('Liste TSA')&&/^[0-9a-f]{64}$/.test(p.value)))
+     throw Error('Current trust anchor fingerprints are missing');
    const find=k=>out.lines.find(x=>x.label===k);
    for(const name of ['Auteur / photographe','Lieu','Date de prise de vue','Source','Crédit','Appareil','Coordonnées GPS'])
      if(!find(name))throw Error('Always show '+name);

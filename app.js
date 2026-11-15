@@ -4488,7 +4488,7 @@ afpPanelFitStyle.textContent = `
   #lightbox .lb-stage {
     transition: right .24s ease, padding .24s ease;
   }
-  @media (min-width: 901px) {
+  @media (min-width: 901px) and (min-height: 650px) {
     #lightbox.afp-panel-open {
       --afp-panel-width: min(510px, 100vw);
     }
@@ -4528,8 +4528,8 @@ afpPanelFitStyle.textContent = `
       right: calc(var(--afp-panel-width) + 12px)!important;
     }
   }
-  @media (max-width: 900px) {
-    /* Pas de place pour deux colonnes : garder l'affichage mobile existant. */
+  @media (max-width: 900px), (max-height: 649px) {
+    /* Peu de hauteur (iPhone paysage) : ne pas réserver de colonne latérale. */
     #lightbox.afp-panel-open:not(.direct-layout) .lb-stage {
       right: 0!important;
     }

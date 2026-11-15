@@ -586,11 +586,63 @@
 @media(max-width:700px){#lightbox #cr-badge.cr.mode-corner{
   width:56px!important;height:56px!important;right:0!important;bottom:0!important;
 }}
+
+/* Mobile : commandes regroupées sur cinq lignes compactes, sans en-tête collant.
+   Les filtres défilent horizontalement ; la galerie commence plus haut. */
+.header-title-mobile{display:none}
+@media(max-width:700px){
+  header{
+    position:relative;top:auto;display:grid!important;
+    grid-template-columns:minmax(0,1fr) auto;align-items:center;
+    gap:7px 8px;padding:9px 12px 8px;
+    backdrop-filter:none;-webkit-backdrop-filter:none;
+  }
+  header h1{grid-column:1;grid-row:1;font-size:14px;gap:7px;min-width:0;white-space:nowrap}
+  header .logo{height:24px;width:auto}
+  .header-title-desktop{display:none}
+  .header-title-mobile{display:inline}
+  header > .afp-language-switch{
+    grid-column:2;grid-row:1;margin:0!important;justify-self:end;
+    padding:2px;gap:0;
+  }
+  header > .afp-language-switch button{font-size:11px;padding:4px 7px}
+  header #search{
+    grid-column:1/-1;grid-row:2;min-width:0;width:100%;max-width:none;
+    border-radius:10px;padding:8px 11px;font-size:16px;line-height:20px;
+  }
+  header .filters{
+    grid-column:1/-1;grid-row:3;
+    display:flex;gap:5px;min-width:0;max-width:100%;overflow-x:auto;
+    overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;
+    scrollbar-width:none;padding:1px 0 3px;
+  }
+  header .filters::-webkit-scrollbar{display:none}
+  header .chip{
+    flex:0 0 auto;white-space:nowrap;padding:6px 10px;
+    font-size:11px;line-height:15px;
+  }
+  header .mode-label{display:none}
+  header #presentation-mode{
+    grid-column:1;grid-row:4;width:100%;max-width:100%;min-width:0;
+    padding:7px 8px;font-size:12px;line-height:18px;
+  }
+  header #reshuffle{
+    grid-column:2;grid-row:4;white-space:nowrap;
+    padding:7px 9px;font-size:12px;line-height:18px;
+  }
+  header #count{
+    grid-column:1/-1;grid-row:5;min-width:0;
+    font-size:11px;line-height:1.35;
+  }
+  main{padding:12px}
+  .grid{column-gap:12px}
+  .card{margin-bottom:12px}
+}
 </style>
 </head>
 <body>
 <header>
-  <h1><img class="logo" src="./logo-afp.png" alt="" onerror="this.remove()"> Galerie &amp; Content Credentials</h1>
+  <h1><img class="logo" src="./logo-afp.png" alt="" onerror="this.remove()"><span class="header-title-desktop">Galerie &amp; Content Credentials</span><span class="header-title-mobile">Galerie C2PA</span></h1>
   <input id="search" type="search" placeholder="Rechercher un fichier…" aria-label="Rechercher">
   <div class="filters" role="group" aria-label="Filtres">
     <button class="chip" data-filter="all" aria-pressed="true">Toutes</button>

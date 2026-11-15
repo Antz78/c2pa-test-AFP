@@ -65,11 +65,11 @@ try {
       if(!data.activeTitle.includes('AGENCE FRANCE-PRESSE'))throw Error('AFP signer missing');
       if(data.activeChecks.timestamp!=='warn')throw Error('AFP timestamp must require review');
       if(data.previous.length!==1 || !data.previous[0].title.includes('NIKON CORPORATION')||
-         data.previous[0].validation!=='independent')throw Error('Missing historical Nikon independently validated manifest');
+         data.previous[0].validation!=='recorded')throw Error('Missing historical Nikon validation results recorded by AFP');
       const c=data.previous[0].checks;
       if(c.integrity!=='ok'||c.signature!=='ok'||c.certificate!=='warn'||c.timestamp!=='neutral')
         throw Error('Wrong Nikon historical C2PA checks '+JSON.stringify(c));
-      if(!data.previous[0].note.includes('empreintes du manifeste Nikon') ||
+      if(!data.previous[0].note.includes('Résultats historiques consignés') ||
          !data.previous[0].open || data.previous[0].background!=='warn' ||
          !data.previous[0].certificateInfo || !data.previous[0].rawIsIndividual ||
          !data.previous[0].rawManifest.includes('JSON') ||

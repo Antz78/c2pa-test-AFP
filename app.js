@@ -3743,44 +3743,62 @@ function afpSignerTrustExplanation(signer,trustLevel,isUntrusted,trustSource=nul
 // L'histoire des signatures est racontée uniquement dans l'aide AFP.
 // Le premier signataire est lu dans le manifeste C2PA antérieur lié.
 function afpEditorialCertificateStory(photo,activeSigner){
-  if(afpSignerProfile(activeSigner).key!=='afp')return '';
-  const store=photo?.store,active=String(store?.active_manifest??store?.activeManifest??'');
+  const fr=uiLanguage!=='en';
+  const profile=afpSignerProfile(activeSigner);
+  const store=photo?.store;
+  const active=String(store?.active_manifest??store?.activeManifest??'');
   const current=store?.manifests?.[active];
-  if(!current||!Array.isArray(current.ingredients)||!current.ingredients.length)return '';
-  // Vérifier qu'il s'agit réellement d'un ancêtre du manifeste AFP,
-  // et non d'un autre manifeste stocké dans le même fichier.
+  // Ne raconter une chaîne de signatures que si le manifeste actif
+  // référence effectivement un manifeste antérieur.
   const ancestors=new Set(),visited=new Set();
   const walk=(id)=>{
-    if(visited.has(id))return;visited.add(id);
+    if(visited.has(id))return;
+    visited.add(id);
     const manifest=store?.manifests?.[id];
     for(const ingredient of Array.isArray(manifest?.ingredients)?manifest.ingredients:[]){
       const parent=ingredient?.active_manifest??ingredient?.activeManifest;
-      if(typeof parent==='string'&&store.manifests?.[parent]){
-        ancestors.add(parent);walk(parent);
+      if(typeof parent==='string'&&store?.manifests?.[parent]){
+        ancestors.add(parent);
+        walk(parent);
       }
     }
   };
-  walk(active);
-  const first=afpChronologicalManifestPairs(store).find(([id,m])=>{
+  if(current)walk(active);
+  const first=ancestors.size?afpChronologicalManifestPairs(store).find(([id,m])=>{
     if(!ancestors.has(String(id)))return false;
     const sig=signatureOf(m??{});
     return Boolean(firstValue(sig?.name,sig?.issuer,sig?.signer,sig?.organization,m?.signer));
-  });
-  if(!first)return '';
-  const manifest=first[1],sig=signatureOf(manifest);
-  const name=firstValue(sig?.name,sig?.issuer,sig?.signer,sig?.organization,manifest?.signer);
-  if(!name)return '';
-  const profile=afpSignerProfile(name);
-  const signer=(uiLanguage==='en'?profile.en:profile.fr)||String(name);
-  if(uiLanguage==='en')return [
-    '**'+signer+'** signed the original photograph. Its first signature acts as a **digital birth certificate**. Later signatures add to a **digital identity record** that can follow the image throughout its life.',
-    '**AFP** then signed the version it publishes, without removing the first signature. This marks its **editorial involvement**: AFP adds its own information to the published version and uses its signature to protect the information and image data it actually signed from undetected changes.',
-    'The reader shows the available checks for each signature: **integrity, signature, certificate and signing time**. These checks trace provenance, but do not in themselves prove the photographed scene is real.'
-  ].join('\n\n');
-  return [
-    '**'+signer+'** a signé la photo d’origine. Cette première signature tient lieu d’**acte de naissance numérique**. Les signatures suivantes enrichissent son **carnet d’identité**, qui peut accompagner l’image tout au long de sa vie.',
-    '**L’AFP** a ensuite signé la version qu’elle diffuse, sans supprimer la signature d’origine. Elle marque son **intervention éditoriale** : l’AFP ajoute ses propres informations à la version diffusée et protège, grâce à sa signature, les informations et les données de l’image qu’elle a effectivement signées.',
-    'Le lecteur présente les contrôles disponibles pour chaque signature : **intégrité, signature, certificat et date de signature**. Ces vérifications retracent la provenance, mais ne prouvent pas à elles seules la réalité de la scène.'
+  }):null;
+  const firstSig=first?signatureOf(first[1]):null;
+  const firstName=first?firstValue(firstSig?.name,firstSig?.issuer,firstSig?.signer,firstSig?.organization,first[1]?.signer):'';
+  const firstProfile=afpSignerProfile(firstName);
+  const originalSigner=(fr?firstProfile.fr:firstProfile.en)||String(firstName||'');
+  const activeName=(fr?profile.fr:profile.en)||String(activeSigner||'');
+  // Premier certificat : le texte de naissance concerne la capture
+  // identifiée par un fabricant, sans supposer qu'une signature ultérieure existe.
+  if(!first && profile.camera){
+    return fr?[
+      '**'+activeName+'** a signé la photo d’origine avec un certificat numérique qui tient lieu d’**acte de naissance**.',
+      'Cette première signature permet d’identifier son origine et de vérifier que les informations signées n’ont pas été altérées. Elle constitue la première étape du **carnet d’identité** de l’image, qui pourra s’enrichir de nouvelles signatures tout au long de sa vie.',
+      'Ce certificat est soumis aux contrôles de **l’intégrité, de la signature, de la validité du certificat, de sa reconnaissance dans les listes de confiance et de l’horodatage**, lorsqu’il est présent.'
+    ].join('\n\n'):[
+      '**'+activeName+'** signed the original photograph with a digital certificate that serves as its **birth certificate**.',
+      'This first signature identifies its origin and helps verify that the signed information has not been altered. It begins the image’s **identity record**, which can be enriched by later signatures throughout its life.',
+      'The certificate is checked for **integrity, signature validity, certificate validity, trust-list recognition and timestamp**, where available.'
+    ].join('\n\n');
+  }
+  // Signature complémentaire : utiliser les vrais signataires C2PA,
+  // sans assimiler automatiquement tout éditeur à l'AFP.
+  if(!firstName||!activeName||firstProfile.key===profile.key)return '';
+  const editorial=profile.key==='afp';
+  return fr?[
+    '**'+originalSigner+'** a signé la photo d’origine avec un certificat numérique qui tient lieu d’**acte de naissance**. Les signatures successives enrichissent ensuite son **carnet d’identité**, destiné à accompagner l’image tout au long de sa vie.',
+    '**'+activeName+'** a ajouté sa propre signature à cette version '+(editorial?'qu’elle diffuse':'du contenu')+', afin d’attester et de protéger numériquement '+(editorial?'son **intervention éditoriale** et les métadonnées associées':'les informations et les données couvertes par sa signature')+'.',
+    'Le certificat de **'+activeName+'** est soumis aux **mêmes contrôles que celui du premier signataire** : intégrité de la signature, validité du certificat, reconnaissance de son autorité dans les listes de confiance et vérification de l’horodatage, lorsqu’il est présent.'
+  ].join('\n\n'):[
+    '**'+originalSigner+'** signed the original photograph with a digital certificate that serves as its **birth certificate**. Subsequent signatures enrich its **identity record**, intended to accompany the image throughout its life.',
+    '**'+activeName+'** added its own signature to this version, to attest to and digitally protect '+(editorial?'its **editorial involvement** and associated metadata':'the information and data covered by its signature')+'.',
+    'The certificate of **'+activeName+'** undergoes the **same checks as the original signer’s**: signature integrity, certificate validity, recognition of its authority in trust lists, and timestamp verification where available.'
   ].join('\n\n');
 }
 function afpTrustSourceExplanation(trustSource){

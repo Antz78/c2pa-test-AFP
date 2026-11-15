@@ -723,6 +723,32 @@ const afpResizeObserver = new ResizeObserver(resizeAfpBadge);
 afpResizeObserver.observe(lbPhoto);
 lbPhoto.addEventListener('load', resizeAfpBadge);
 window.addEventListener('resize', resizeAfpBadge);
+window.addEventListener('resize',()=>document.querySelectorAll('#grid .card img').forEach(resizeAfpThumbnailBadge));
+
+// Même principe que la visionneuse, appliqué aux imagettes.
+// Sur téléphone, le SVG mesure au plus 40/2,2 px ; la zone tactile
+// reste de 44 px. L'icône reste placée sur la photo, pas sur sa légende.
+function resizeAfpThumbnailBadge(img){
+  if(!img?.isConnected)return;
+  const card=img.closest('.card'),overlay=card?.querySelector('.demo-overlay');
+  if(!overlay)return;
+  const rect=img.getBoundingClientRect();
+  if(!rect.width||!rect.height)return;
+  const isPhone=window.matchMedia('(max-width: 900px) and (pointer: coarse)').matches;
+  const factor=isPhone?Math.min(1/2.2,Math.min(rect.width,rect.height)/550):1;
+  const svgSize=40*factor;
+  const boxSize=isPhone?44:48;
+  const captionHeight=card.querySelector('.name')?.getBoundingClientRect().height??0;
+  const bottom=isPhone?Math.max(0,captionHeight+7-(boxSize-svgSize)/2):6;
+  overlay.style.setProperty('--afp-thumb-box',boxSize+'px');
+  overlay.style.setProperty('--afp-thumb-svg',svgSize.toFixed(2)+'px');
+  overlay.style.setProperty('--afp-thumb-bottom',bottom.toFixed(2)+'px');
+  overlay.style.setProperty('--afp-thumb-right',isPhone?'0px':'10px');
+}
+const afpThumbnailResizeObserver=new ResizeObserver(entries=>{
+  for(const entry of entries)resizeAfpThumbnailBadge(entry.target);
+});
+
 const lbTitle = document.querySelector('#lb-title');
 const lbStatus = document.querySelector('#lb-status');
 const lbSummary = document.querySelector('#lb-summary');
@@ -1743,8 +1769,8 @@ originBadgeStyle.textContent = `
     display:grid!important;place-items:center!important;
     position:absolute!important;
     padding:0!important;margin:0!important;
-    width:48px!important;height:48px!important;min-width:0!important;min-height:0!important;
-    right:10px!important;bottom:6px!important;left:auto!important;top:auto!important;
+    width:var(--afp-thumb-box,48px)!important;height:var(--afp-thumb-box,48px)!important;min-width:0!important;min-height:0!important;
+    right:var(--afp-thumb-right,10px)!important;bottom:var(--afp-thumb-bottom,6px)!important;left:auto!important;top:auto!important;
     background:transparent!important;border:0!important;border-radius:0!important;
     outline:0!important;box-shadow:none!important;backdrop-filter:none!important;
     -webkit-backdrop-filter:none!important;overflow:visible!important;
@@ -1766,7 +1792,7 @@ originBadgeStyle.textContent = `
   #grid .demo-overlay.mode-origin-distinguo svg,
   #lightbox #cr-badge.mode-origin-distinguo svg {
     display:block!important;overflow:visible!important;flex:none!important;
-    width:40px!important;height:40px!important;
+    width:var(--afp-thumb-svg,40px)!important;height:var(--afp-thumb-svg,40px)!important;
     padding:0!important;margin:0!important;fill:none!important;stroke:none!important;
     opacity:1!important;transform-origin:center!important;pointer-events:none!important;
     filter:drop-shadow(0 0 1px rgba(255,255,255,.55)) drop-shadow(0 1px 2px rgba(0,0,0,.72))!important;
@@ -2587,6 +2613,11 @@ function cardEl(photo) {
   addBadgeContent(overlay,presentationFor(photo),photo.state,photo);
   overlay.addEventListener('click',event=>{event.stopPropagation();openLightbox(photo.idx); if(presentationFor(photo)==='drawer') openBottomSheet(photo); else if(presentationFor(photo)==='tap') toggleTapReveal(photo); else openSidePanel(photo);});
   card.append(img, tag, name, overlay);
+  // Observer la taille de chaque photo affichée, y compris les miniatures
+  // chargées paresseusement et les changements d'orientation.
+  afpThumbnailResizeObserver.observe(img);
+  img.addEventListener('load',()=>resizeAfpThumbnailBadge(img));
+  resizeAfpThumbnailBadge(img);
   const source=document.createElement('button');source.type='button';
   source.className='caption-source';source.hidden=true;
   source.addEventListener('click',e=>{e.stopPropagation();openLightbox(photo.idx);openSidePanel(photo);});
@@ -3499,12 +3530,17 @@ function afpHistoricalSignaturePanels(photo){
     const name=document.createElement('strong');name.textContent=signer;
     signed.append(by,name);
     const four=afpFourCheckPanel(checks,{historical:true});
-    const expl=afpSignerTrustExplanation(signer,level,byKey.certificate==='warn',
-      byKey.certificate==='warn'?'untrusted':null);
+    // Le premier manifeste photographique est l'acte de naissance de l'image.
+    // Les résultats historiques restent ceux consignés lors de son incorporation.
+    const isOriginalCamera=panels.length===0&&afpSignerProfile(signer).camera;
+    const expl=isOriginalCamera
+      ?afpOriginalCertificateText(signer)+'\n\n'+afpCertificateResultSummary(checks,linked?.entries??[])
+      :afpSignerTrustExplanation(signer,level,byKey.certificate==='warn',
+        byKey.certificate==='warn'?'untrusted':null);
     const about=readerFold(fr?'Comprendre le certificat':'About the certificate',
       afpTrustExplanationNode(expl));
     about.classList.add('afp-reader-trust-more');
-    // Aucun récit supplémentaire dans le panneau du premier signataire.
+    // Le récit du premier signataire figure dans « Comprendre le certificat ».
     trust.append(head,signed,four,about);
     if(byKey.certificate==='warn'){
       const link=document.createElement('a');link.href=AFP_CONFORMANCE_EXPLORER;
@@ -3728,6 +3764,57 @@ function afpSignerProfile(value) {
   if(input)return {key:input.toLowerCase(),fr:input,en:input,known:true,camera:false};
   return {key:'unknown',fr:'',en:'',known:false,camera:false};
 }
+
+// Texte commun au tout premier certificat (boîtier photographique).
+function afpOriginalCertificateText(signer){
+  const profile=afpSignerProfile(signer);
+  const name=(uiLanguage==='en'?profile.en:profile.fr)||String(signer||'');
+  if(uiLanguage==='en')return [
+    '**'+name+'** signed the original photograph with a digital certificate that serves as its **birth certificate**.',
+    'This first signature identifies its origin and allows the signed information to be checked for changes. It is the first entry in the image’s **identity record**, which can be enriched by later signatures throughout its life.',
+    'The certificate undergoes several checks: integrity, signature validity, recognition of the certification authority and timestamp verification, where available.'
+  ].join('\n\n');
+  return [
+    '**'+name+'** a signé la photo d’origine avec un certificat numérique qui tient lieu d’**acte de naissance**.',
+    'Cette première signature permet d’identifier son origine et de vérifier que les informations signées n’ont pas été altérées. Elle constitue la première étape du **carnet d’identité** de l’image, qui pourra s’enrichir de nouvelles signatures tout au long de sa vie.',
+    'Le certificat est soumis à plusieurs contrôles : intégrité, validité de la signature, reconnaissance de l’autorité de certification et vérification de l’horodatage, lorsqu’il est présent.'
+  ].join('\n\n');
+}
+// Conclusion courte, liée aux résultats effectivement fournis par le SDK.
+// Ne pas convertir une absence de contrôle en échec ni en non-reconnaissance.
+function afpCertificateResultSummary(checks,validation,{trustSource=null}={}){
+  const fr=uiLanguage!=='en';
+  const states=Object.fromEntries((checks||[]).map(c=>[c.key,c.state]));
+  const codes=(Array.isArray(validation)?validation:[]).map(e=>
+    String(typeof e==='string'?e:e?.code??e?.status??'').toLowerCase());
+  const untrusted=codes.some(c=>/^(?:signingcredential\.(?:untrusted|unknown)|signer\.untrusted)$/.test(c))
+    ||trustSource==='untrusted';
+  const bad=(checks||[]).filter(c=>c.state==='bad');
+  if(bad.length){
+    const labels={integrity:fr?'intégrité':'integrity',signature:'signature',
+      certificate:fr?'certificat':'certificate',timestamp:fr?'horodatage':'timestamp'};
+    return fr
+      ?'**Ici, un contrôle a échoué** ('+bad.map(c=>labels[c.key]||c.key).join(', ')+'). Consultez les détails techniques.'
+      :'**Here, a check failed** ('+bad.map(c=>labels[c.key]||c.key).join(', ')+'). See technical details.';
+  }
+  if(states.certificate==='warn'&&untrusted)return fr
+    ?'**Ici, le certificat n’est pas reconnu par les listes consultées.** Cela ne signifie pas que la photo est fausse.'
+    :'**Here, the certificate is not recognised by the lists checked.** This does not mean the photo is fake.';
+  if(states.certificate==='warn')return fr
+    ?'**Ici, la reconnaissance du certificat reste à confirmer.** Cela ne signifie pas que la photo est fausse.'
+    :'**Here, recognition of the certificate remains unconfirmed.** This does not mean the photo is fake.';
+  if(states.certificate==='neutral')return fr
+    ?'**Ici, la reconnaissance du certificat n’a pas pu être établie** à partir des résultats disponibles.'
+    :'**Here, certificate recognition could not be established** from the available results.';
+  if(states.certificate==='ok'&&states.timestamp==='warn')return fr
+    ?'**Ici, le certificat est reconnu, mais l’horodatage reste à vérifier.**'
+    :'**Here, the certificate is recognised, but the timestamp still needs review.**';
+  if(states.certificate==='ok'&&states.integrity==='ok'&&states.signature==='ok')return fr
+    ?'**Ici, l’intégrité et la signature sont conformes, et le certificat est reconnu.**'
+    :'**Here, integrity and signature checks pass, and the certificate is recognised.**';
+  return fr?'**Ici, certains contrôles restent à confirmer.**':'**Here, some checks remain unconfirmed.**';
+}
+
 function afpSignerTrustExplanation(signer,trustLevel,isUntrusted,trustSource=null){
   const fr=uiLanguage!=='en';
   const paragraphs=fr?[
@@ -3787,17 +3874,8 @@ function afpEditorialCertificateStory(photo,activeSigner){
   const activeName=(fr?profile.fr:profile.en)||String(activeSigner||'');
   // Premier certificat : le texte de naissance concerne la capture
   // identifiée par un fabricant, sans supposer qu'une signature ultérieure existe.
-  if(!first && profile.camera){
-    return fr?[
-      '**'+activeName+'** a signé la photo d’origine avec un certificat numérique qui tient lieu d’**acte de naissance**.',
-      'Cette première signature permet d’identifier son origine et de vérifier que les informations signées n’ont pas été altérées. Elle constitue la première étape du **carnet d’identité** de l’image, qui pourra s’enrichir de nouvelles signatures tout au long de sa vie.',
-      'Ce certificat est soumis aux contrôles de **l’intégrité, de la signature, de la validité du certificat, de sa reconnaissance dans les listes de confiance et de l’horodatage**, lorsqu’il est présent.'
-    ].join('\n\n'):[
-      '**'+activeName+'** signed the original photograph with a digital certificate that serves as its **birth certificate**.',
-      'This first signature identifies its origin and helps verify that the signed information has not been altered. It begins the image’s **identity record**, which can be enriched by later signatures throughout its life.',
-      'The certificate is checked for **integrity, signature validity, certificate validity, trust-list recognition and timestamp**, where available.'
-    ].join('\n\n');
-  }
+  if(!first && profile.camera)return afpOriginalCertificateText(activeSigner);
+
   // Signature complémentaire : utiliser les vrais signataires C2PA,
   // sans assimiler automatiquement tout éditeur à l'AFP.
   if(!firstName||!activeName||firstProfile.key===profile.key)return '';
@@ -4130,7 +4208,8 @@ function fillDetails(photo) {
   trust.setAttribute('aria-label',tr('Qui a signé ces informations ?'));
   const trustH=document.createElement('h3');trustH.className='afp-reader-trust-title';trustH.textContent=tr(trustTitle);
   const story=afpEditorialCertificateStory(photo,signer);
-  if(story)trustText=story+(trustLevel==='bad'?'\n\n'+trustText:'');
+  if(story)trustText=story+'\n\n'+afpCertificateResultSummary(
+    afpFourChecks(photo),photo.validation??[],{trustSource:photo.trustSource});
   const trustP=readerFold('Comprendre le certificat',afpTrustExplanationNode(trustText));
   trustP.classList.add('afp-reader-trust-more');
   const signerP=document.createElement('div');signerP.className='afp-reader-signer';

@@ -3279,6 +3279,19 @@ readerPanelStyle.textContent = `
   }
   .afp-reader-technical-date{margin:12px 0 4px!important;padding:10px 11px;border:1px solid rgba(140,161,184,.22);border-radius:8px;}
   .afp-reader-technical-codes{margin-top:9px!important;}
+  .afp-reader-technical-flat > .afp-reader-fold-body > .afp-reader-technical-signature{
+    margin:9px 0!important;border:1px solid rgba(132,157,189,.35)!important;
+    border-radius:10px!important;
+  }
+  .afp-reader-technical-signature > summary{
+    font-size:12px!important;font-weight:750!important;padding:12px 11px!important;
+  }
+  .afp-reader-technical-signature > .afp-reader-fold-body{
+    padding:10px!important;
+  }
+  .afp-reader-technical-signature .afp-reader-raw{margin-top:12px!important}
+  .afp-reader-technical-signature .afp-reader-technical-intro{opacity:.85}
+
   #side-panel details.afp-reader-technical-codes > summary,
   #credentials details.afp-reader-technical-codes > summary,
   .bottom-sheet details.afp-reader-technical-codes > summary{font-size:11.5px!important;}
@@ -3548,14 +3561,9 @@ function afpHistoricalSignaturePanels(photo){
       link.textContent=fr?'Voir les listes de confiance C2PA':'See C2PA trust lists';
       about.append(link);
     }
-    // Important: this is the actual embedded Nikon manifest, not the AFP
-    // manifest store or a reconstructed copy of the final JPEG.
-    const pre=document.createElement('pre');pre.textContent=JSON.stringify(manifest,null,2);
-    const raw=readerFold(fr?'Données C2PA détaillées (JSON)':'Detailed C2PA data (JSON)',pre);
-    raw.classList.add('afp-reader-raw');
-    raw.dataset.manifestId=String(id);
+    // Le JSON est réservé aux détails techniques, jamais au panneau de lecture.
     const panel=readerOpenFold((fr?'Vérification C2PA — ':'C2PA verification — ')+signer,
-      trust,raw);
+      trust);
     panel.classList.add('afp-reader-historical-signature');
     panel.dataset.historicalSigner=signer;
     panel.dataset.historicalManifestId=String(id);
@@ -3565,6 +3573,78 @@ function afpHistoricalSignaturePanels(photo){
   }
   return panels;
 }
+
+/* Un sous-panneau technique par signature historique réellement affichée.
+   Les données Nikon sont celles de SON manifeste. Les résultats liés à ce
+   manifeste sont les contrôles consignés lors de son incorporation, pas une
+   nouvelle vérification autonome du certificat Nikon par notre SDK. */
+function afpHistoricalTechnicalPanels(photo,verificationPanels){
+  const fr=uiLanguage!=='en';
+  const lookup=new Map(afpChronologicalManifestPairs(photo?.store));
+  return verificationPanels.map((panel,index)=>{
+    const id=panel.dataset.historicalManifestId;
+    const manifest=lookup.get(id);
+    if(!manifest)return null;
+    const signer=panel.dataset.historicalSigner||(
+      fr?'Signataire non identifié':'Unidentified signer');
+    const linked=afpHistoricalVerification(photo?.store,id);
+    const entries=linked?.entries??[];
+    const checks=afpFourChecksFromValidation(entries);
+    const labels=fr
+      ?{integrity:'Intégrité',signature:'Signature',certificate:'Certificat',timestamp:'Horodatage'}
+      :{integrity:'Integrity',signature:'Signature',certificate:'Certificate',timestamp:'Timestamp'};
+    const results=fr
+      ?{ok:'Conforme (résultat consigné)',warn:'À vérifier',bad:'Échec consigné',neutral:'Non confirmé'}
+      :{ok:'Passed (recorded result)',warn:'Needs review',bad:'Recorded failure',neutral:'Not confirmed'};
+    const note=document.createElement('p');
+    note.className='afp-reader-technical-intro';
+    note.textContent=linked
+      ?(fr
+        ?'Résultats historiques enregistrés lors de l’intégration de ce manifeste à une version ultérieure. Ce ne sont pas de nouveaux contrôles indépendants du certificat d’origine. Les éventuels écarts actuels entre ingrédients sont indiqués dans le dossier de la signature active.'
+        :'Historical results recorded when this manifest was incorporated into a later version. These are not new independent checks of the original certificate. Current ingredient discrepancies, if any, appear under the active signature.')
+      :(fr
+        ?'Aucun résultat de contrôle historique distinct n’a été retrouvé pour ce manifeste. Son absence ne prouve ni la validité ni l’invalidité du certificat.'
+        :'No separate historical check results were found for this manifest. This does not prove that the certificate is valid or invalid.');
+    const sig=signatureOf(manifest);
+    const generator=firstValue(manifest?.claim_generator,manifest?.claimGenerator,
+      manifest?.claim_generator_info?.[0]?.name,manifest?.claimGeneratorInfo?.[0]?.name);
+    const metadata=section(fr?'Informations de cette signature':'Signature information',[
+      field(fr?'Signataire déclaré':'Declared signer',signer,'neutral'),
+      field(fr?'Générateur':'Generator',generator,'neutral'),
+      field(fr?'Identifiant du manifeste':'Manifest identifier',id,'neutral'),
+      ...(linked?.relationship?[field(fr?'Lien avec la version suivante':'Relationship to next version',linked.relationship,'neutral')]:[]),
+      ...(linked?.specVersion?[field(fr?'Version C2PA consignée':'Recorded C2PA version',linked.specVersion,'neutral')]:[])
+    ]);
+    const checksSection=section(fr?'Contrôles historiques consignés':'Recorded historical checks',
+      checks.map(check=>field(labels[check.key]||check.key,results[check.state]||results.neutral,check.state)));
+    const reported=entries.length
+      ?section(fr?'Résultats historiques détaillés':'Detailed historical results',
+        entries.map(entry=>field(fr?'Code C2PA':'C2PA code',
+          String(entry.code??entry.status??''),validationLevel(entry),
+          entry.afpResultKind??'')))
+      :null;
+    const deltas=(linked?.currentLinkCodes??[]).filter(Boolean);
+    const ingredientChecks=deltas.length
+      ?section(fr?'Contrôles actuels du lien entre manifestes':'Current checks of the manifest link',
+        deltas.map(code=>field(fr?'Code C2PA':'C2PA code',code,'neutral')))
+      :null;
+    const json=document.createElement('pre');
+    json.textContent=JSON.stringify(manifest,null,2);
+    const raw=readerFold(fr?'Données C2PA détaillées (JSON)':'Detailed C2PA data (JSON)',json);
+    raw.classList.add('afp-reader-raw');
+    raw.dataset.manifestId=String(id);
+    const technical=readerFold(
+      (fr?'Certificat ':'Certificate ')+(index+1)+' — '+signer,
+      note,metadata,checksSection,...(reported?[reported]:[]),
+      ...(ingredientChecks?[ingredientChecks]:[]),raw
+    );
+    technical.classList.add('afp-reader-technical-signature');
+    technical.dataset.manifestId=String(id);
+    technical.dataset.verificationScope='historical-recorded';
+    return technical;
+  }).filter(Boolean);
+}
+
 function afpColorLegend() {
   // Légende éditoriale AFP. N'affecte ni le statut C2PA, ni la couleur calculée.
   const items=[
@@ -4113,10 +4193,23 @@ function afpManifestHistory(photo){
   });
   return section('Historique de provenance',rows);
 }
-function afpRawManifestFold(photo){
-  const pre=document.createElement('pre');pre.textContent=photo.store?JSON.stringify(photo.store,null,2):tr('Informations non disponibles');
-  const fold=readerFold(uiLanguage==='en'?'Detailed C2PA data (JSON)':'Données C2PA détaillées (JSON)',pre);
+function afpRawManifestFold(photo,{scope='full'}={}){
+  const fr=uiLanguage!=='en';
+  const key=photo?.store?.active_manifest??photo?.store?.activeManifest;
+  const stored=key!==undefined
+    ?afpChronologicalManifestPairs(photo?.store).find(([id])=>String(id)===String(key))?.[1]
+    :null;
+  // Pour chaque signataire : uniquement SON manifeste, jamais le store entier.
+  const data=scope==='active'?(stored??c2paActiveManifest(photo)):photo?.store;
+  const pre=document.createElement('pre');
+  pre.textContent=data?JSON.stringify(data,null,2):tr('Informations non disponibles');
+  const title=scope==='active'
+    ?(fr?'Données C2PA détaillées (JSON)':'Detailed C2PA data (JSON)')
+    :(fr?'Chaîne C2PA complète (JSON)':'Complete C2PA chain (JSON)');
+  const fold=readerFold(title,pre);
   fold.classList.add('afp-reader-raw');
+  fold.dataset.jsonScope=scope;
+  if(scope==='active'&&key)fold.dataset.manifestId=String(key);
   return fold;
 }
 
@@ -4288,7 +4381,10 @@ const rawFields=[
   field('Générateur',generator,'neutral',tr('Appareil ou logiciel ayant créé le manifeste C2PA.')),
   field('Identifiant du manifeste',manifest,'neutral')
 ];
-const technical=readerFold('Détails de vérification (technique)',
+const otherSignatures=afpHistoricalSignaturePanels(photo);
+const activeTechnical=readerFold(
+  (uiLanguage==='en'?'Certificate ':'Certificat ')+(otherSignatures.length+1)+' — '+
+    (signer?String(signer):(uiLanguage==='en'?'Unidentified signer':'Signataire non identifié')),
   pIntro,
   section('Contrôles de sécurité',[
     field('Intégrité du fichier',tr(hasIntegrityFailure?'Différence détectée':integrityOk?'Données signées conformes':'Résultat explicite non communiqué'),integrityStatus,tr('Compare le fichier aux empreintes protégées par les Content Credentials.')),
@@ -4315,7 +4411,6 @@ const technical=readerFold('Détails de vérification (technique)',
     field('Date du chargement des listes',photo.trustProof?.official?.retrievedAt??null,'neutral')
   ]),
   pTsa,
-  ...(afpManifestHistory(photo)?[afpManifestHistory(photo)]:[]),
   section('Informations du manifeste',rawFields),
   section('Filigrane invisible (déclaration C2PA)',afpWatermarkFields(photo)),
   rawIntro,
@@ -4324,14 +4419,28 @@ const technical=readerFold('Détails de vérification (technique)',
        field('Contrôle C2PA',entry.code,validationLevel(entry),
          [entry.ingredientAssertionURI,entry.explanation].filter(Boolean).join(' — '))))]
     :[]),
-  section('Résultats de validation C2PA',[validationList])
+  section('Résultats de validation C2PA',[validationList]),
+  afpRawManifestFold(photo,{scope:'active'})
+);
+activeTechnical.classList.add('afp-reader-technical-signature');
+activeTechnical.dataset.verificationScope='active-current';
+const technicalIntro=document.createElement('p');
+technicalIntro.className='afp-reader-technical-intro';
+technicalIntro.textContent=uiLanguage==='en'
+  ?'One section per signed manifest, from the original to the published version. Historical results and current checks have different scopes.'
+  :'Une section par manifeste signé, de la photo d’origine à la version diffusée. Les résultats historiques et les contrôles actuels n’ont pas la même portée.';
+const technical=readerFold('Détails de vérification (technique)',
+  technicalIntro,
+  ...afpHistoricalTechnicalPanels(photo,otherSignatures),
+  activeTechnical,
+  ...(afpManifestHistory(photo)?[afpManifestHistory(photo)]:[]),
+  afpRawManifestFold(photo,{scope:'full'})
 );
 technical.classList.add('afp-reader-technical-flat');
 const trustLabel=(uiLanguage==='en'?'C2PA verification — ':'Vérification C2PA — ')+
   (signer?String(signer):tr('Signataire non identifié'));
-const trustFold=readerOpenFold(trustLabel,trust,afpRawManifestFold(photo));
+const trustFold=readerOpenFold(trustLabel,trust);
 trustFold.classList.add('afp-reader-active-verification');
-const otherSignatures=afpHistoricalSignaturePanels(photo);
 lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),
   ...otherSignatures,trustFold,...(photoFold?[photoFold]:[]),technical,afpColorLegend());
   lbJson.textContent=JSON.stringify(photo.store,null,2);

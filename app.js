@@ -1122,7 +1122,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-nikon-parent-cawg-trust-20261114-v3';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-audit-photometa-trustproof-20261115-v4';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -1169,6 +1169,7 @@ async function afpWriteRecord(photo, digest) {
   try {
     record = JSON.stringify({ url, hash:digest, sdk:AFP_ENGINE_VERSION, savedAt:Date.now(),
       state:photo.state, store:photo.store ?? null, active:photo.active ?? null,
+      trustProof:photo.trustProof ?? null,
       validation:photo.validation ?? [], validationState:photo.validationState ?? null, trustSource:photo.trustSource ?? null, trustChecks:photo.trustChecks ?? null,
       exif:photo.exif ?? null });
     if (record.length > AFP_MAX_METADATA_BYTES) return;
@@ -1246,6 +1247,7 @@ function afpRestoreRecord(photo, rec, digest) {
   photo.state=rec.state; photo.store=rec.store; photo.active=rec.active;
   photo.validation=rec.validation || []; photo.validationState=rec.validationState || null; photo.trustSource=rec.trustSource || null; photo.trustChecks=rec.trustChecks || null;
   photo.exif=rec.exif || null; photo.exifDate=photo.exif?.date;
+  photo.trustProof=rec.trustProof??null;
   photo.cacheStatus='stored'; photo.cacheSavedAt=rec.savedAt; photo.error=null;
   photo.recheckingCache=false;
   afpRefreshPhoto(photo);
@@ -1352,6 +1354,15 @@ const AFP_LEGACY_TRUST_FILES = Object.freeze({
   allowed:'https://contentcredentials.org/trust/allowed.sha256.txt'
 });
 const AFP_TSA_TRUST_PEM_URL = 'https://raw.githubusercontent.com/c2pa-org/conformance-public/main/trust-list/C2PA-TSA-TRUST-LIST.pem';
+const afpTrustResourceProof=Object.create(null);
+async function afpTrustResourceStamp(key,content,url){
+  let sha256=null;
+  try{
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(content));
+    sha256=Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
+  }catch(_){}
+  afpTrustResourceProof[key]={url,sha256,retrievedAt:new Date().toISOString()};
+}
 let afpTsaTrustPemPromise=null;
 async function afpTsaTrustPem(){
   if(!afpTsaTrustPemPromise) {
@@ -1361,6 +1372,7 @@ async function afpTsaTrustPem(){
       const pem=await response.text();
       if(!/-----BEGIN CERTIFICATE-----[\s\S]*-----END CERTIFICATE-----/.test(pem))
         throw new Error('Liste de confiance TSA : format inattendu');
+      await afpTrustResourceStamp('tsa',pem,AFP_TSA_TRUST_PEM_URL);
       return pem;
     })().catch(error=>{afpTsaTrustPemPromise=null;throw error;});
   }
@@ -1382,6 +1394,7 @@ async function afpTrustContext(source) {
       // Keep current official and historical validation independent.
       // The historical list requires its EKU config and end-entity allowlist.
       const trust={trustAnchors:pem};
+      await afpTrustResourceStamp(source,pem,AFP_TRUST_PEM_URLS[source]);
       if(source==='legacy'){
         const [configResponse,allowedResponse]=await Promise.all([
           fetchWithTimeout(AFP_LEGACY_TRUST_FILES.config,{mode:'cors',cache:'no-cache'},8000),
@@ -1390,6 +1403,8 @@ async function afpTrustContext(source) {
         if(!configResponse.ok || !allowedResponse.ok) throw new Error('Configuration de confiance historique indisponible');
         trust.trustConfig=await configResponse.text();
         trust.allowedList=await allowedResponse.text();
+        await afpTrustResourceStamp('legacyConfig',trust.trustConfig,AFP_LEGACY_TRUST_FILES.config);
+        await afpTrustResourceStamp('legacyAllowed',trust.allowedList,AFP_LEGACY_TRUST_FILES.allowed);
       }
       const tsaPem=await afpTsaTrustPem();
       // c2pa-web 0.17 exposes signer/CAWG anchors through Context, but not TSA
@@ -1585,6 +1600,7 @@ async function analyze(photo) {
       const check=await afpValidateAgainstTrustLists(engine,mime,blob);
       photo.store=check.store; photo.active=check.active; photo.validation=check.validation; photo.validationState=check.validationState;
       photo.trustSource=check.trustSource; photo.trustChecks=check.trustChecks;
+      photo.trustProof=JSON.parse(JSON.stringify(afpTrustResourceProof));
       const levels=photo.validation.map(validationLevel);
       // Never suppress the exact SDK reason behind a red result.
       const blockingCodes=photo.validation.filter(v=>validationLevel(v)==='bad')
@@ -4108,6 +4124,18 @@ const technical=readerFold('Détails de vérification (technique)',
     field('Horodatage TSA',tr(tsaStatus==='ok'?'Horodatage certifié et reconnu':tsaIssue?'Horodatage à vérifier':tsaValidated?'Horodatage valide, confiance à confirmer':'Aucun contrôle TSA confirmé'),tsaStatus)
   ]),
   section('Listes de confiance C2PA',afpTrustListFields(photo)),
+  section('Contexte de validation',[
+    field('Moteur C2PA','@contentauth/c2pa-web 0.17.0','neutral'),
+    field('Révocation OCSP','Consultation en ligne non effectuée (ocspFetch:false)','neutral',
+      'Une signature valide ne prouve pas qu’un certificat n’a pas été révoqué.'),
+    field('Liste officielle — SHA-256',photo.trustProof?.official?.sha256??null,'neutral',
+      photo.trustProof?.official?.url??''),
+    field('Liste historique — SHA-256',photo.trustProof?.legacy?.sha256??null,'neutral',
+      photo.trustProof?.legacy?.url??''),
+    field('Liste TSA — SHA-256',photo.trustProof?.tsa?.sha256??null,'neutral',
+      photo.trustProof?.tsa?.url??''),
+    field('Date du chargement des listes',photo.trustProof?.official?.retrievedAt??null,'neutral')
+  ]),
   pTsa,
   ...(afpManifestHistory(photo)?[afpManifestHistory(photo)]:[]),
   section('Informations du manifeste',rawFields),

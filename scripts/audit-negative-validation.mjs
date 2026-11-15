@@ -52,7 +52,7 @@ try {
  const signerLabel=await page.locator('#side-panel .afp-reader-active-verification .afp-reader-signer').innerText();
  if(!signerLabel.includes('Signataire déclaré'))
    throw Error('Invalid asset signer must be labeled as declared, not verified: '+signerLabel);
- const note=await page.locator('#side-panel .afp-reader-photo-information .afp-reader-technical-intro').innerText();
+ const note=await page.locator('#side-panel .afp-reader-photo-information .afp-reader-technical-intro').textContent();
  if(!note.includes('validation C2PA a échoué'))throw Error('Failed manifest metadata must carry a clear warning');
  await page.locator('#lb-close').click();
  const unsigned=await upload('audit_unsigned.png',simplePng,'image/png');

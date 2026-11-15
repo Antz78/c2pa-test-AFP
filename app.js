@@ -707,6 +707,17 @@ function resizeAfpBadge() {
   const height = Math.min(33.6, Math.max(12, width * 0.065));
   crBadge.style.setProperty('--afp-logo-height', `${height}px`);
   crBadge.style.setProperty('--afp-dot-size', `${Math.max(6, Math.min(9, height * 0.27))}px`);
+  // Le pictogramme de provenance s'adapte au plus petit côté de la photo
+  // réellement affichée. Sur téléphone : 2,2 fois plus petit au maximum.
+  // Les dimensions desktop restent strictement inchangées.
+  const rect = lbPhoto.getBoundingClientRect();
+  const shortSide = Math.min(rect.width, rect.height);
+  const isPhone = window.matchMedia('(max-width: 900px) and (pointer: coarse)').matches;
+  const factor = isPhone ? Math.min(1 / 2.2, shortSide / 700) : 1;
+  crBadge.style.setProperty('--afp-origin-box', `${(56 * factor).toFixed(2)}px`);
+  crBadge.style.setProperty('--afp-origin-svg', `${(46 * factor).toFixed(2)}px`);
+  crBadge.style.setProperty('--afp-origin-right', isPhone ? '8px' : '18px');
+  crBadge.style.setProperty('--afp-origin-bottom', isPhone ? '5px' : '8px');
 }
 const afpResizeObserver = new ResizeObserver(resizeAfpBadge);
 afpResizeObserver.observe(lbPhoto);
@@ -1742,8 +1753,8 @@ originBadgeStyle.textContent = `
     filter:none!important;
   }
   #lightbox #cr-badge.mode-origin-distinguo {
-    width:56px!important;height:56px!important;
-    right:18px!important;bottom:8px!important;
+    width:var(--afp-origin-box,56px)!important;height:var(--afp-origin-box,56px)!important;
+    right:var(--afp-origin-right,18px)!important;bottom:var(--afp-origin-bottom,8px)!important;
   }
   /* Au repos : opacite 35%. Intro lumineuse 100% pendant 1 s apres 2 s. */
   #grid .demo-overlay.mode-origin-distinguo.origin-visible,
@@ -1760,7 +1771,7 @@ originBadgeStyle.textContent = `
     opacity:1!important;transform-origin:center!important;pointer-events:none!important;
     filter:drop-shadow(0 0 1px rgba(255,255,255,.55)) drop-shadow(0 1px 2px rgba(0,0,0,.72))!important;
   }
-  #lightbox #cr-badge.mode-origin-distinguo svg {width:46px!important;height:46px!important;}
+  #lightbox #cr-badge.mode-origin-distinguo svg {width:var(--afp-origin-svg,46px)!important;height:var(--afp-origin-svg,46px)!important;}
   #grid .demo-overlay.mode-origin-distinguo svg .origin-halo,
   #lightbox #cr-badge.mode-origin-distinguo svg .origin-halo {
     fill:none!important;stroke:#0b1220!important;stroke-width:4.9!important;

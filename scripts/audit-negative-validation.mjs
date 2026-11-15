@@ -4,6 +4,7 @@ const browser=await chromium.launch({headless:true});
 try {
  const page=await browser.newPage();
  await page.goto('http://127.0.0.1:8765/index.html',{waitUntil:'domcontentloaded'});
+ await page.locator('#presentation-mode').selectOption('direct');
  const input=readFileSync('PHOTOS/Dragon.jpg');
  // Mutate data in JPEG scan (not its C2PA manifest / certificate).
  function tamperJpeg(orig){
@@ -46,6 +47,14 @@ try {
  if(!valid?.includes('ok'))throw Error('Known signed original did not validate green');
  const altered=await upload('audit_altered_scan.jpg',corrupt,'image/jpeg');
  if(!altered?.includes('bad'))throw Error('Modified signed image did not become red: '+altered);
+ await page.locator('#grid .card').filter({hasText:'audit_altered_scan.jpg'}).first().click();
+ await page.waitForFunction(()=>Boolean(document.querySelector('#side-panel .afp-reader-active-verification')),null,{timeout:12000});
+ const signerLabel=await page.locator('#side-panel .afp-reader-active-verification .afp-reader-signer').innerText();
+ if(!signerLabel.includes('Signataire déclaré'))
+   throw Error('Invalid asset signer must be labeled as declared, not verified: '+signerLabel);
+ const note=await page.locator('#side-panel .afp-reader-photo-information .afp-reader-technical-intro').innerText();
+ if(!note.includes('validation C2PA a échoué'))throw Error('Failed manifest metadata must carry a clear warning');
+ await page.locator('#lb-close').click();
  const unsigned=await upload('audit_unsigned.png',simplePng,'image/png');
  if(!unsigned?.includes('none'))throw Error('Unsigned image was not classified unsigned: '+unsigned);
  console.log('ADVERSARIAL_VALIDATION',JSON.stringify({valid,altered,unsigned}));

@@ -22,14 +22,14 @@ try{
    const out=await page.locator('#side-panel').evaluate(panel=>{
      const fold=panel.querySelector('.afp-reader-photo-information');
      const lines=Array.from(fold.querySelectorAll('.credential-row')).map(r=>({
-       label:r.querySelector('.field-label')?.textContent.trim(),
+       label:r.querySelector('.field-label > span')?.textContent.trim(),
        text:Array.from(r.querySelector('.field-value')?.childNodes??[])
          .filter(n=>n.nodeType===Node.TEXT_NODE).map(n=>n.textContent).join('').trim(),
        origin:r.querySelector('.field-value small')?.textContent.trim()??''
      }));
      let history={};
      try {
-       const raw=document.querySelector('#lb-json')?.textContent;
+       const raw=panel.querySelector('.afp-reader-active-verification .afp-reader-raw pre')?.textContent;
        const store=JSON.parse(raw);
        history={
          resultsKeys:Object.keys(store.validation_results??{}),

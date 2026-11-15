@@ -638,6 +638,65 @@
   .grid{column-gap:12px}
   .card{margin-bottom:12px}
 }
+
+/* iPhone paysage : profiter de toute la hauteur réellement visible.
+   La photo s'adapte sans recadrage ; la barre supérieure et les flèches
+   se superposent discrètement au lieu de réserver 185 px autour de l'image. */
+@media (orientation:landscape) and (max-height:600px) and (pointer:coarse) {
+  dialog#lightbox {
+    width:100dvw!important;height:100dvh!important;
+    max-width:100dvw!important;max-height:100dvh!important;
+  }
+  #lightbox .lb-stage,
+  #lightbox.caption-layout .lb-stage,
+  #lightbox.direct-layout .lb-stage,
+  #lightbox.afp-panel-open .lb-stage {
+    position:fixed!important;inset:0!important;right:0!important;
+    width:100dvw!important;height:100dvh!important;
+    box-sizing:border-box!important;
+    padding:4px max(8px, env(safe-area-inset-right))
+            4px max(8px, env(safe-area-inset-left))!important;
+    display:flex!important;align-items:center!important;
+    justify-content:center!important;flex-direction:row!important;
+    min-height:0!important;
+  }
+  #lightbox .lb-photo-column,
+  #lightbox.caption-layout .lb-photo-column {
+    max-width:100%!important;max-height:100%!important;
+    min-width:0!important;min-height:0!important;
+  }
+  #lightbox .lb-frame,
+  #lightbox .lb-photo-column .lb-frame {
+    max-width:100%!important;
+    max-height:calc(100dvh - 8px)!important;
+    min-width:0!important;min-height:0!important;
+  }
+  #lightbox .lb-frame > #lb-photo,
+  #lightbox .lb-photo-column .lb-frame > #lb-photo,
+  #lightbox.caption-layout .lb-frame > #lb-photo {
+    display:block!important;width:auto!important;height:auto!important;
+    max-width:100%!important;max-height:calc(100dvh - 8px)!important;
+    object-fit:contain!important;
+  }
+  #lightbox.caption-layout .lb-frame > #lb-photo {
+    max-height:calc(100dvh - 53px)!important;
+  }
+  #lightbox .lb-top {padding:3px 10px!important}
+  #lightbox .lb-top h2 {font-size:12px}
+  #lightbox .nav {
+    width:32px;height:32px;font-size:17px;opacity:.78;
+  }
+  #lightbox .nav.prev {left:5px}
+  #lightbox .nav.next {right:5px}
+  #lightbox .lb-caption-source:not([hidden]) {
+    font-size:10px!important;padding:5px 8px!important;
+    flex-shrink:0!important;
+  }
+  /* En galerie : une photo par rangée au lieu de miniatures étroites. */
+  main {padding:8px 10px}
+  #grid.grid {columns:1!important;max-width:100%;margin:0 auto}
+  #grid .card {max-width:100%;margin-bottom:10px}
+}
 </style>
 </head>
 <body>
@@ -764,7 +823,7 @@
     </section>
   </div>
 </dialog>
-<script type="module" src="./app.js?v=20261115-expired-certificate-origin-v1"></script>
+<script type="module" src="./app.js?v=20261115-mobile-landscape-markers-v2"></script>
 <script>
   // Diagnostic indépendant de app.js si une erreur empêche son exécution.
   setTimeout(function () {

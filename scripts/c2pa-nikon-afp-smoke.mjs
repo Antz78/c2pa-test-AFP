@@ -42,6 +42,7 @@ try {
             background:n.querySelector('.afp-reader-historical-trust')?.dataset.level,
             certificateInfo:Boolean(n.querySelector('.afp-reader-trust-more > summary')),
             note:n.querySelector('.afp-reader-historical-notice')?.textContent??'',
+          currentLink:Array.from(n.querySelectorAll('.afp-reader-historical-notice')).some(p=>p.textContent.includes('ingredient.claimSignature.validated')),
             rawManifest:raw?.querySelector('summary')?.textContent??'',
             rawSignature:parsed?.signature_info?.issuer??parsed?.signatureInfo?.issuer??'',
             rawIsIndividual:parsed && !Object.hasOwn(parsed,'manifests'),
@@ -69,6 +70,7 @@ try {
       const c=data.previous[0].checks;
       if(c.integrity!=='ok'||c.signature!=='ok'||c.certificate!=='warn'||c.timestamp!=='neutral')
         throw Error('Wrong Nikon historical C2PA checks '+JSON.stringify(c));
+      if(!data.previous[0].currentLink)throw Error('Current Nikon claim-signature link verification absent');
       if(!data.previous[0].note.includes('Résultats historiques consignés') ||
          !data.previous[0].open || data.previous[0].background!=='warn' ||
          !data.previous[0].certificateInfo || !data.previous[0].rawIsIndividual ||

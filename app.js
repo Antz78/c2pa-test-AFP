@@ -1548,7 +1548,7 @@ async function afpValidateAgainstTrustLists(engine,mime,blob) {
   let official=null,legacy=null;
   try {
     official=await afpReadC2pa(engine,mime,blob,'official');
-    checks.official={status:afpHasCriticalFailure(official)?'failed':afpHasTrustedCertificate(official)?'trusted':'untrusted',
+    checks.official={status:afpHasTrustedCertificate(official)?'trusted':afpHasCriticalFailure(official)?'failed':'untrusted',
       codes:afpValidationCodes(official)};
   }catch(error){checks.official={status:'unavailable',reason:String(error?.message||error)};}
   if(official?.store && checks.official.status==='trusted') {
@@ -1556,7 +1556,7 @@ async function afpValidateAgainstTrustLists(engine,mime,blob) {
   }
   try {
     legacy=await afpReadC2pa(engine,mime,blob,'legacy');
-    checks.legacy={status:afpHasCriticalFailure(legacy)?'failed':afpHasTrustedCertificate(legacy)?'trusted':'untrusted',
+    checks.legacy={status:afpHasTrustedCertificate(legacy)?'trusted':afpHasCriticalFailure(legacy)?'failed':'untrusted',
       codes:afpValidationCodes(legacy)};
   }catch(error){checks.legacy={status:'unavailable',reason:String(error?.message||error)};}
   // Une validation positive historique ne remplace JAMAIS un véritable échec
@@ -3314,10 +3314,19 @@ function afpHistoricalVerification(store,manifestId){
       if(id!==manifestId)continue;
       const results=ingredient?.validation_results??ingredient?.validationResults;
       const active=results?.activeManifest??results?.active_manifest;
-      if(active)return {entries:afpHistoricalValidationEntries(active),
-        relationship:ingredient.relationship,kind:'recorded',
-        specVersion:results?.specVersion??null,
-        trustListUris:results?.trustListUris??null};
+      if(active){
+        const current=(store?.validation_results??store?.validationResults)?.ingredientDeltas??[];
+        const currentLinkCodes=Array.isArray(current)?current.flatMap(group=>{
+          const d=group?.validationDeltas??{};
+          return [...(d.success??[]),...(d.informational??[]),...(d.failure??[])]
+            .filter(e=>typeof e?.url==='string'&&e.url.includes(manifestId))
+            .map(e=>String(e.code??''));
+        }):[];
+        return {entries:afpHistoricalValidationEntries(active),
+          relationship:ingredient.relationship,kind:'recorded',
+          specVersion:results?.specVersion??null,
+          trustListUris:results?.trustListUris??null,currentLinkCodes};
+      }
     }
   }
   return null;
@@ -3494,6 +3503,14 @@ function afpHistoricalSignaturePanels(photo){
       trust.append(head,signed,four,about,scope,directory);
     }else{
       trust.append(head,signed,four,about,scope);
+    }
+    if(linked?.currentLinkCodes?.includes('ingredient.claimSignature.validated')){
+      const linkCheck=document.createElement('p');
+      linkCheck.className='afp-reader-historical-notice';
+      linkCheck.textContent=fr
+        ?'Contrôle actuel du SDK : le lien cryptographique avec la signature Nikon est validé (ingredient.claimSignature.validated). Cela ne confirme pas la confiance dans son certificat.'
+        :'Current SDK check: the cryptographic link to the Nikon signature is validated (ingredient.claimSignature.validated). This does not establish trust in its certificate.';
+      trust.append(linkCheck);
     }
     // Important: this is the actual embedded Nikon manifest, not the AFP
     // manifest store or a reconstructed copy of the final JPEG.
@@ -4169,6 +4186,11 @@ const technical=readerFold('Détails de vérification (technique)',
   section('Informations du manifeste',rawFields),
   section('Filigrane invisible (déclaration C2PA)',afpWatermarkFields(photo)),
   rawIntro,
+  ...(photo.validationDeltas?.length
+    ?[section('Écarts actuels de validation des ingrédients',photo.validationDeltas.map(entry=>
+       field('Contrôle C2PA',entry.code,validationLevel(entry),
+         [entry.ingredientAssertionURI,entry.explanation].filter(Boolean).join(' — '))))]
+    :[]),
   section('Résultats de validation C2PA',[validationList])
 );
 technical.classList.add('afp-reader-technical-flat');

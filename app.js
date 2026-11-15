@@ -1,3 +1,4 @@
+import {buildPhotoInformation} from './photo-information.js';
 console.info('[AFP C2PA] Reader-first + full trust comparison v20261113-v4');
 console.info('[C2PA AFP] Version filtres v3 chargée : badges À vérifier');
 // Galerie C2PA : 100 % statique, fonctionne sur GitHub Pages.
@@ -860,6 +861,83 @@ function addFiles(files) {
   return true;
 }
 
+/* Extraire séparément IPTC-IIM et XMP sans les présenter comme des données C2PA.
+   Les métadonnées peuvent être éditées indépendamment et ne certifient pas la réalité de la scène. */
+function afpMetadataText(bytes){
+  try {return new TextDecoder('utf-8',{fatal:true}).decode(bytes).replace(/\0/g,'').trim();}
+  catch (_) {return new TextDecoder('windows-1252').decode(bytes).replace(/\0/g,'').trim();}
+}
+function afpParseIptcDataset(bytes,meta){
+  const iptc=meta.iptc??(meta.iptc={});
+  let p=0;
+  while(p+5<=bytes.length){
+    if(bytes[p]!==0x1c){p++;continue;}
+    const record=bytes[p+1],tag=bytes[p+2],flags=bytes[p+3],lo=bytes[p+4];
+    if(flags&0x80){p+=5;continue;} // extended-length data are not inferred
+    const size=(flags<<8)|lo,start=p+5,end=start+size;
+    if(end>bytes.length)break;
+    if(record===2&&size&&size<65536){
+      const value=afpMetadataText(bytes.subarray(start,end));
+      const names={80:'author',90:'city',92:'sublocation',95:'province',
+        100:'countryCode',101:'country',110:'credit',115:'source',120:'caption',
+        55:'dateCreated',60:'timeCreated',105:'headline'};
+      const name=names[tag];
+      if(name && value && !iptc[name])iptc[name]=value;
+    }
+    p=end;
+  }
+  const date=iptc.dateCreated,time=iptc.timeCreated;
+  if(/^\d{8}$/.test(date??'')){
+    const day=date.slice(6,8)+'/'+date.slice(4,6)+'/'+date.slice(0,4);
+    if(/^\d{6}(?:[+-]\d{4})?$/.test(time??'')){
+      const hh=time.slice(0,2)+':'+time.slice(2,4)+':'+time.slice(4,6);
+      const tz=time.length===11?' UTC'+time.slice(6,9)+':'+time.slice(9):'';
+      iptc.captureDate=day+' '+hh+tz;
+    }else iptc.captureDate=day;
+  }
+}
+function afpParseIptcPhotoshop(data,from,length,meta){
+  const end=Math.min(data.byteLength,from+length);
+  const prefix='Photoshop 3.0';
+  if(from+prefix.length+1>end)return;
+  for(let i=0;i<prefix.length;i++)if(data.getUint8(from+i)!==prefix.charCodeAt(i))return;
+  let pos=from+prefix.length+1;
+  while(pos+12<=end){
+    if([56,66,73,77].some((v,i)=>data.getUint8(pos+i)!==v))break; // 8BIM
+    const id=data.getUint16(pos+4),nameLen=data.getUint8(pos+6);
+    const nameBlock=(1+nameLen+1)&~1;
+    const sizePos=pos+6+nameBlock;
+    if(sizePos+4>end)break;
+    const size=data.getUint32(sizePos),payload=sizePos+4;
+    if(payload+size>end)break;
+    if(id===0x0404)afpParseIptcDataset(
+      new Uint8Array(data.buffer,data.byteOffset+payload,size),meta);
+    pos=payload+size+(size%2);
+  }
+}
+function afpParseXmp(xml,meta){
+  if(typeof xml!=='string'||xml.length>500000)return;
+  try{
+    const doc=new DOMParser().parseFromString(xml,'application/xml');
+    if(doc.querySelector('parsererror'))return;
+    const nodes=[...doc.getElementsByTagName('*')];
+    const xmp=meta.xmp??(meta.xmp={});
+    const names={creator:'author',DateTimeOriginal:'dateOriginal',DateCreated:'dateCreated',
+      City:'city',Country:'country',CountryName:'country',
+      Location:'sublocation',Sublocation:'sublocation',Credit:'credit',Source:'source'};
+    for(const el of nodes){
+      const field=names[el.localName];
+      if(field&&!xmp[field]){
+        const value=el.textContent?.trim();
+        if(value&&value.length<=300&&!value.includes('<'))xmp[field]=value;
+      }
+      for(const attr of el.attributes){
+        const field=names[attr.localName],value=attr.value?.trim();
+        if(field&&value&&value.length<=300&&!xmp[field])xmp[field]=value;
+      }
+    }
+  }catch(_){}
+}
 /* EXIF / crédits lus dans les octets d'origine, sans réencoder l'image.
    JPEG : segment APP1 ; PNG : bloc eXIf et blocs textuels tEXt / iTXt.
    Il s'agit de déclarations, PAS de preuves cryptographiques. */
@@ -896,6 +974,42 @@ function parseTiffExif(data, tiff, result) {
   const root = entries(u32(tiff + 4));
   const exif = typeof root.get(0x8769) === 'number' ? entries(root.get(0x8769)) : new Map();
   result.artist ||= root.get(0x013b) || null;
+  result.cameraMake ||= root.get(0x010f) || null;
+  result.cameraModel ||= root.get(0x0110) || null;
+  const gpsOffset=root.get(0x8825);
+  if(typeof gpsOffset==='number'){
+    const base=tiff+gpsOffset,qty=u16(base);
+    if(Number.isInteger(qty)&&qty>=0&&qty<=60){
+      const gps={};
+      const strAt=(pos,len)=>pos>=tiff&&pos+len<=data.byteLength
+        ?afpMetadataText(new Uint8Array(data.buffer,data.byteOffset+pos,len)):null;
+      const rationals=(ent,count)=>{
+        const ptr=u32(ent+8),at=tiff+ptr;
+        if(count>4||ptr==null||at<tiff||at+count*8>data.byteLength)return null;
+        const vals=[];
+        for(let k=0;k<count;k++){const denom=u32(at+k*8+4);
+          if(!denom)return null;vals.push(u32(at+k*8)/denom);}
+        return vals;
+      };
+      for(let i=0;i<qty;i++){
+        const e=base+2+12*i,type=u16(e+2),count=u32(e+4);
+        if(e+12>data.byteLength)break;
+        const tag=u16(e);
+        if((tag===1||tag===3)&&type===2&&count>0&&count<=4)
+          gps[tag]=strAt(e+8,count);
+        if((tag===2||tag===4)&&type===5&&count===3)
+          gps[tag]=rationals(e,3);
+      }
+      if(gps[1]&&gps[2]?.length===3&&gps[3]&&gps[4]?.length===3){
+        const lat=gps[2][0]+gps[2][1]/60+gps[2][2]/3600;
+        const lon=gps[4][0]+gps[4][1]/60+gps[4][2]/3600;
+        const latitude=/S/i.test(gps[1])?-lat:lat;
+        const longitude=/W/i.test(gps[3])?-lon:lon;
+        if(Math.abs(latitude)<=90&&Math.abs(longitude)<=180)
+          result.gps={latitude,longitude};
+      }
+    }
+  }
   result.copyright ||= root.get(0x8298) || null;
   const raw = exif.get(0x9003) || root.get(0x0132);
   if (typeof raw === 'string' && /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)) {
@@ -926,7 +1040,8 @@ function applyPngText(key, value, result) {
   }
 }
 async function readExifMetadata(blob) {
-  const result = { date: null, artist: null, copyright: null };
+  const result = {date:null,artist:null,copyright:null,cameraMake:null,cameraModel:null,
+    gps:null,iptc:{},xmp:{}};
   try {
     // Une tranche limitée pour préserver les performances des images haute résolution.
     const data = new DataView(await blob.slice(0, 8 * 1024 * 1024).arrayBuffer());
@@ -943,7 +1058,19 @@ async function readExifMetadata(blob) {
         const base = pos + 4;
         if (marker === 0xe1 && length >= 8 && [69,120,105,102,0,0].every((v,i) => data.getUint8(base+i) === v)) {
           parseTiffExif(data, base + 6, result);
-          break;
+        }
+        if(marker===0xed)afpParseIptcPhotoshop(data,base,length-2,result);
+        if(marker===0xe1&&length>36){
+          const header=new TextDecoder('latin1').decode(
+            new Uint8Array(data.buffer,data.byteOffset+base,Math.min(40,length-2)));
+          if(header.startsWith('http://ns.adobe.com/xap/1.0/')){
+            const nul=header.indexOf('\0');
+            if(nul>=0){const from=base+nul+1,size=length-2-(nul+1);
+              if(size>0&&size<=500000&&from+size<=data.byteLength)
+                afpParseXmp(new TextDecoder('utf-8').decode(
+                  new Uint8Array(data.buffer,data.byteOffset+from,size)),result);
+            }
+          }
         }
         pos += 2 + length;
       }
@@ -968,7 +1095,11 @@ async function readExifMetadata(blob) {
               // iTXt non compressé : flag/méthode, langue NUL, traduction NUL, texte UTF-8.
               const langEnd = bytes.indexOf(0, zero + 3);
               const translatedEnd = langEnd < 0 ? -1 : bytes.indexOf(0, langEnd + 1);
-              if (translatedEnd >= 0) applyPngText(key, new TextDecoder('utf-8').decode(bytes.subarray(translatedEnd + 1)), result);
+              if (translatedEnd >= 0) {
+                  const text=new TextDecoder('utf-8').decode(bytes.subarray(translatedEnd + 1));
+                  applyPngText(key,text,result);
+                  if(key.toLowerCase().includes('xmp'))afpParseXmp(text,result);
+                }
             }
           }
         }
@@ -991,7 +1122,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-nikon-parent-cawg-trust-20261114-v3';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-audit-photometa-trustproof-20261115-v4';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -1038,6 +1169,8 @@ async function afpWriteRecord(photo, digest) {
   try {
     record = JSON.stringify({ url, hash:digest, sdk:AFP_ENGINE_VERSION, savedAt:Date.now(),
       state:photo.state, store:photo.store ?? null, active:photo.active ?? null,
+      trustProof:photo.trustProof ?? null,
+      validationDeltas:photo.validationDeltas ?? [],
       validation:photo.validation ?? [], validationState:photo.validationState ?? null, trustSource:photo.trustSource ?? null, trustChecks:photo.trustChecks ?? null,
       exif:photo.exif ?? null });
     if (record.length > AFP_MAX_METADATA_BYTES) return;
@@ -1115,6 +1248,8 @@ function afpRestoreRecord(photo, rec, digest) {
   photo.state=rec.state; photo.store=rec.store; photo.active=rec.active;
   photo.validation=rec.validation || []; photo.validationState=rec.validationState || null; photo.trustSource=rec.trustSource || null; photo.trustChecks=rec.trustChecks || null;
   photo.exif=rec.exif || null; photo.exifDate=photo.exif?.date;
+  photo.trustProof=rec.trustProof??null;
+  photo.validationDeltas=rec.validationDeltas??[];
   photo.cacheStatus='stored'; photo.cacheSavedAt=rec.savedAt; photo.error=null;
   photo.recheckingCache=false;
   afpRefreshPhoto(photo);
@@ -1221,6 +1356,15 @@ const AFP_LEGACY_TRUST_FILES = Object.freeze({
   allowed:'https://contentcredentials.org/trust/allowed.sha256.txt'
 });
 const AFP_TSA_TRUST_PEM_URL = 'https://raw.githubusercontent.com/c2pa-org/conformance-public/main/trust-list/C2PA-TSA-TRUST-LIST.pem';
+const afpTrustResourceProof=Object.create(null);
+async function afpTrustResourceStamp(key,content,url){
+  let sha256=null;
+  try{
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(content));
+    sha256=Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
+  }catch(_){}
+  afpTrustResourceProof[key]={url,sha256,retrievedAt:new Date().toISOString()};
+}
 let afpTsaTrustPemPromise=null;
 async function afpTsaTrustPem(){
   if(!afpTsaTrustPemPromise) {
@@ -1230,6 +1374,7 @@ async function afpTsaTrustPem(){
       const pem=await response.text();
       if(!/-----BEGIN CERTIFICATE-----[\s\S]*-----END CERTIFICATE-----/.test(pem))
         throw new Error('Liste de confiance TSA : format inattendu');
+      await afpTrustResourceStamp('tsa',pem,AFP_TSA_TRUST_PEM_URL);
       return pem;
     })().catch(error=>{afpTsaTrustPemPromise=null;throw error;});
   }
@@ -1251,6 +1396,7 @@ async function afpTrustContext(source) {
       // Keep current official and historical validation independent.
       // The historical list requires its EKU config and end-entity allowlist.
       const trust={trustAnchors:pem};
+      await afpTrustResourceStamp(source,pem,AFP_TRUST_PEM_URLS[source]);
       if(source==='legacy'){
         const [configResponse,allowedResponse]=await Promise.all([
           fetchWithTimeout(AFP_LEGACY_TRUST_FILES.config,{mode:'cors',cache:'no-cache'},8000),
@@ -1259,6 +1405,8 @@ async function afpTrustContext(source) {
         if(!configResponse.ok || !allowedResponse.ok) throw new Error('Configuration de confiance historique indisponible');
         trust.trustConfig=await configResponse.text();
         trust.allowedList=await allowedResponse.text();
+        await afpTrustResourceStamp('legacyConfig',trust.trustConfig,AFP_LEGACY_TRUST_FILES.config);
+        await afpTrustResourceStamp('legacyAllowed',trust.allowedList,AFP_LEGACY_TRUST_FILES.allowed);
       }
       const tsaPem=await afpTsaTrustPem();
       // c2pa-web 0.17 exposes signer/CAWG anchors through Context, but not TSA
@@ -1330,10 +1478,33 @@ function afpExtractValidationResults(store) {
     else if(/(?:\.mismatch|\.invalid|\.malformed|\.revoked|\.expired|\.outsidevalidity)$/.test(code))kind='failure';
     add(item,kind);
   }
+  // Contrôles ACTUELS des liens d'ingrédients retournés par le SDK. Ils ne
+  // doivent jamais être confondus avec les résultats HISTORIQUES enregistrés
+  // dans ingredient.validation_results lors de la création du manifeste AFP.
+  const ingredientDeltas=[];
+  const distinct=new Set();
+  for(const delta of (Array.isArray(results?.ingredientDeltas)?results.ingredientDeltas:
+                     Array.isArray(results?.ingredient_deltas)?results.ingredient_deltas:[])){
+    const values=delta?.validationDeltas??delta?.validation_deltas??{};
+    for(const kind of ['success','informational','failure']){
+      for(const raw of Array.isArray(values[kind])?values[kind]:[]){
+        const code=String(typeof raw==='string'?raw:raw?.code??raw?.status??'').trim();
+        if(!code)continue;
+        const ingredientURI=String(delta?.ingredientAssertionURI??delta?.ingredient_assertion_uri??'');
+        const key=ingredientURI+'|'+kind+'|'+code+'|'+String(raw?.url??'');
+        if(distinct.has(key))continue;
+        distinct.add(key);
+        ingredientDeltas.push({
+          ...((raw&&typeof raw==='object')?raw:{}),code,afpResultKind:kind,
+          validationScope:'ingredientDelta',ingredientAssertionURI:ingredientURI
+        });
+      }
+    }
+  }
   const rawState=store?.validation_state??store?.validationState??null;
   const state=typeof rawState==='string'?rawState.toLowerCase():
     typeof rawState==='object'&&rawState?String(rawState.state??rawState.status??'').toLowerCase():null;
-  return {entries,state};
+  return {entries,state,ingredientDeltas};
 }
 function afpValidationCodes(result) {
   return (result?.validation||[]).map(v=>String(typeof v==='string'?v:v?.code??v?.status??'').toLowerCase());
@@ -1345,7 +1516,7 @@ function afpHasTrustedCertificate(result) {
 function afpHasCriticalFailure(result) {
   // Un ancrage absent d'une liste n'est pas un échec cryptographique.
   // Même distinction pour l'OCSP non consulté ou les exclusions documentées.
-  return (result?.validation||[]).some(entry => {
+  return [...(result?.validation||[]),...(result?.ingredientDeltas||[])].some(entry => {
     const code=String(typeof entry==='string'?entry:entry?.code??entry?.status??'').toLowerCase();
     return validationLevel(entry)==='bad' &&
       !/^(?:signingcredential\.(?:untrusted|unknown|ocsp\.inaccessible)|algorithm\.unsupported)$/.test(code);
@@ -1362,9 +1533,9 @@ async function afpReadC2pa(engine,mime,blob,source) {
     reader=await C2paReader.fromBlob(engine,mime,blob,ctx);
     if(!reader) return {store:null,active:null,validation:[],validationState:null};
     const store=await reader.manifestStore();
-    const {entries, state}=afpExtractValidationResults(store);
+    const {entries,state,ingredientDeltas}=afpExtractValidationResults(store);
     const active=await reader.activeManifest().catch(()=>null);
-    return {store,active,validation:entries,validationState:state};
+    return {store,active,validation:entries,ingredientDeltas,validationState:state};
   } finally {
     if(reader) try {await reader.free();} catch (_) {}
   }
@@ -1377,7 +1548,7 @@ async function afpValidateAgainstTrustLists(engine,mime,blob) {
   let official=null,legacy=null;
   try {
     official=await afpReadC2pa(engine,mime,blob,'official');
-    checks.official={status:afpHasCriticalFailure(official)?'failed':afpHasTrustedCertificate(official)?'trusted':'untrusted',
+    checks.official={status:afpHasTrustedCertificate(official)?'trusted':afpHasCriticalFailure(official)?'failed':'untrusted',
       codes:afpValidationCodes(official)};
   }catch(error){checks.official={status:'unavailable',reason:String(error?.message||error)};}
   if(official?.store && checks.official.status==='trusted') {
@@ -1385,7 +1556,7 @@ async function afpValidateAgainstTrustLists(engine,mime,blob) {
   }
   try {
     legacy=await afpReadC2pa(engine,mime,blob,'legacy');
-    checks.legacy={status:afpHasCriticalFailure(legacy)?'failed':afpHasTrustedCertificate(legacy)?'trusted':'untrusted',
+    checks.legacy={status:afpHasTrustedCertificate(legacy)?'trusted':afpHasCriticalFailure(legacy)?'failed':'untrusted',
       codes:afpValidationCodes(legacy)};
   }catch(error){checks.legacy={status:'unavailable',reason:String(error?.message||error)};}
   // Une validation positive historique ne remplace JAMAIS un véritable échec
@@ -1436,7 +1607,7 @@ async function analyze(photo) {
       // Si la photo téléchargée a changé : ne JAMAIS reprendre son ancien statut.
       if (restore && digest!==cachedMetadata.hash) {
         restore=false; photo.cacheStatus=null; photo.cacheSavedAt=null;
-        photo.state='loading'; photo.store=null; photo.active=null; photo.validation=[]; photo.validationState=null; photo.trustSource=null; photo.trustChecks=null;
+        photo.state='loading'; photo.store=null; photo.active=null; photo.validation=[]; photo.validationDeltas=[]; photo.validationState=null; photo.trustSource=null; photo.trustChecks=null;
         afpRefreshPhoto(photo);
       }
       if (!photo.exif || !restore) {
@@ -1452,17 +1623,20 @@ async function analyze(photo) {
       const engine=await ensureC2pa();
       const mime=({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',tif:'image/tiff',tiff:'image/tiff'})[ext]||blob.type;
       const check=await afpValidateAgainstTrustLists(engine,mime,blob);
-      photo.store=check.store; photo.active=check.active; photo.validation=check.validation; photo.validationState=check.validationState;
+      photo.store=check.store; photo.active=check.active; photo.validation=check.validation;
+      photo.validationDeltas=check.ingredientDeltas??[]; photo.validationState=check.validationState;
       photo.trustSource=check.trustSource; photo.trustChecks=check.trustChecks;
-      const levels=photo.validation.map(validationLevel);
+      photo.trustProof=JSON.parse(JSON.stringify(afpTrustResourceProof));
+      const allValidation=[...photo.validation,...(photo.validationDeltas??[])];
+      const levels=allValidation.map(validationLevel);
       // Never suppress the exact SDK reason behind a red result.
-      const blockingCodes=photo.validation.filter(v=>validationLevel(v)==='bad')
+      const blockingCodes=allValidation.filter(v=>validationLevel(v)==='bad')
         .map(v=>String(typeof v==='string'?v:v?.code??v?.status??''));
       if(blockingCodes.length) console.warn('[AFP C2PA] Échecs bloquants',photo.name,{
         blockingCodes,trustChecks:photo.trustChecks,validationState:photo.validationState
       });
       const certificateTrusted=afpHasTrustedCertificate(check);
-      const unknownChecks=photo.validation.some(v=>validationLevel(v)==='neutral' && !afpBenignNotice(v));
+      const unknownChecks=allValidation.some(v=>v?.afpResultKind!=='informational' && validationLevel(v)==='neutral' && !afpBenignNotice(v));
       photo.state=!check.store?'none':levels.includes('bad')?'bad':
         (!certificateTrusted || photo.trustSource!=='official' ||
          levels.includes('warn') || unknownChecks)?'warn':'ok';
@@ -2808,26 +2982,37 @@ function present(value) { return value === null || value === undefined || value 
    'valid' ou 'revoked' contenus dans un nom (notRevoked, outsideValidity...).
    Les extensions inconnues restent neutres jusqu'à interprétation explicite. */
 function validationLevel(v) {
-  const code = String(typeof v === 'string' ? v : v?.code ?? v?.status ?? '').trim().toLowerCase();
-  if (!code) return 'neutral';
-  // Catégories explicites du SDK (en conservant l'orange pédagogique pour untrusted).
-  if (v?.afpResultKind==='informational') return 'neutral';
-  if (v?.afpResultKind==='success') return 'ok';
-  const informational = new Set([
-    'signingcredential.ocsp.skipped','assertion.datahash.additionalexclusionspresent',
-    'ingredient.unknownprovenance','assertion.redacted',
-    'timeofsigning.untrusted','timeofsigning.unknown'
+  const code=String(typeof v==='string'?v:v?.code??v?.status??'').trim().toLowerCase();
+  if(!code)return 'neutral';
+  // La confiance non établie n'est pas un échec de signature cryptographique.
+  // La vérification d'horodatage non reconnue et les identités CAWG non
+  // reconnues doivent rester orange, même si le SDK les classe informatives.
+  const needsTrust=new Set([
+    'signingcredential.untrusted','signingcredential.unknown',
+    'signingcredential.ocsp.unknown','signingcredential.ocsp.inaccessible',
+    'timestamp.untrusted','timeofsigning.untrusted',
+    'cawg.x509.credential.untrusted','cawg.identity.credential.untrusted',
+    'algorithm.unsupported','algorithm.deprecated','manifest.inaccessible'
   ]);
-  if (informational.has(code)) return 'neutral';
-  // CAWG identity trust is a separate certificate-chain recognition check.
-  // Not being on a trust list is NOT an invalid cryptographic signature.
-  if (/^(?:cawg\.x509\.credential\.untrusted|cawg\.identity\.credential\.untrusted)$/.test(code)) return 'warn';
-  if (code === 'signingcredential.ocsp.notrevoked') return 'ok';
-  if (/^(?:signingcredential\.(?:untrusted|unknown|ocsp\.(?:unknown|inaccessible))|algorithm\.(?:unsupported|deprecated)|manifest\.inaccessible|claim\.missing|timestamp\.untrusted)$/.test(code)) return 'warn';
-  if (/^(?:claimsignature\.(?:outsidevalidity|mismatch|invalid)|signingcredential\.ocsp\.revoked)$/.test(code)) return 'bad';
-  if (/\.(?:mismatch|invalid|malformed|missing|revoked|failure|error|outofrange|outsidevalidity)$/.test(code)) return 'bad';
-  if (/\.(?:validated|trusted|match|insidevalidity|notrevoked|success)$/.test(code)) return 'ok';
-  if (v?.afpResultKind==='failure') return 'bad';
+  if(needsTrust.has(code))return 'warn';
+  const notices=new Set([
+    'signingcredential.ocsp.skipped',
+    'assertion.datahash.additionalexclusionspresent',
+    'ingredient.unknownprovenance','assertion.redacted',
+    'timeofsigning.unknown'
+  ]);
+  if(notices.has(code))return 'neutral';
+  // Les 3 catégories du SDK ont priorité sur le nom du code.
+  if(v?.afpResultKind==='success')return 'ok';
+  if(v?.afpResultKind==='informational')return 'neutral';
+  if(v?.afpResultKind==='failure')return 'bad';
+  // Compatibilité SDK ancien, lorsqu'aucune catégorie n'est fournie.
+  if(code==='signingcredential.ocsp.notrevoked')return 'ok';
+  if(/\.(?:mismatch|invalid|malformed|missing|revoked|expired|failure|error|outofrange|outsidevalidity)$/.test(code))
+    return 'bad';
+  if(/\.(?:validated|trusted|match|insidevalidity|notrevoked|success)$/.test(code))
+    return 'ok';
+  // Ne jamais déclarer vert ou rouge un code propriétaire inconnu.
   return 'neutral';
 }
 function signatureOf(a) {
@@ -3131,15 +3316,28 @@ function afpHistoricalValidationEntries(group){
   return entries;
 }
 function afpHistoricalVerification(store,manifestId){
-  // The reader returns independent outcomes for an ingredient in the PARENT
-  // manifest's ingredient.validation_results. Never borrow the current photo's checks.
+  // C2PA ingredient.validation_results contains validation RECORDED by the
+  // next claim generator when that ingredient was incorporated, not necessarily
+  // an independent current re-validation of each historic credential.
   for(const parent of Object.values(store?.manifests??{})){
     for(const ingredient of Array.isArray(parent?.ingredients)?parent.ingredients:[]){
       const id=ingredient?.active_manifest??ingredient?.activeManifest;
       if(id!==manifestId)continue;
       const results=ingredient?.validation_results??ingredient?.validationResults;
       const active=results?.activeManifest??results?.active_manifest;
-      if(active)return {entries:afpHistoricalValidationEntries(active),relationship:ingredient.relationship};
+      if(active){
+        const current=(store?.validation_results??store?.validationResults)?.ingredientDeltas??[];
+        const currentLinkCodes=Array.isArray(current)?current.flatMap(group=>{
+          const d=group?.validationDeltas??{};
+          return [...(d.success??[]),...(d.informational??[]),...(d.failure??[])]
+            .filter(e=>typeof e?.url==='string'&&e.url.includes(manifestId))
+            .map(e=>String(e.code??''));
+        }):[];
+        return {entries:afpHistoricalValidationEntries(active),
+          relationship:ingredient.relationship,kind:'recorded',
+          specVersion:results?.specVersion??null,
+          trustListUris:results?.trustListUris??null,currentLinkCodes};
+      }
     }
   }
   return null;
@@ -3178,8 +3376,9 @@ function afpFourCheckCard({key,state},historical=false){
   const toggle=document.createElement('summary');toggle.textContent='i';
   toggle.setAttribute('aria-label',(fr?'Comprendre : ':'Explain: ')+names[key]);
   const copy=document.createElement('p');
-  copy.textContent=tips[key]+(historical && state==='neutral'
-    ? (fr?' Aucun résultat indépendant disponible pour ce contrôle.':' No independent outcome available for this check.')
+  copy.textContent=tips[key]+(historical
+    ? (fr?' Résultat historique consigné lors de l’intégration de l’ingrédient ; ce volet ne constitue pas une nouvelle validation isolée de cette signature.'
+      :'Historical result recorded on ingredient incorporation; this panel is not a fresh standalone validation of the earlier signature.')
     : '');
   help.append(toggle,copy);top.append(glyph,words);card.append(top,help);
   return card;
@@ -3282,7 +3481,10 @@ function afpHistoricalSignaturePanels(photo){
           ?(fr?'Vérifications C2PA reconnues':'C2PA checks trusted')
           :(fr?'Validation historique non confirmée':'Earlier verification not confirmed');
     const signed=document.createElement('div');signed.className='afp-reader-signer';
-    const by=document.createElement('span');by.textContent=fr?'Signé par : ':'Signed by: ';
+    const by=document.createElement('span');by.textContent=
+      byKey.certificate==='ok'&&byKey.signature==='ok'
+        ?(fr?'Signé par : ':'Signed by: ')
+        :(fr?'Signataire déclaré : ':'Declared signer: ');
     const name=document.createElement('strong');name.textContent=signer;
     signed.append(by,name);
     const four=afpFourCheckPanel(checks,{historical:true});
@@ -3292,15 +3494,12 @@ function afpHistoricalSignaturePanels(photo){
       afpTrustExplanationNode(expl));
     about.classList.add('afp-reader-trust-more');
     const scope=document.createElement('p');scope.className='afp-reader-historical-notice';
-    scope.textContent=linked&&byKey.integrity==='ok'&&byKey.signature==='ok'
+    scope.textContent=linked
       ?(fr
-        ?'La signature et les empreintes du manifeste Nikon d’origine ont été vérifiées. Elles concernent la version Nikon, pas directement les pixels de la version AFP.'
-        :'The original Nikon manifest signature and hashes were verified. These checks apply to the Nikon version, not directly to the later AFP image pixels.')
-      :linked
-        ?(fr?'Les résultats affichés concernent uniquement ce manifeste antérieur.':
-          'These results apply only to this earlier manifest.')
-        :(fr?'Ce manifeste antérieur est présent, mais ses résultats de validation indépendants ne sont pas disponibles.':
-          'This earlier manifest is present, but independent verification results are unavailable.');
+        ?'Résultats historiques consignés lors de l’intégration de ce manifeste par le signataire suivant. Ils concernent la version précédente, pas directement les pixels de la version actuelle. Le SDK vérifie également la chaîne des ingrédients ; consulter les résultats techniques pour les éventuels écarts.'
+        :'Historical results recorded when this manifest was incorporated by the next signer. They concern the earlier version, not directly the current image pixels. The SDK also checks the ingredient chain; see technical details for any deltas.')
+      :(fr?'Manifeste signé antérieur présent ; aucun résultat historique disponible pour ces quatre contrôles.':
+        'Earlier signed manifest present; no recorded results available for these four checks.');
     // This link reports availability of a trust service, not a claim that
     // a certificate is invalid, revoked, or a photo has been falsified.
     if(byKey.certificate==='warn'){
@@ -3317,6 +3516,14 @@ function afpHistoricalSignaturePanels(photo){
     }else{
       trust.append(head,signed,four,about,scope);
     }
+    if(linked?.currentLinkCodes?.includes('ingredient.claimSignature.validated')){
+      const linkCheck=document.createElement('p');
+      linkCheck.className='afp-reader-historical-notice';
+      linkCheck.textContent=fr
+        ?'Contrôle actuel du SDK : le lien cryptographique avec la signature antérieure est validé (ingredient.claimSignature.validated). Cela ne confirme pas la confiance dans son certificat.'
+        :'Current SDK check: the cryptographic link to the earlier signature is validated (ingredient.claimSignature.validated). This does not establish trust in its certificate.';
+      trust.append(linkCheck);
+    }
     // Important: this is the actual embedded Nikon manifest, not the AFP
     // manifest store or a reconstructed copy of the final JPEG.
     const pre=document.createElement('pre');pre.textContent=JSON.stringify(manifest,null,2);
@@ -3328,7 +3535,7 @@ function afpHistoricalSignaturePanels(photo){
     panel.classList.add('afp-reader-historical-signature');
     panel.dataset.historicalSigner=signer;
     panel.dataset.historicalManifestId=String(id);
-    panel.dataset.historicalValidation=linked?'independent':'unavailable';
+    panel.dataset.historicalValidation=linked?'recorded':'unavailable';
     panel.dataset.historicalLevel=level;
     panels.push(panel);
   }
@@ -3797,6 +4004,14 @@ function afpRawManifestFold(photo){
   return fold;
 }
 
+function afpPhotoInformationPanel(photo){
+  const details=c2paSourceDetails(photo);
+  return buildPhotoInformation(photo,{
+    field,readerFold,section,active:c2paActiveManifest(photo),
+    cameraFromProvenance:details.cameraModel,language:uiLanguage
+  });
+}
+
 /* ---------- Panneau Content Credentials (bouton logo AFP) ---------- */
 function fillDetails(photo) {
   const origin=originPanelSection(photo);
@@ -3807,19 +4022,20 @@ function fillDetails(photo) {
   if(photo.state==='none'||photo.state==='error'){
     setStatusLine(photo.state==='none'?'none':'error',photo.state==='none'?'Aucun manifeste C2PA intégré détecté.':
       (uiLanguage==='en'?'C2PA analysis unavailable: ':'Analyse C2PA indisponible : ')+String(photo.error||''));
-    const support=[];
-    if(photo.exif?.artist)support.push(field('Auteur déclaré',photo.exif.artist,'neutral'));
-    if(photo.exifDate)support.push(field('Date enregistrée par l’appareil',photo.exifDate,'neutral'));
-    lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),readerOpenFold(uiLanguage==='en'?'C2PA verification':'Vérification C2PA',document.createTextNode(tr(photo.state==='none'?'Aucun certificat C2PA détecté dans ce fichier.':'Lecture du certificat C2PA indisponible.'))),...(support.length?[readerFold('Informations sur la photo',section('Informations de production',support))]:[]),afpColorLegend());
+    lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),
+      readerOpenFold(uiLanguage==='en'?'C2PA verification':'Vérification C2PA',
+        document.createTextNode(tr(photo.state==='none'?'Aucun certificat C2PA détecté dans ce fichier.':'Lecture du certificat C2PA indisponible.'))),
+      afpPhotoInformationPanel(photo),afpColorLegend());
     lbJson.textContent=photo.state==='none'?tr('Aucun manifeste trouvé.'):String(photo.error||'');return;
   }
   const entries=photo.validation??[];
-  const levels=entries.map(validationLevel);
+  const allEntries=[...entries,...(photo.validationDeltas??[])];
+  const levels=allEntries.map(validationLevel);
   const codes=entries.map(v=>String(typeof v==='string'?v:v?.code??v?.status??'').toLowerCase());
   const hasUntrustedSigner=codes.some(c=>/signingcredential\.(?:untrusted|unknown)|signer\.untrusted/.test(c));
   const verifiedTrustSource=['official','legacy'].includes(photo.trustSource) &&
     (photo.validationState==='trusted' || codes.includes('signingcredential.trusted'));
-  const failingEntries=entries.filter(e=>validationLevel(e)==='bad');
+  const failingEntries=allEntries.filter(e=>validationLevel(e)==='bad');
   const failingCodes=failingEntries.map(e=>String(typeof e==='string'?e:e?.code??e?.status??'').toLowerCase());
   const hasIntegrityFailure=failingCodes.some(c=>/assertion\.datahash\.mismatch|assertion\.bmffhash\.mismatch|assertion\.hasheduri\.mismatch|assertion\.boxhash\.mismatch|hash\.mismatch/.test(c));
   const hasSignatureFailure=failingCodes.some(c=>/claimsignature\.mismatch|claimsignature\.invalid|signature\.invalid/.test(c));
@@ -3828,20 +4044,6 @@ function fillDetails(photo) {
   const signer=firstValue(sig.name,sig.issuer,sig.organization,a.signer);
   const generator=firstValue(a.claim_generator,a.claimGenerator,a.claim_generator_info?.[0]?.name,a.claimGeneratorInfo?.[0]?.name);
   const manifest=firstValue(photo.store?.active_manifest,photo.store?.activeManifest);
-  const assertions=Array.isArray(a.assertions)?a.assertions:[];
-  const metadata=assertions.filter(x=>/metadata|creativework|stds\.schema-org/i.test(String(x?.label??x?.type??'')))
-    .map(x=>x?.data??x).filter(x=>x&&typeof x==='object');
-  const authorValue=firstValue(a.author,a.creator,...metadata.map(m=>m.author??m.creator));
-  function authorName(v){
-    if(Array.isArray(v))return v.map(authorName).filter(Boolean).join(', ')||null;
-    if(typeof v==='string')return v;
-    if(v&&typeof v==='object')return firstValue(v.name,v['@id']);
-    return null;
-  }
-  const c2paAuthor=authorName(authorValue);
-  const author=firstValue(c2paAuthor,photo.exif?.artist,photo.exif?.copyright);
-  const authorSource=c2paAuthor?'C2PA':photo.exif?.artist?'EXIF Artist':photo.exif?.copyright?tr('EXIF Copyright (crédit déclaré)'):null;
-
   // The lead status is the GLOBAL photo result, not only certificate trust.
   // A trusted signer can coexist with an untrusted TSA (orange overall).
   const hasTsaWarning=codes.includes('timestamp.untrusted') ||
@@ -3849,7 +4051,7 @@ function fillDetails(photo) {
   const hasExpiredCredential=failingCodes.includes('signingcredential.expired');
   let trustLevel='neutral',trustTitle,trustText;
   if(levels.includes('bad')){
-    const failingCodes=entries.filter(e=>validationLevel(e)==='bad').map(validationText);
+    const failingCodes=allEntries.filter(e=>validationLevel(e)==='bad').map(validationText);
     trustLevel='bad';trustTitle='Une vérification de provenance a échoué.';
     trustText=afpSignerTrustExplanation(signer,'bad',false,photo.trustSource);
     // Give the exact failed SDK checks instead of attributing a failure to a trust list.
@@ -3892,12 +4094,17 @@ function fillDetails(photo) {
   const trustP=readerFold('Comprendre le certificat',afpTrustExplanationNode(trustText));
   trustP.classList.add('afp-reader-trust-more');
   const signerP=document.createElement('div');signerP.className='afp-reader-signer';
-  const by=document.createElement('span');by.textContent=tr('Signé par')+' : ';
+  const by=document.createElement('span');by.textContent=
+    photo.state!=='bad'&&
+    afpFourChecks(photo).find(x=>x.key==='signature')?.state==='ok'&&
+    afpFourChecks(photo).find(x=>x.key==='certificate')?.state==='ok'
+      ?tr('Signé par')+' : '
+      :(uiLanguage==='en'?'Declared signer: ':'Signataire déclaré : ');
   const signerName=document.createElement('strong');signerName.textContent=signer?readable(signer):tr('Signataire non identifié');
   const fourChecks=afpFourChecks(photo);
   const quick=afpFourCheckPanel(fourChecks);
   // La signification des couleurs est expliquée une seule fois, dans la légende.
-  const extraFailure=entries.filter(entry=>validationLevel(entry)==='bad'&&
+  const extraFailure=allEntries.filter(entry=>validationLevel(entry)==='bad'&&
     !/^(?:assertion\.(?:datahash|hasheduri|bmffhash|boxhash|boxeshash)\.|claimsignature\.|signingcredential\.)/i.test(String(entry?.code??entry?.status??'')));
   if(extraFailure.length){
     const p=document.createElement('p');p.className='afp-reader-other-failure';
@@ -3910,12 +4117,7 @@ function fillDetails(photo) {
   afpAppendTrustSourceNote(trust,photo);
   // Pas de recherche par simple nom de fabricant : un nom dans la liste ne valide pas la chaîne.
 
-  const photoInfo=[];
-  if(author)photoInfo.push(field('Auteur déclaré',`${author}${authorSource?' : '+authorSource:''}`,'neutral'));
-  if(photo.exifDate)photoInfo.push(field('Date enregistrée par l’appareil',photo.exifDate,'neutral'));
-  const detail=c2paSourceDetails(photo);
-  if(detail.cameraModel)photoInfo.push(field('Appareil identifié',detail.cameraModel,'neutral'));
-  const photoFold=photoInfo.length?readerFold('Informations sur la photo',section('Informations de production',photoInfo)):null;
+  const photoFold=afpPhotoInformationPanel(photo);
 
   const validationList=document.createElement('div');validationList.className='validation-list';
   if(entries.length){
@@ -3981,11 +4183,28 @@ const technical=readerFold('Détails de vérification (technique)',
     field('Horodatage TSA',tr(tsaStatus==='ok'?'Horodatage certifié et reconnu':tsaIssue?'Horodatage à vérifier':tsaValidated?'Horodatage valide, confiance à confirmer':'Aucun contrôle TSA confirmé'),tsaStatus)
   ]),
   section('Listes de confiance C2PA',afpTrustListFields(photo)),
+  section('Contexte de validation',[
+    field('Moteur C2PA','@contentauth/c2pa-web 0.17.0','neutral'),
+    field('Révocation OCSP','Consultation en ligne non effectuée (ocspFetch:false)','neutral',
+      'Une signature valide ne prouve pas qu’un certificat n’a pas été révoqué.'),
+    field('Liste officielle — SHA-256',photo.trustProof?.official?.sha256??null,'neutral',
+      photo.trustProof?.official?.url??''),
+    field('Liste historique — SHA-256',photo.trustProof?.legacy?.sha256??null,'neutral',
+      photo.trustProof?.legacy?.url??''),
+    field('Liste TSA — SHA-256',photo.trustProof?.tsa?.sha256??null,'neutral',
+      photo.trustProof?.tsa?.url??''),
+    field('Date du chargement des listes',photo.trustProof?.official?.retrievedAt??null,'neutral')
+  ]),
   pTsa,
   ...(afpManifestHistory(photo)?[afpManifestHistory(photo)]:[]),
   section('Informations du manifeste',rawFields),
   section('Filigrane invisible (déclaration C2PA)',afpWatermarkFields(photo)),
   rawIntro,
+  ...(photo.validationDeltas?.length
+    ?[section('Écarts actuels de validation des ingrédients',photo.validationDeltas.map(entry=>
+       field('Contrôle C2PA',entry.code,validationLevel(entry),
+         [entry.ingredientAssertionURI,entry.explanation].filter(Boolean).join(' — '))))]
+    :[]),
   section('Résultats de validation C2PA',[validationList])
 );
 technical.classList.add('afp-reader-technical-flat');

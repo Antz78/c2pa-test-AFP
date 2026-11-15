@@ -1,7 +1,7 @@
 name: C2PA reader smoke test
 on:
   pull_request:
-    paths: ['app.js', 'sw.js', 'diagnostic-c2pa.html', 'scripts/c2pa-smoke.mjs', 'scripts/c2pa-gallery-smoke.mjs', 'scripts/c2pa-nikon-afp-smoke.mjs', '.github/workflows/c2pa-engine-test.yml']
+    paths: ['app.js', 'photo-information.js', 'sw.js', 'diagnostic-c2pa.html', 'scripts/c2pa-smoke.mjs', 'scripts/c2pa-gallery-smoke.mjs', 'scripts/c2pa-nikon-afp-smoke.mjs', 'scripts/audit-negative-validation.mjs', 'scripts/audit-photo-information.mjs', 'scripts/audit-validation-level.mjs', '.github/workflows/c2pa-engine-test.yml']
   workflow_dispatch:
 jobs:
   test:
@@ -15,10 +15,15 @@ jobs:
       - name: JavaScript syntax
         run: |
           node --check app.js
+          node --check photo-information.js
           node --check sw.js
           node --check scripts/c2pa-smoke.mjs
           node --check scripts/c2pa-gallery-smoke.mjs
           node --check scripts/c2pa-nikon-afp-smoke.mjs
+          node --check scripts/audit-negative-validation.mjs
+          node --check scripts/audit-photo-information.mjs
+          node --check scripts/audit-validation-level.mjs
+          node scripts/audit-validation-level.mjs
       - name: Install Playwright and Chromium
         run: |
           npm install --no-save playwright@1.56.1
@@ -31,3 +36,5 @@ jobs:
           node scripts/c2pa-gallery-smoke.mjs
           printf '{"photos":["PHOTOS/D36K4MF-org.jpg","PHOTOS/QH3TP_redactParentExif.jpg","PHOTOS/QH3TP_redactParentThumbnail.jpg"]}' > photos.json
           node scripts/c2pa-nikon-afp-smoke.mjs
+          node scripts/audit-photo-information.mjs
+          node scripts/audit-negative-validation.mjs

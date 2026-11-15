@@ -3262,15 +3262,19 @@ function afpHistoricalValidationEntries(group){
   return entries;
 }
 function afpHistoricalVerification(store,manifestId){
-  // The reader returns independent outcomes for an ingredient in the PARENT
-  // manifest's ingredient.validation_results. Never borrow the current photo's checks.
+  // C2PA ingredient.validation_results contains validation RECORDED by the
+  // next claim generator when that ingredient was incorporated, not necessarily
+  // an independent current re-validation of each historic credential.
   for(const parent of Object.values(store?.manifests??{})){
     for(const ingredient of Array.isArray(parent?.ingredients)?parent.ingredients:[]){
       const id=ingredient?.active_manifest??ingredient?.activeManifest;
       if(id!==manifestId)continue;
       const results=ingredient?.validation_results??ingredient?.validationResults;
       const active=results?.activeManifest??results?.active_manifest;
-      if(active)return {entries:afpHistoricalValidationEntries(active),relationship:ingredient.relationship};
+      if(active)return {entries:afpHistoricalValidationEntries(active),
+        relationship:ingredient.relationship,kind:'recorded',
+        specVersion:results?.specVersion??null,
+        trustListUris:results?.trustListUris??null};
     }
   }
   return null;
@@ -3309,8 +3313,9 @@ function afpFourCheckCard({key,state},historical=false){
   const toggle=document.createElement('summary');toggle.textContent='i';
   toggle.setAttribute('aria-label',(fr?'Comprendre : ':'Explain: ')+names[key]);
   const copy=document.createElement('p');
-  copy.textContent=tips[key]+(historical && state==='neutral'
-    ? (fr?' Aucun résultat indépendant disponible pour ce contrôle.':' No independent outcome available for this check.')
+  copy.textContent=tips[key]+(historical
+    ? (fr?' Résultat historique consigné lors de l’intégration de l’ingrédient ; ce volet ne constitue pas une nouvelle validation isolée de cette signature.'
+      :'Historical result recorded on ingredient incorporation; this panel is not a fresh standalone validation of the earlier signature.')
     : '');
   help.append(toggle,copy);top.append(glyph,words);card.append(top,help);
   return card;
@@ -3413,7 +3418,9 @@ function afpHistoricalSignaturePanels(photo){
           ?(fr?'Vérifications C2PA reconnues':'C2PA checks trusted')
           :(fr?'Validation historique non confirmée':'Earlier verification not confirmed');
     const signed=document.createElement('div');signed.className='afp-reader-signer';
-    const by=document.createElement('span');by.textContent=fr?'Signé par : ':'Signed by: ';
+    const by=document.createElement('span');by.textContent=byKey.certificate==='ok'
+      ?(fr?'Signé par : ':'Signed by: ')
+      :(fr?'Signataire déclaré : ':'Declared signer: ');
     const name=document.createElement('strong');name.textContent=signer;
     signed.append(by,name);
     const four=afpFourCheckPanel(checks,{historical:true});
@@ -3423,15 +3430,12 @@ function afpHistoricalSignaturePanels(photo){
       afpTrustExplanationNode(expl));
     about.classList.add('afp-reader-trust-more');
     const scope=document.createElement('p');scope.className='afp-reader-historical-notice';
-    scope.textContent=linked&&byKey.integrity==='ok'&&byKey.signature==='ok'
+    scope.textContent=linked
       ?(fr
-        ?'La signature et les empreintes du manifeste Nikon d’origine ont été vérifiées. Elles concernent la version Nikon, pas directement les pixels de la version AFP.'
-        :'The original Nikon manifest signature and hashes were verified. These checks apply to the Nikon version, not directly to the later AFP image pixels.')
-      :linked
-        ?(fr?'Les résultats affichés concernent uniquement ce manifeste antérieur.':
-          'These results apply only to this earlier manifest.')
-        :(fr?'Ce manifeste antérieur est présent, mais ses résultats de validation indépendants ne sont pas disponibles.':
-          'This earlier manifest is present, but independent verification results are unavailable.');
+        ?'Résultats historiques consignés lors de l’intégration de ce manifeste par le signataire suivant. Ils concernent la version précédente, pas directement les pixels de la version actuelle. Le SDK vérifie également la chaîne des ingrédients ; consulter les résultats techniques pour les éventuels écarts.'
+        :'Historical results recorded when this manifest was incorporated by the next signer. They concern the earlier version, not directly the current image pixels. The SDK also checks the ingredient chain; see technical details for any deltas.')
+      :(fr?'Manifeste signé antérieur présent ; aucun résultat historique disponible pour ces quatre contrôles.':
+        'Earlier signed manifest present; no recorded results available for these four checks.');
     // This link reports availability of a trust service, not a claim that
     // a certificate is invalid, revoked, or a photo has been falsified.
     if(byKey.certificate==='warn'){
@@ -3459,7 +3463,7 @@ function afpHistoricalSignaturePanels(photo){
     panel.classList.add('afp-reader-historical-signature');
     panel.dataset.historicalSigner=signer;
     panel.dataset.historicalManifestId=String(id);
-    panel.dataset.historicalValidation=linked?'independent':'unavailable';
+    panel.dataset.historicalValidation=linked?'recorded':'unavailable';
     panel.dataset.historicalLevel=level;
     panels.push(panel);
   }
@@ -4017,7 +4021,10 @@ function fillDetails(photo) {
   const trustP=readerFold('Comprendre le certificat',afpTrustExplanationNode(trustText));
   trustP.classList.add('afp-reader-trust-more');
   const signerP=document.createElement('div');signerP.className='afp-reader-signer';
-  const by=document.createElement('span');by.textContent=tr('Signé par')+' : ';
+  const by=document.createElement('span');by.textContent=
+    afpFourChecks(photo).find(x=>x.key==='certificate')?.state==='ok'
+      ?tr('Signé par')+' : '
+      :(uiLanguage==='en'?'Declared signer: ':'Signataire déclaré : ');
   const signerName=document.createElement('strong');signerName.textContent=signer?readable(signer):tr('Signataire non identifié');
   const fourChecks=afpFourChecks(photo);
   const quick=afpFourCheckPanel(fourChecks);

@@ -3760,12 +3760,12 @@ function afpEditorialCertificateStory(photo,activeSigner){
   const signer=(uiLanguage==='en'?profile.en:profile.fr)||String(name);
   if(uiLanguage==='en')return [
     '**'+signer+'** signed the original photograph. Its first signature acts as a **digital birth certificate**. Later signatures add to a **digital identity record** that can follow the image throughout its life.',
-    '**AFP** then signed the version it publishes, without removing the first signature. This marks its **editorial involvement** and protects the information and image data covered by its signature from undetected changes.',
+    '**AFP** then signed the version it publishes, without removing the first signature. This marks its **editorial involvement**: AFP adds its own information to the published version and uses its signature to protect the information and image data it actually signed from undetected changes.',
     'The reader shows the available checks for each signature: **integrity, signature, certificate and signing time**. These checks trace provenance, but do not in themselves prove the photographed scene is real.'
   ].join('\n\n');
   return [
     '**'+signer+'** a signé la photo d’origine. Cette première signature tient lieu d’**acte de naissance numérique**. Les signatures suivantes enrichissent son **carnet d’identité**, qui peut accompagner l’image tout au long de sa vie.',
-    '**L’AFP** a ensuite signé la version qu’elle diffuse, sans supprimer la signature d’origine. Cette nouvelle signature marque son **intervention éditoriale** et protège contre les modifications non détectées les informations et les données de l’image qu’elle signe.',
+    '**L’AFP** a ensuite signé la version qu’elle diffuse, sans supprimer la signature d’origine. Elle marque son **intervention éditoriale** : l’AFP ajoute ses propres informations à la version diffusée et protège, grâce à sa signature, les informations et les données de l’image qu’elle a effectivement signées.',
     'Le lecteur présente les contrôles disponibles pour chaque signature : **intégrité, signature, certificat et date de signature**. Ces vérifications retracent la provenance, mais ne prouvent pas à elles seules la réalité de la scène.'
   ].join('\n\n');
 }

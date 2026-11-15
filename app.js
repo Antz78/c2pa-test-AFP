@@ -1636,7 +1636,7 @@ async function analyze(photo) {
         blockingCodes,trustChecks:photo.trustChecks,validationState:photo.validationState
       });
       const certificateTrusted=afpHasTrustedCertificate(check);
-      const unknownChecks=allValidation.some(v=>validationLevel(v)==='neutral' && !afpBenignNotice(v));
+      const unknownChecks=allValidation.some(v=>v?.afpResultKind!=='informational' && validationLevel(v)==='neutral' && !afpBenignNotice(v));
       photo.state=!check.store?'none':levels.includes('bad')?'bad':
         (!certificateTrusted || photo.trustSource!=='official' ||
          levels.includes('warn') || unknownChecks)?'warn':'ok';

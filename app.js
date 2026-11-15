@@ -3481,9 +3481,10 @@ function afpHistoricalSignaturePanels(photo){
           ?(fr?'Vérifications C2PA reconnues':'C2PA checks trusted')
           :(fr?'Validation historique non confirmée':'Earlier verification not confirmed');
     const signed=document.createElement('div');signed.className='afp-reader-signer';
-    const by=document.createElement('span');by.textContent=byKey.certificate==='ok'
-      ?(fr?'Signé par : ':'Signed by: ')
-      :(fr?'Signataire déclaré : ':'Declared signer: ');
+    const by=document.createElement('span');by.textContent=
+      byKey.certificate==='ok'&&byKey.signature==='ok'
+        ?(fr?'Signé par : ':'Signed by: ')
+        :(fr?'Signataire déclaré : ':'Declared signer: ');
     const name=document.createElement('strong');name.textContent=signer;
     signed.append(by,name);
     const four=afpFourCheckPanel(checks,{historical:true});
@@ -4094,6 +4095,8 @@ function fillDetails(photo) {
   trustP.classList.add('afp-reader-trust-more');
   const signerP=document.createElement('div');signerP.className='afp-reader-signer';
   const by=document.createElement('span');by.textContent=
+    photo.state!=='bad'&&
+    afpFourChecks(photo).find(x=>x.key==='signature')?.state==='ok'&&
     afpFourChecks(photo).find(x=>x.key==='certificate')?.state==='ok'
       ?tr('Signé par')+' : '
       :(uiLanguage==='en'?'Declared signer: ':'Signataire déclaré : ');

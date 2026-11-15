@@ -29,6 +29,9 @@ try {
         activeTitle:active?.querySelector(':scope>summary')?.textContent,
         activeOpen:active?.open,
         activeCertificateInfo:Boolean(active?.querySelector('.afp-reader-trust-more > summary')),
+        activeExplanation:active?.querySelector('.afp-reader-trust-more .afp-reader-trust-copy')?.textContent??'',
+        trustNoteInHelp:Boolean(active?.querySelector('.afp-reader-trust-more .afp-reader-directory-status')),
+        trustNoteOutsideHelp:Boolean(active?.querySelector('.afp-reader-trust > .afp-reader-directory-status')),
         activeChecks:checks(active),
         duplicateColorNotes:panel.querySelectorAll('.afp-reader-color-explanation').length,
         otherFailure:Boolean(active?.querySelector('.afp-reader-other-failure')),
@@ -41,8 +44,11 @@ try {
             open:n.open,validation:n.dataset.historicalValidation,checks:checks(n),
             background:n.querySelector('.afp-reader-historical-trust')?.dataset.level,
             certificateInfo:Boolean(n.querySelector('.afp-reader-trust-more > summary')),
-            note:n.querySelector('.afp-reader-historical-notice')?.textContent??'',
-          currentLink:Array.from(n.querySelectorAll('.afp-reader-historical-notice')).some(p=>p.textContent.includes('ingredient.claimSignature.validated')),
+            publicNotes:n.querySelectorAll('.afp-reader-historical-notice').length,
+            hasHistoryStory:(n.querySelector('.afp-reader-trust-more')?.textContent??'').includes('acte de naissance'),
+            certificateHelp:n.querySelector('.afp-reader-trust-more')?.textContent??'',
+          certificateLinkInsideHelp:Boolean(n.querySelector('.afp-reader-trust-more a[href]')),
+          jargonOnSurface:Array.from(n.querySelectorAll(':scope > .afp-reader-historical-trust > p')).some(p=>/SDK|ingrédient|claimSignature|Résultats historiques consignés/.test(p.textContent)),
             rawManifest:raw?.querySelector('summary')?.textContent??'',
             rawSignature:parsed?.signature_info?.issuer??parsed?.signatureInfo?.issuer??'',
             rawIsIndividual:parsed && !Object.hasOwn(parsed,'manifests'),
@@ -62,21 +68,30 @@ try {
     if(i===0){
       if(data.previous.length!==0)throw Error('Original Nikon image cannot have AFP parent');
       if(!data.activeTitle.includes('NIKON CORPORATION'))throw Error('Nikon signer missing');
+      if(data.activeExplanation.includes('acte de naissance'))
+        throw Error('The original Nikon certificate must keep generic help only');
     }else{
       if(!data.activeTitle.includes('AGENCE FRANCE-PRESSE'))throw Error('AFP signer missing');
+      if(!data.activeExplanation.includes('Nikon') ||
+         !data.activeExplanation.includes('acte de naissance numérique') ||
+         !data.activeExplanation.includes('carnet d’identité') ||
+         !data.activeExplanation.includes('intervention éditoriale') ||
+         !data.activeExplanation.includes('informations') ||
+         !data.trustNoteInHelp || data.trustNoteOutsideHelp)
+        throw Error('AFP certificate help must tell the complete dynamic C2PA story, with trust note inside help');
       if(data.activeChecks.timestamp!=='warn')throw Error('AFP timestamp must require review');
       if(data.previous.length!==1 || !data.previous[0].title.includes('NIKON CORPORATION')||
          data.previous[0].validation!=='recorded')throw Error('Missing historical Nikon validation results recorded by AFP');
       const c=data.previous[0].checks;
       if(c.integrity!=='ok'||c.signature!=='ok'||c.certificate!=='warn'||c.timestamp!=='neutral')
         throw Error('Wrong Nikon historical C2PA checks '+JSON.stringify(c));
-      if(!data.previous[0].currentLink)throw Error('Current Nikon claim-signature link verification absent');
-      if(!data.previous[0].note.includes('Résultats historiques consignés') ||
-         !data.previous[0].open || data.previous[0].background!=='warn' ||
+      if(data.previous[0].publicNotes!==0||data.previous[0].hasHistoryStory)
+        throw Error('First Nikon panel must not repeat AFP provenance story');
+      if(!data.previous[0].open || data.previous[0].background!=='warn' ||
          !data.previous[0].certificateInfo || !data.previous[0].rawIsIndividual ||
          !data.previous[0].rawManifest.includes('JSON') ||
          !data.previous[0].rawSignature.includes('NIKON CORPORATION') ||
-         !data.previous[0].hasId)
+         !data.previous[0].hasId || !data.previous[0].certificateLinkInsideHelp || data.previous[0].jargonOnSurface)
         throw Error('Nikon must open first, amber, with its own certificate help and embedded JSON');
       if(data.order.length!==2 || !data.order[0].includes('NIKON CORPORATION') ||
          !data.order[1].includes('AGENCE FRANCE-PRESSE'))

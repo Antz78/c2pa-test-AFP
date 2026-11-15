@@ -3493,24 +3493,8 @@ function afpHistoricalSignaturePanels(photo){
     const about=readerFold(fr?'Comprendre le certificat':'About the certificate',
       afpTrustExplanationNode(expl));
     about.classList.add('afp-reader-trust-more');
-    const scope=document.createElement('p');scope.className='afp-reader-historical-notice';
-    const currentLink=linked?.currentLinkCodes?.includes('ingredient.claimSignature.validated');
-    scope.textContent=linked&&currentLink
-      ?(fr
-        ?'Cette photo a d’abord été signée par '+signer+'. La signature est toujours présente dans la version actuelle et le lien entre les deux versions est vérifié.'+
-          (byKey.certificate==='warn'?' Le certificat reste à confirmer.':'')
-        :'This photo was first signed by '+signer+'. The signature is still present in the current version and the link between the two versions has been verified.'+
-          (byKey.certificate==='warn'?' Certificate recognition remains unconfirmed.':''))
-      :linked
-        ?(fr
-          ?'Cette photo a d’abord été signée par '+signer+'. Ces vérifications ont été enregistrées lors de sa reprise, mais le lien avec la version actuelle n’est pas confirmé.'
-          :'This photo was first signed by '+signer+'. These checks were recorded when it was reused, but the link to the current version is not confirmed.')
-        :(fr
-          ?'Une ancienne signature est encore présente dans ce fichier, mais il manque des informations pour la vérifier.'
-          :'An earlier signature is still present in this file, but there is not enough information to verify it.');
-    // Une seule explication simple au premier niveau. Le code SDK exact reste
-    // dans les résultats techniques et le JSON.
-    trust.append(head,signed,four,scope,about);
+    // Aucun récit supplémentaire dans le panneau du premier signataire.
+    trust.append(head,signed,four,about);
     if(byKey.certificate==='warn'){
       const link=document.createElement('a');link.href=AFP_CONFORMANCE_EXPLORER;
       link.target='_blank';link.rel='noopener noreferrer';
@@ -3756,6 +3740,35 @@ function afpSignerTrustExplanation(signer,trustLevel,isUntrusted,trustSource=nul
     :'**Here, another check remains unconfirmed**, for example the signing date.');
   return paragraphs.join('\n\n');
 }
+// L'histoire des signatures est racontée uniquement dans l'aide AFP.
+// Le premier signataire est lu dans le manifeste C2PA antérieur lié.
+function afpEditorialCertificateStory(photo,activeSigner){
+  if(afpSignerProfile(activeSigner).key!=='afp')return '';
+  const store=photo?.store,active=String(store?.active_manifest??store?.activeManifest??'');
+  const current=store?.manifests?.[active];
+  if(!current||!Array.isArray(current.ingredients)||!current.ingredients.length)return '';
+  const first=afpChronologicalManifestPairs(store).find(([id,m])=>{
+    if(String(id)===active)return false;
+    const sig=signatureOf(m??{});
+    return Boolean(firstValue(sig?.name,sig?.issuer,sig?.signer,sig?.organization,m?.signer));
+  });
+  if(!first)return '';
+  const manifest=first[1],sig=signatureOf(manifest);
+  const name=firstValue(sig?.name,sig?.issuer,sig?.signer,sig?.organization,manifest?.signer);
+  if(!name)return '';
+  const profile=afpSignerProfile(name);
+  const signer=(uiLanguage==='en'?profile.en:profile.fr)||String(name);
+  if(uiLanguage==='en')return [
+    '**'+signer+'** signed the original photograph. Its first signature acts as a **digital birth certificate**. Later signatures add to a **digital identity record** that can follow the image throughout its life.',
+    '**AFP** then signed the version it publishes, without removing the first signature. This marks its **editorial involvement** and protects the information and image data covered by its signature from undetected changes.',
+    'The reader shows the available checks for each signature: **integrity, signature, certificate and signing time**. These checks trace provenance, but do not in themselves prove the photographed scene is real.'
+  ].join('\n\n');
+  return [
+    '**'+signer+'** a signé la photo d’origine. Cette première signature tient lieu d’**acte de naissance numérique**. Les signatures suivantes enrichissent son **carnet d’identité**, qui peut accompagner l’image tout au long de sa vie.',
+    '**L’AFP** a ensuite signé la version qu’elle diffuse, sans supprimer la signature d’origine. Cette nouvelle signature marque son **intervention éditoriale** et protège contre les modifications non détectées les informations et les données de l’image qu’elle signe.',
+    'Le lecteur présente les contrôles disponibles pour chaque signature : **intégrité, signature, certificat et date de signature**. Ces vérifications retracent la provenance, mais ne prouvent pas à elles seules la réalité de la scène.'
+  ].join('\n\n');
+}
 function afpTrustSourceExplanation(trustSource){
   const fr=uiLanguage!=='en';
   const messages=fr?{
@@ -3778,11 +3791,12 @@ function afpAppendTrustSourceNote(trust,photo,aboutFold=null){
   if(!source)return;
   const holder=document.createElement('div');holder.className='afp-reader-directory-status';
   const note=document.createElement('p');note.textContent=afpTrustSourceExplanation(source);
-  holder.append(note);trust.append(holder);
+  holder.append(note);
   const link=document.createElement('a');link.href=AFP_CONFORMANCE_EXPLORER;
   link.target='_blank';link.rel='noopener noreferrer';
   link.textContent=uiLanguage==='en'?'See C2PA trust lists':'Voir les listes de confiance C2PA';
-  if(aboutFold)aboutFold.append(link);else holder.append(link);
+  holder.append(link);
+  if(aboutFold)aboutFold.append(holder);else trust.append(holder);
 }
 function afpTrustExplanationNode(message){
   const wrapper=document.createElement('div');
@@ -4072,6 +4086,8 @@ function fillDetails(photo) {
   const trust=document.createElement('section');trust.className='afp-reader-trust';trust.dataset.level=trustLevel;
   trust.setAttribute('aria-label',tr('Qui a signé ces informations ?'));
   const trustH=document.createElement('h3');trustH.className='afp-reader-trust-title';trustH.textContent=tr(trustTitle);
+  const story=afpEditorialCertificateStory(photo,signer);
+  if(story)trustText=story+(trustLevel==='bad'?'\n\n'+trustText:'');
   const trustP=readerFold('Comprendre le certificat',afpTrustExplanationNode(trustText));
   trustP.classList.add('afp-reader-trust-more');
   const signerP=document.createElement('div');signerP.className='afp-reader-signer';

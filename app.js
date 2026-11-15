@@ -2982,26 +2982,37 @@ function present(value) { return value === null || value === undefined || value 
    'valid' ou 'revoked' contenus dans un nom (notRevoked, outsideValidity...).
    Les extensions inconnues restent neutres jusqu'à interprétation explicite. */
 function validationLevel(v) {
-  const code = String(typeof v === 'string' ? v : v?.code ?? v?.status ?? '').trim().toLowerCase();
-  if (!code) return 'neutral';
-  // Catégories explicites du SDK (en conservant l'orange pédagogique pour untrusted).
-  if (v?.afpResultKind==='informational') return 'neutral';
-  if (v?.afpResultKind==='success') return 'ok';
-  const informational = new Set([
-    'signingcredential.ocsp.skipped','assertion.datahash.additionalexclusionspresent',
-    'ingredient.unknownprovenance','assertion.redacted',
-    'timeofsigning.untrusted','timeofsigning.unknown'
+  const code=String(typeof v==='string'?v:v?.code??v?.status??'').trim().toLowerCase();
+  if(!code)return 'neutral';
+  // La confiance non établie n'est pas un échec de signature cryptographique.
+  // La vérification d'horodatage non reconnue et les identités CAWG non
+  // reconnues doivent rester orange, même si le SDK les classe informatives.
+  const needsTrust=new Set([
+    'signingcredential.untrusted','signingcredential.unknown',
+    'signingcredential.ocsp.unknown','signingcredential.ocsp.inaccessible',
+    'timestamp.untrusted','timeofsigning.untrusted',
+    'cawg.x509.credential.untrusted','cawg.identity.credential.untrusted',
+    'algorithm.unsupported','algorithm.deprecated','manifest.inaccessible'
   ]);
-  if (informational.has(code)) return 'neutral';
-  // CAWG identity trust is a separate certificate-chain recognition check.
-  // Not being on a trust list is NOT an invalid cryptographic signature.
-  if (/^(?:cawg\.x509\.credential\.untrusted|cawg\.identity\.credential\.untrusted)$/.test(code)) return 'warn';
-  if (code === 'signingcredential.ocsp.notrevoked') return 'ok';
-  if (/^(?:signingcredential\.(?:untrusted|unknown|ocsp\.(?:unknown|inaccessible))|algorithm\.(?:unsupported|deprecated)|manifest\.inaccessible|claim\.missing|timestamp\.untrusted)$/.test(code)) return 'warn';
-  if (/^(?:claimsignature\.(?:outsidevalidity|mismatch|invalid)|signingcredential\.ocsp\.revoked)$/.test(code)) return 'bad';
-  if (/\.(?:mismatch|invalid|malformed|missing|revoked|failure|error|outofrange|outsidevalidity)$/.test(code)) return 'bad';
-  if (/\.(?:validated|trusted|match|insidevalidity|notrevoked|success)$/.test(code)) return 'ok';
-  if (v?.afpResultKind==='failure') return 'bad';
+  if(needsTrust.has(code))return 'warn';
+  const notices=new Set([
+    'signingcredential.ocsp.skipped',
+    'assertion.datahash.additionalexclusionspresent',
+    'ingredient.unknownprovenance','assertion.redacted',
+    'timeofsigning.unknown'
+  ]);
+  if(notices.has(code))return 'neutral';
+  // Les 3 catégories du SDK ont priorité sur le nom du code.
+  if(v?.afpResultKind==='success')return 'ok';
+  if(v?.afpResultKind==='informational')return 'neutral';
+  if(v?.afpResultKind==='failure')return 'bad';
+  // Compatibilité SDK ancien, lorsqu'aucune catégorie n'est fournie.
+  if(code==='signingcredential.ocsp.notrevoked')return 'ok';
+  if(/\.(?:mismatch|invalid|malformed|missing|revoked|expired|failure|error|outofrange|outsidevalidity)$/.test(code))
+    return 'bad';
+  if(/\.(?:validated|trusted|match|insidevalidity|notrevoked|success)$/.test(code))
+    return 'ok';
+  // Ne jamais déclarer vert ou rouge un code propriétaire inconnu.
   return 'neutral';
 }
 function signatureOf(a) {
@@ -3508,8 +3519,8 @@ function afpHistoricalSignaturePanels(photo){
       const linkCheck=document.createElement('p');
       linkCheck.className='afp-reader-historical-notice';
       linkCheck.textContent=fr
-        ?'Contrôle actuel du SDK : le lien cryptographique avec la signature Nikon est validé (ingredient.claimSignature.validated). Cela ne confirme pas la confiance dans son certificat.'
-        :'Current SDK check: the cryptographic link to the Nikon signature is validated (ingredient.claimSignature.validated). This does not establish trust in its certificate.';
+        ?'Contrôle actuel du SDK : le lien cryptographique avec la signature antérieure est validé (ingredient.claimSignature.validated). Cela ne confirme pas la confiance dans son certificat.'
+        :'Current SDK check: the cryptographic link to the earlier signature is validated (ingredient.claimSignature.validated). This does not establish trust in its certificate.';
       trust.append(linkCheck);
     }
     // Important: this is the actual embedded Nikon manifest, not the AFP

@@ -707,13 +707,13 @@ function resizeAfpBadge() {
   const height = Math.min(33.6, Math.max(12, width * 0.065));
   crBadge.style.setProperty('--afp-logo-height', `${height}px`);
   crBadge.style.setProperty('--afp-dot-size', `${Math.max(6, Math.min(9, height * 0.27))}px`);
-  // Le pictogramme de provenance s'adapte au plus petit côté de la photo
-  // réellement affichée. Sur téléphone : 2,2 fois plus petit au maximum.
+  // Le pictogramme suit le plus petit côté de la photo réellement affichée.
+  // Sur smartphone, agrandissement de 25 % par rapport au réglage précédent.
   // Les dimensions desktop restent strictement inchangées.
   const rect = lbPhoto.getBoundingClientRect();
   const shortSide = Math.min(rect.width, rect.height);
   const isPhone = window.matchMedia('(max-width: 900px) and (pointer: coarse)').matches;
-  const factor = isPhone ? Math.min(1 / 2.2, shortSide / 700) : 1;
+  const factor = isPhone ? 1.25 * Math.min(1 / 2.2, shortSide / 700) : 1;
   crBadge.style.setProperty('--afp-origin-box', `${(56 * factor).toFixed(2)}px`);
   crBadge.style.setProperty('--afp-origin-svg', `${(46 * factor).toFixed(2)}px`);
   crBadge.style.setProperty('--afp-origin-right', isPhone ? '8px' : '18px');
@@ -725,9 +725,9 @@ lbPhoto.addEventListener('load', resizeAfpBadge);
 window.addEventListener('resize', resizeAfpBadge);
 window.addEventListener('resize',()=>document.querySelectorAll('#grid .card img').forEach(resizeAfpThumbnailBadge));
 
-// Même principe que la visionneuse, appliqué aux imagettes.
-// Sur téléphone, le SVG mesure au plus 40/2,2 px ; la zone tactile
-// reste de 44 px. L'icône reste placée sur la photo, pas sur sa légende.
+// Même principe pour les imagettes : sur smartphone +25 % pour chaque
+// pictogramme de provenance, selon le plus petit côté de la photo.
+// La zone tactile reste de 44 px et l'icône reste sur la photo.
 function resizeAfpThumbnailBadge(img){
   if(!img?.isConnected)return;
   const card=img.closest('.card'),overlay=card?.querySelector('.demo-overlay');
@@ -735,7 +735,7 @@ function resizeAfpThumbnailBadge(img){
   const rect=img.getBoundingClientRect();
   if(!rect.width||!rect.height)return;
   const isPhone=window.matchMedia('(max-width: 900px) and (pointer: coarse)').matches;
-  const factor=isPhone?Math.min(1/2.2,Math.min(rect.width,rect.height)/550):1;
+  const factor=isPhone?1.25*Math.min(1/2.2,Math.min(rect.width,rect.height)/550):1;
   const svgSize=40*factor;
   const boxSize=isPhone?44:48;
   const captionHeight=card.querySelector('.name')?.getBoundingClientRect().height??0;
@@ -1782,10 +1782,10 @@ originBadgeStyle.textContent = `
     width:var(--afp-origin-box,56px)!important;height:var(--afp-origin-box,56px)!important;
     right:var(--afp-origin-right,18px)!important;bottom:var(--afp-origin-bottom,8px)!important;
   }
-  /* Au repos : opacite 35%. Intro lumineuse 100% pendant 1 s apres 2 s. */
+  /* Au repos : opacité 40 %. Intro lumineuse 100 % pendant 1 s après 2 s. */
   #grid .demo-overlay.mode-origin-distinguo.origin-visible,
   #lightbox #cr-badge.mode-origin-distinguo.delayed-visible {
-    opacity:.35!important;visibility:visible!important;pointer-events:auto!important;
+    opacity:.40!important;visibility:visible!important;pointer-events:auto!important;
     -webkit-touch-callout:none!important;-webkit-user-select:none!important;
     user-select:none!important;touch-action:manipulation!important;
   }
@@ -3704,11 +3704,6 @@ function originPanelSection(photo) {
   const title=document.createElement('strong');title.textContent=pending?tr('Analyse en cours'):(missing?tr('Image sans signature C2PA'):tr(labels[kind]));
   const desc=document.createElement('p');
   desc.textContent=readerOriginExplanation(detail,pending,missing,error);
-  if(detail.inferred && photo.state==='warn' && afpValidationCodes(photo).includes('signingcredential.expired')){
-    desc.textContent+=uiLanguage==='en'
-      ?' C2PA data indicate camera capture, but the signing certificate has expired; this origin is not fully authenticated.'
-      :' Les informations C2PA indiquent une capture photographique, mais le certificat a expiré : la provenance n’est pas pleinement authentifiée.';
-  }
   main.append(title,desc);top.append(readerIcon(kind),main);
   const source=document.createElement('div');source.className='afp-reader-source';
   const kicker=document.createElement('span');kicker.className='afp-reader-kicker';kicker.textContent=tr('Champ officiel : digitalSourceType');

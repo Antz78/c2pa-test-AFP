@@ -860,6 +860,83 @@ function addFiles(files) {
   return true;
 }
 
+/* Extraire séparément IPTC-IIM et XMP sans les présenter comme des données C2PA.
+   Les métadonnées peuvent être éditées indépendamment et ne certifient pas la réalité de la scène. */
+function afpMetadataText(bytes){
+  try {return new TextDecoder('utf-8',{fatal:true}).decode(bytes).replace(/\0/g,'').trim();}
+  catch (_) {return new TextDecoder('windows-1252').decode(bytes).replace(/\0/g,'').trim();}
+}
+function afpParseIptcDataset(bytes,meta){
+  const iptc=meta.iptc??(meta.iptc={});
+  let p=0;
+  while(p+5<=bytes.length){
+    if(bytes[p]!==0x1c){p++;continue;}
+    const record=bytes[p+1],tag=bytes[p+2],flags=bytes[p+3],lo=bytes[p+4];
+    if(flags&0x80){p+=5;continue;} // extended-length data are not inferred
+    const size=(flags<<8)|lo,start=p+5,end=start+size;
+    if(end>bytes.length)break;
+    if(record===2&&size&&size<65536){
+      const value=afpMetadataText(bytes.subarray(start,end));
+      const names={80:'author',90:'city',92:'sublocation',95:'province',
+        100:'countryCode',101:'country',110:'credit',115:'source',120:'caption',
+        55:'dateCreated',60:'timeCreated',105:'headline'};
+      const name=names[tag];
+      if(name && value && !iptc[name])iptc[name]=value;
+    }
+    p=end;
+  }
+  const date=iptc.dateCreated,time=iptc.timeCreated;
+  if(/^\d{8}$/.test(date??'')){
+    const day=date.slice(6,8)+'/'+date.slice(4,6)+'/'+date.slice(0,4);
+    if(/^\d{6}(?:[+-]\d{4})?$/.test(time??'')){
+      const hh=time.slice(0,2)+':'+time.slice(2,4)+':'+time.slice(4,6);
+      const tz=time.length===11?' UTC'+time.slice(6,9)+':'+time.slice(9):'';
+      iptc.captureDate=day+' '+hh+tz;
+    }else iptc.captureDate=day;
+  }
+}
+function afpParseIptcPhotoshop(data,from,length,meta){
+  const end=Math.min(data.byteLength,from+length);
+  const prefix='Photoshop 3.0';
+  if(from+prefix.length+1>end)return;
+  for(let i=0;i<prefix.length;i++)if(data.getUint8(from+i)!==prefix.charCodeAt(i))return;
+  let pos=from+prefix.length+1;
+  while(pos+12<=end){
+    if([56,66,73,77].some((v,i)=>data.getUint8(pos+i)!==v))break; // 8BIM
+    const id=data.getUint16(pos+4),nameLen=data.getUint8(pos+6);
+    const nameBlock=(1+nameLen+1)&~1;
+    const sizePos=pos+6+nameBlock;
+    if(sizePos+4>end)break;
+    const size=data.getUint32(sizePos),payload=sizePos+4;
+    if(payload+size>end)break;
+    if(id===0x0404)afpParseIptcDataset(
+      new Uint8Array(data.buffer,data.byteOffset+payload,size),meta);
+    pos=payload+size+(size%2);
+  }
+}
+function afpParseXmp(xml,meta){
+  if(typeof xml!=='string'||xml.length>500000)return;
+  try{
+    const doc=new DOMParser().parseFromString(xml,'application/xml');
+    if(doc.querySelector('parsererror'))return;
+    const nodes=[...doc.getElementsByTagName('*')];
+    const xmp=meta.xmp??(meta.xmp={});
+    const names={creator:'author',DateTimeOriginal:'dateOriginal',DateCreated:'dateCreated',
+      City:'city',Country:'country',CountryName:'country',
+      Location:'sublocation',Sublocation:'sublocation',Credit:'credit',Source:'source'};
+    for(const el of nodes){
+      const field=names[el.localName];
+      if(field&&!xmp[field]){
+        const value=el.textContent?.trim();
+        if(value&&value.length<=300&&!value.includes('<'))xmp[field]=value;
+      }
+      for(const attr of el.attributes){
+        const field=names[attr.localName],value=attr.value?.trim();
+        if(field&&value&&value.length<=300&&!xmp[field])xmp[field]=value;
+      }
+    }
+  }catch(_){}
+}
 /* EXIF / crédits lus dans les octets d'origine, sans réencoder l'image.
    JPEG : segment APP1 ; PNG : bloc eXIf et blocs textuels tEXt / iTXt.
    Il s'agit de déclarations, PAS de preuves cryptographiques. */
@@ -896,6 +973,42 @@ function parseTiffExif(data, tiff, result) {
   const root = entries(u32(tiff + 4));
   const exif = typeof root.get(0x8769) === 'number' ? entries(root.get(0x8769)) : new Map();
   result.artist ||= root.get(0x013b) || null;
+  result.cameraMake ||= root.get(0x010f) || null;
+  result.cameraModel ||= root.get(0x0110) || null;
+  const gpsOffset=root.get(0x8825);
+  if(typeof gpsOffset==='number'){
+    const base=tiff+gpsOffset,qty=u16(base);
+    if(Number.isInteger(qty)&&qty>=0&&qty<=60){
+      const gps={};
+      const strAt=(pos,len)=>pos>=tiff&&pos+len<=data.byteLength
+        ?afpMetadataText(new Uint8Array(data.buffer,data.byteOffset+pos,len)):null;
+      const rationals=(ent,count)=>{
+        const ptr=u32(ent+8),at=tiff+ptr;
+        if(count>4||ptr==null||at<tiff||at+count*8>data.byteLength)return null;
+        const vals=[];
+        for(let k=0;k<count;k++){const denom=u32(at+k*8+4);
+          if(!denom)return null;vals.push(u32(at+k*8)/denom);}
+        return vals;
+      };
+      for(let i=0;i<qty;i++){
+        const e=base+2+12*i,type=u16(e+2),count=u32(e+4);
+        if(e+12>data.byteLength)break;
+        const tag=u16(e);
+        if((tag===1||tag===3)&&type===2&&count>0&&count<=4)
+          gps[tag]=strAt(e+8,count);
+        if((tag===2||tag===4)&&type===5&&count===3)
+          gps[tag]=rationals(e,3);
+      }
+      if(gps[1]&&gps[2]?.length===3&&gps[3]&&gps[4]?.length===3){
+        const lat=gps[2][0]+gps[2][1]/60+gps[2][2]/3600;
+        const lon=gps[4][0]+gps[4][1]/60+gps[4][2]/3600;
+        const latitude=/S/i.test(gps[1])?-lat:lat;
+        const longitude=/W/i.test(gps[3])?-lon:lon;
+        if(Math.abs(latitude)<=90&&Math.abs(longitude)<=180)
+          result.gps={latitude,longitude};
+      }
+    }
+  }
   result.copyright ||= root.get(0x8298) || null;
   const raw = exif.get(0x9003) || root.get(0x0132);
   if (typeof raw === 'string' && /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)) {
@@ -926,7 +1039,8 @@ function applyPngText(key, value, result) {
   }
 }
 async function readExifMetadata(blob) {
-  const result = { date: null, artist: null, copyright: null };
+  const result = {date:null,artist:null,copyright:null,cameraMake:null,cameraModel:null,
+    gps:null,iptc:{},xmp:{}};
   try {
     // Une tranche limitée pour préserver les performances des images haute résolution.
     const data = new DataView(await blob.slice(0, 8 * 1024 * 1024).arrayBuffer());
@@ -943,7 +1057,19 @@ async function readExifMetadata(blob) {
         const base = pos + 4;
         if (marker === 0xe1 && length >= 8 && [69,120,105,102,0,0].every((v,i) => data.getUint8(base+i) === v)) {
           parseTiffExif(data, base + 6, result);
-          break;
+        }
+        if(marker===0xed)afpParseIptcPhotoshop(data,base,length-2,result);
+        if(marker===0xe1&&length>36){
+          const header=new TextDecoder('latin1').decode(
+            new Uint8Array(data.buffer,data.byteOffset+base,Math.min(40,length-2)));
+          if(header.startsWith('http://ns.adobe.com/xap/1.0/')){
+            const nul=header.indexOf('\0');
+            if(nul>=0){const from=base+nul+1,size=length-2-(nul+1);
+              if(size>0&&size<=500000&&from+size<=data.byteLength)
+                afpParseXmp(new TextDecoder('utf-8').decode(
+                  new Uint8Array(data.buffer,data.byteOffset+from,size)),result);
+            }
+          }
         }
         pos += 2 + length;
       }
@@ -968,7 +1094,11 @@ async function readExifMetadata(blob) {
               // iTXt non compressé : flag/méthode, langue NUL, traduction NUL, texte UTF-8.
               const langEnd = bytes.indexOf(0, zero + 3);
               const translatedEnd = langEnd < 0 ? -1 : bytes.indexOf(0, langEnd + 1);
-              if (translatedEnd >= 0) applyPngText(key, new TextDecoder('utf-8').decode(bytes.subarray(translatedEnd + 1)), result);
+              if (translatedEnd >= 0) {
+                  const text=new TextDecoder('utf-8').decode(bytes.subarray(translatedEnd + 1));
+                  applyPngText(key,text,result);
+                  if(key.toLowerCase().includes('xmp'))afpParseXmp(text,result);
+                }
             }
           }
         }

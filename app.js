@@ -1159,7 +1159,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-audit-photometa-trustproof-20261115-v4';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-editorial-temporal-v20261115-1';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -2119,7 +2119,7 @@ function c2paSourceDetails(photo) {
      Il s'agit d'une INFERENCE étayée, jamais d'un digitalCapture officiel.
      Ne pas l'utiliser si un contrôle C2PA a réellement échoué. */
   function captureFromSignedCameraEvidence(m, inherited=false) {
-    // Ne jamais transformer un manifeste invalide en capture validée.
+    // Un certificat expiré n'efface pas les indices de capture. Les échecs cryptographiques restent bloquants.
     if (!m || ['bad','error','none','loading'].includes(photo?.state)) return null;
     const claims=assertionsOf(m);
     const actions=claims.filter(x=>/^(?:c2pa\.)?actions(?:\.v\d+)?(?:__\d+)?$/i.test(labelOf(x)));
@@ -2139,7 +2139,9 @@ function c2paSourceDetails(photo) {
     const make=String(camera?.['tiff:Make'] ?? camera?.tiff?.Make ?? '').trim();
     const model=String(camera?.['tiff:Model'] ?? camera?.tiff?.Model ?? '').trim();
     const canonGenerator=/^Canon EOS R\d+/i.test(generator);
-    const nikonGenerator=/^Z[0-9a-z_]+_Ver\./i.test(generator) || /^Nikon\s+Z[0-9a-z ]+/i.test(generator);
+    const nikonGenerator=/^Z[0-9a-z_]+_Ver\./i.test(generator) ||
+      /^Nikon\s+Z[0-9a-z ]+/i.test(generator) ||
+      /^Nikon_Contents_Authenticity_Support(?:\/|\b)/i.test(generator);
     const canonExif=/^Canon$/i.test(make) && /^Canon\s+EOS\s+R\d+/i.test(model);
     const nikonExif=/^NIKON(?:\s+CORPORATION)?$/i.test(make) && /^(?:NIKON\s+)?Z[\s_-]*\d[\w\s-]*/i.test(model);
     // La signature et le générateur ne prouvent pas la scène, seulement une provenance
@@ -2263,6 +2265,15 @@ function appendOriginBadge(target, photo, state) {
   target.style.setProperty('--origin-foreground', color);
   target.dataset.originStatus = badgeLevel;
   target.dataset.originKind = origin;
+  const expired=photo.state==='warn' && afpValidationCodes(photo).includes('signingcredential.expired');
+  const make=String(originDetail.cameraMake||'').trim();
+  const model=String(originDetail.cameraModel||'').trim();
+  const cameraLabel=(make && model && !model.toLowerCase().startsWith(make.toLowerCase())?make+' '+model:model).slice(0,48);
+  target.dataset.originHover=expired && origin==='capture'
+    ?(uiLanguage==='en'
+      ?(cameraLabel?'Camera capture '+cameraLabel+' — unconfirmed':'Camera capture — unconfirmed')
+      :(cameraLabel?'Capture '+cameraLabel+' — à confirmer':'Capture photographique — à confirmer'))
+    :'';
   const originDescription = originDetail.inferred ? tr('Capture déduite de la provenance C2PA du boîtier (non déclarée par digitalSourceType)') : originTitle(origin);
   // Ne pas utiliser l'attribut HTML title : il crée une seconde infobulle blanche native.
   // Les informations détaillées restent dans aria-label et dans le panneau C2PA.
@@ -2786,8 +2797,8 @@ document.addEventListener('click', event => {
 const C2PA_STATUS_TIPS = {
   neutral: 'Gris : résultat non confirmé, donnée déclarative ou information absente. Ce n’est pas une preuve de falsification.',
   ok: 'Vert : information renseignée ou contrôle C2PA réussi selon le champ. Cela ne prouve pas que la scène est vraie.',
-  warn: 'Orange : une vérification reste incomplète ou le certificat du signataire n’est pas reconnu comme fiable. Cela ne signifie pas que l’image est fausse.',
-  bad: 'Rouge : un contrôle C2PA a échoué (par exemple une incohérence de signature ou d’intégrité). Examiner le détail avant de conclure.',
+  warn: 'Orange : validité temporelle, certificat ou autre contrôle de provenance non confirmé. Cela ne signifie pas que l’image est fausse.',
+  bad: 'Rouge : anomalie technique bloquante détectée (intégrité, signature, certificat révoqué ou structure). Examiner les détails avant de conclure.',
   error: 'Rouge : le lecteur n’a pas pu analyser le fichier. Ce n’est pas une preuve que la photo a été modifiée.',
   none: 'Gris : aucun manifeste C2PA intégré détecté dans cette photo. La photo peut néanmoins être affichée.',
   loading: 'Bleu : la vérification de la provenance est encore en cours.'
@@ -2848,8 +2859,8 @@ function showColorHelp(target, options = {}) {
   if (!target) return;
   const isDistinguo = target.classList.contains('mode-origin-distinguo');
   const cls = colorKey(target) || colorKey(target.querySelector('.dot'));
-  const markerMessage = isDistinguo ? (target.dataset.originKind === 'unknown' && target.dataset.originStatus === 'neutral' && target.classList.contains('none')
-    ? 'Image without signature' : DISTINGUO_HOVER_MESSAGES[target.dataset.originKind]) : null;
+  const markerMessage = isDistinguo ? (target.dataset.originHover || (target.dataset.originKind === 'unknown' && target.dataset.originStatus === 'neutral' && target.classList.contains('none')
+    ? 'Image without signature' : DISTINGUO_HOVER_MESSAGES[target.dataset.originKind])) : null;
   if (!markerMessage && (!cls || !C2PA_STATUS_TIPS[cls])) return;
   colorHelpTarget = target;
   colorHelp.classList.toggle('is-distinguo-tip', Boolean(markerMessage));
@@ -3030,6 +3041,8 @@ function validationLevel(v) {
   // La vérification d'horodatage non reconnue et les identités CAWG non
   // reconnues doivent rester orange, même si le SDK les classe informatives.
   const needsTrust=new Set([
+    // Une expiration seule est un échec de validité temporelle, pas une preuve de falsification.
+    'signingcredential.expired',
     'signingcredential.untrusted','signingcredential.unknown',
     'signingcredential.ocsp.unknown','signingcredential.ocsp.inaccessible',
     'timestamp.untrusted','timeofsigning.untrusted',
@@ -3336,10 +3349,10 @@ function afpFourChecksFromValidation(validation,{trustSource=null,validationStat
   const passed=regexp=>entries.some(e=>e.level==='ok'&&regexp.test(e.code));
   const integrityFailed=failed(/^(?:assertion\.(?:datahash|hasheduri|bmffhash|boxhash|boxeshash)\.(?:mismatch|invalid)|ingredient\.(?:manifest|claimsignature)\.mismatch)$/);
   const signatureFailed=failed(/^claimsignature\.(?:mismatch|invalid)$/);
-  const credentialFailed=failed(/^(?:signingcredential\.(?:invalid|expired|mismatch|ocsp\.revoked)|claimsignature\.outsidevalidity)$/);
+  const credentialFailed=failed(/^(?:signingcredential\.(?:invalid|mismatch|ocsp\.revoked)|claimsignature\.outsidevalidity)$/);
   const integrityOk=passed(/^assertion\.(?:datahash|hasheduri|bmffhash|boxhash|boxeshash)\.match$/) || validationState==='trusted';
   const signatureOk=codeIs('claimsignature.validated',['ok']) || validationState==='trusted';
-  const certificateWarn=codeIs('signingcredential.untrusted') || codeIs('signingcredential.unknown') ||
+  const certificateWarn=codeIs('signingcredential.expired') || codeIs('signingcredential.untrusted') || codeIs('signingcredential.unknown') ||
     trustSource==='legacy'||trustSource==='untrusted'||
     trustSource==='unavailable'||trustSource==='incomplete';
   const certificateOk=codeIs('signingcredential.trusted',['ok']) && !certificateWarn &&
@@ -3649,8 +3662,8 @@ function afpColorLegend() {
   // Légende éditoriale AFP. N'affecte ni le statut C2PA, ni la couleur calculée.
   const items=[
     ['ok','Vert : Contrôle OK','Tous les contrôles obligatoires pertinents ont réussi, la confiance est établie et aucun échec bloquant n’est présent.'],
-    ['warn','Orange : Contrôle incertain','La provenance existe, mais un certificat n’est pas reconnu, une vérification reste incomplète ou un élément externe nécessaire est inaccessible.'],
-    ['bad','Rouge : Contrôle négatif','Un contrôle essentiel a établi une incohérence : signature, intégrité, certificat ou structure non valide.'],
+    ['warn','Orange : Contrôle incertain','La provenance existe, mais un certificat est expiré ou non reconnu, une vérification reste incomplète ou un élément externe nécessaire est inaccessible.'],
+    ['bad','Rouge : Incohérence établie','Un contrôle bloquant a établi une anomalie : intégrité, signature cryptographique, certificat révoqué ou structure invalide.'],
     ['neutral','Gris : Information déclarée','Information déclarative sans vérification.']
   ];
   const list=document.createElement('div');list.className='afp-c2pa-legend';
@@ -3689,7 +3702,13 @@ function originPanelSection(photo) {
   const top=document.createElement('div');top.className='afp-reader-head';
   const main=document.createElement('div');main.className='afp-reader-main';
   const title=document.createElement('strong');title.textContent=pending?tr('Analyse en cours'):(missing?tr('Image sans signature C2PA'):tr(labels[kind]));
-  const desc=document.createElement('p');desc.textContent=readerOriginExplanation(detail,pending,missing,error);
+  const desc=document.createElement('p');
+  desc.textContent=readerOriginExplanation(detail,pending,missing,error);
+  if(detail.inferred && photo.state==='warn' && afpValidationCodes(photo).includes('signingcredential.expired')){
+    desc.textContent+=uiLanguage==='en'
+      ?' C2PA data indicate camera capture, but the signing certificate has expired; this origin is not fully authenticated.'
+      :' Les informations C2PA indiquent une capture photographique, mais le certificat a expiré : la provenance n’est pas pleinement authentifiée.';
+  }
   main.append(title,desc);top.append(readerIcon(kind),main);
   const source=document.createElement('div');source.className='afp-reader-source';
   const kicker=document.createElement('span');kicker.className='afp-reader-kicker';kicker.textContent=tr('Champ officiel : digitalSourceType');
@@ -3870,6 +3889,7 @@ function afpCertificateResultSummary(checks,validation,{trustSource=null}={}){
   const untrusted=codes.some(c=>/^(?:signingcredential\.(?:untrusted|unknown)|signer\.untrusted)$/.test(c))
     ||trustSource==='untrusted';
   const bad=(checks||[]).filter(c=>c.state==='bad');
+  const expired=codes.includes('signingcredential.expired');
   if(bad.length){
     const labels={integrity:fr?'intégrité':'integrity',signature:'signature',
       certificate:fr?'certificat':'certificate',timestamp:fr?'horodatage':'timestamp'};
@@ -3877,6 +3897,9 @@ function afpCertificateResultSummary(checks,validation,{trustSource=null}={}){
       ?'**Ici, un contrôle a échoué** ('+bad.map(c=>labels[c.key]||c.key).join(', ')+'). Consultez les détails techniques.'
       :'**Here, a check failed** ('+bad.map(c=>labels[c.key]||c.key).join(', ')+'). See technical details.';
   }
+  if(expired)return fr
+    ?'**Ici, le vérificateur signale un certificat expiré.** Sans horodatage de confiance établissant la date de signature, sa validité temporelle n’est pas confirmée. Ce résultat ne prouve pas que la photo a été falsifiée.'
+    :'**Here, the verifier reports an expired certificate.** Without a trusted timestamp establishing the signing time, its validity at signing time remains unconfirmed. This is not evidence that the photograph was falsified.';
   if(states.certificate==='warn'&&untrusted)return fr
     ?'**Ici, le certificat n’est pas reconnu par les listes consultées.** Cela ne signifie pas que la photo est fausse.'
     :'**Here, the certificate is not recognised by the lists checked.** This does not mean the photo is fake.';
@@ -4257,7 +4280,7 @@ function fillDetails(photo) {
   // A trusted signer can coexist with an untrusted TSA (orange overall).
   const hasTsaWarning=codes.includes('timestamp.untrusted') ||
     codes.includes('timeofsigning.untrusted');
-  const hasExpiredCredential=failingCodes.includes('signingcredential.expired');
+  const hasExpiredCredential=allEntries.some(entry=>String(typeof entry==='string'?entry:entry?.code??entry?.status??'').toLowerCase()==='signingcredential.expired');
   let trustLevel='neutral',trustTitle,trustText;
   if(levels.includes('bad')){
     const failingCodes=allEntries.filter(e=>validationLevel(e)==='bad').map(validationText);
@@ -4266,12 +4289,22 @@ function fillDetails(photo) {
     // Give the exact failed SDK checks instead of attributing a failure to a trust list.
     if(failingCodes.length) trustText += '\n\nCodes C2PA en échec : '+failingCodes.join(', ');
     if(hasExpiredCredential) {
-      trustTitle=uiLanguage==='en'?'Signing certificate expired — validation failed':'Certificat de signature expiré — validation en échec';
+      // Un autre échec bloquant conserve sa priorité sur l'expiration.
       trustText += uiLanguage==='en'
         ? '\n\nThe SDK reports an expired signing certificate. The available timestamp is not trusted, so the certificate cannot be validated retrospectively. This is not proof that the image pixels were changed.'
         : '\n\nLe SDK signale un certificat de signature expiré. L’horodatage disponible n’étant pas reconnu, la validité du certificat à la date de signature ne peut pas être établie. Cela ne prouve pas que les pixels ont été modifiés.';
     }
     setStatusLine('error','Manifeste présent, mais une ou plusieurs vérifications ont échoué.','bad');
+  }else if(hasExpiredCredential){
+    trustLevel='warn';
+    trustTitle=uiLanguage==='en'
+      ?'Expired signing certificate — temporal validity unconfirmed'
+      :'Certificat expiré — validité temporelle non confirmée';
+    trustText=afpSignerTrustExplanation(signer,'ok',false,null)+'\n\n'+
+      afpCertificateResultSummary(afpFourChecks(photo),entries,{trustSource:photo.trustSource});
+    setStatusLine('warn',uiLanguage==='en'
+      ?'C2PA metadata found; the expired certificate prevents confirmation of temporal validity.'
+      :'Informations C2PA présentes ; le certificat expiré ne permet pas de confirmer la validité temporelle.');
   }else if(verifiedTrustSource){
     // Match the main panel accent to the same global state as the image badge.
     // The independent certificate row below remains green when it is trusted.
@@ -4361,10 +4394,10 @@ function fillDetails(photo) {
   const integrityOk=hasCode(/^(?:assertion\.(?:datahash|bmffhash|boxhash|hasheduri)\.match)$/) || photo.validationState==='trusted';
   const signatureOk=hasCode(/^claimsignature\.validated$/) || photo.validationState==='trusted';
   const certificateOk=hasCode(/^signingcredential\.trusted$/);
-  const certificateBad=failingCodes.some(c=>/^(?:signingcredential\.(?:ocsp\.revoked|invalid|expired|mismatch)|claimsignature\.outsidevalidity)$/.test(c));
+  const certificateBad=failingCodes.some(c=>/^(?:signingcredential\.(?:ocsp\.revoked|invalid|mismatch)|claimsignature\.outsidevalidity)$/.test(c));
   const integrityStatus=hasIntegrityFailure?'bad':integrityOk?'ok':'neutral';
   const signatureStatus=hasSignatureFailure?'bad':signatureOk?'ok':'neutral';
-  const certificateStatus=certificateBad?'bad':photo.trustSource==='legacy'?'warn':verifiedTrustSource?'ok':trustLevel==='warn'?'warn':'neutral';
+  const certificateStatus=certificateBad?'bad':hasExpiredCredential?'warn':photo.trustSource==='legacy'?'warn':verifiedTrustSource?'ok':trustLevel==='warn'?'warn':'neutral';
   const tsaValidated=hasCode(/^timestamp\.validated$/);
   const tsaTrusted=hasCode(/^timestamp\.trusted$/);
   const tsaIssue=hasCode(/^timestamp\.(?:mismatch|invalid|untrusted|outsidevalidity)$/);
@@ -4376,6 +4409,11 @@ function fillDetails(photo) {
   pTsa.append(tsaTitle,document.createTextNode(tr('Une heure TSA validée certifie la date de signature. Elle ne remplace pas la date de prise de vue enregistrée par l’appareil (EXIF).')));
 const rawIntro=document.createElement('p');rawIntro.className='afp-reader-technical-intro';
 rawIntro.textContent=tr('Cette partie présente les résultats renvoyés par le vérificateur. Une information absente ne signifie pas automatiquement un échec.');
+const expiryNote=document.createElement('p');
+expiryNote.className='afp-reader-technical-intro';
+expiryNote.textContent=uiLanguage==='en'
+  ?'SDK result: signingCredential.expired (temporal validation failure). Editorial display is amber if no other blocking failure is present. The original result is retained below and in JSON.'
+  :'Résultat SDK : signingCredential.expired (échec de validité temporelle). Affichage éditorial orange si aucun autre échec bloquant n’est établi. Le résultat brut reste accessible ci-dessous et dans le JSON.';
 const rawFields=[
   field('Signataire déclaré',signer,'neutral',tr('Signataire déclaré dans le certificat. Ce nom seul ne confirme pas son identité.')),
   field('Générateur',generator,'neutral',tr('Appareil ou logiciel ayant créé le manifeste C2PA.')),
@@ -4386,10 +4424,12 @@ const activeTechnical=readerFold(
   (uiLanguage==='en'?'Certificate ':'Certificat ')+(otherSignatures.length+1)+' — '+
     (signer?String(signer):(uiLanguage==='en'?'Unidentified signer':'Signataire non identifié')),
   pIntro,
+  ...(hasExpiredCredential?[expiryNote]:[]),
   section('Contrôles de sécurité',[
     field('Intégrité du fichier',tr(hasIntegrityFailure?'Différence détectée':integrityOk?'Données signées conformes':'Résultat explicite non communiqué'),integrityStatus,tr('Compare le fichier aux empreintes protégées par les Content Credentials.')),
     field('Signature cryptographique',tr(hasSignatureFailure?'Signature incorrecte':signatureOk?'Signature vérifiée':'Résultat explicite non communiqué'),signatureStatus,tr('Vérifie que la signature cryptographique correspond aux données du manifeste.')),
-    field('Confiance dans le certificat',tr(certificateBad?'Certificat ou validation en échec':verifiedTrustSource?
+    field('Confiance dans le certificat',tr(certificateBad?'Certificat ou validation en échec':
+      hasExpiredCredential?'Certificat expiré — validité temporelle non établie':verifiedTrustSource?
       (photo.trustSource==='official'?'Certificat reconnu (liste officielle C2PA)':'Certificat reconnu (ancienne liste C2PA)'):
       photo.trustSource==='untrusted'?'Certificat non reconnu par les deux listes':
       photo.trustSource==='unavailable'?'Contrôle des listes de confiance indisponible':

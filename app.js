@@ -701,6 +701,12 @@ const crBadge = document.querySelector('#cr-badge');
 const lbPhoto = document.querySelector('#lb-photo');
 // Le badge suit la largeur RÉELLEMENT affichée de la photo, pas celle du viewport.
 // Sur grand écran, plafond à 80 % de l'ancien logo de 42 px.
+function afpIsPhoneViewport(){
+  // Certains iPhone dépassent 900 CSS px en paysage : rester en tailles mobiles.
+  return window.matchMedia(
+    '(pointer: coarse) and (max-width: 900px), (pointer: coarse) and (orientation: landscape) and (max-height: 600px)'
+  ).matches;
+}
 function resizeAfpBadge() {
   const width = lbPhoto.getBoundingClientRect().width;
   if (!width) return;
@@ -712,7 +718,7 @@ function resizeAfpBadge() {
   // Les dimensions desktop restent strictement inchangées.
   const rect = lbPhoto.getBoundingClientRect();
   const shortSide = Math.min(rect.width, rect.height);
-  const isPhone = window.matchMedia('(max-width: 900px) and (pointer: coarse)').matches;
+  const isPhone = afpIsPhoneViewport();
   const factor = isPhone ? 1.25 * Math.min(1 / 2.2, shortSide / 700) : 1;
   crBadge.style.setProperty('--afp-origin-box', `${(56 * factor).toFixed(2)}px`);
   crBadge.style.setProperty('--afp-origin-svg', `${(46 * factor).toFixed(2)}px`);
@@ -734,7 +740,7 @@ function resizeAfpThumbnailBadge(img){
   if(!overlay)return;
   const rect=img.getBoundingClientRect();
   if(!rect.width||!rect.height)return;
-  const isPhone=window.matchMedia('(max-width: 900px) and (pointer: coarse)').matches;
+  const isPhone=afpIsPhoneViewport();
   const factor=isPhone?1.25*Math.min(1/2.2,Math.min(rect.width,rect.height)/550):1;
   const svgSize=40*factor;
   const boxSize=isPhone?44:48;

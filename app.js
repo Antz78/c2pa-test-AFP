@@ -1,3 +1,4 @@
+import {buildPhotoInformation} from './photo-information.js';
 console.info('[AFP C2PA] Reader-first + full trust comparison v20261113-v4');
 console.info('[C2PA AFP] Version filtres v3 chargée : badges À vérifier');
 // Galerie C2PA : 100 % statique, fonctionne sur GitHub Pages.
@@ -3927,6 +3928,14 @@ function afpRawManifestFold(photo){
   return fold;
 }
 
+function afpPhotoInformationPanel(photo){
+  const details=c2paSourceDetails(photo);
+  return buildPhotoInformation(photo,{
+    field,readerFold,section,active:c2paActiveManifest(photo),
+    cameraFromProvenance:details.cameraModel,language:uiLanguage
+  });
+}
+
 /* ---------- Panneau Content Credentials (bouton logo AFP) ---------- */
 function fillDetails(photo) {
   const origin=originPanelSection(photo);
@@ -3937,10 +3946,10 @@ function fillDetails(photo) {
   if(photo.state==='none'||photo.state==='error'){
     setStatusLine(photo.state==='none'?'none':'error',photo.state==='none'?'Aucun manifeste C2PA intégré détecté.':
       (uiLanguage==='en'?'C2PA analysis unavailable: ':'Analyse C2PA indisponible : ')+String(photo.error||''));
-    const support=[];
-    if(photo.exif?.artist)support.push(field('Auteur déclaré',photo.exif.artist,'neutral'));
-    if(photo.exifDate)support.push(field('Date enregistrée par l’appareil',photo.exifDate,'neutral'));
-    lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),readerOpenFold(uiLanguage==='en'?'C2PA verification':'Vérification C2PA',document.createTextNode(tr(photo.state==='none'?'Aucun certificat C2PA détecté dans ce fichier.':'Lecture du certificat C2PA indisponible.'))),...(support.length?[readerFold('Informations sur la photo',section('Informations de production',support))]:[]),afpColorLegend());
+    lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),
+      readerOpenFold(uiLanguage==='en'?'C2PA verification':'Vérification C2PA',
+        document.createTextNode(tr(photo.state==='none'?'Aucun certificat C2PA détecté dans ce fichier.':'Lecture du certificat C2PA indisponible.'))),
+      afpPhotoInformationPanel(photo),afpColorLegend());
     lbJson.textContent=photo.state==='none'?tr('Aucun manifeste trouvé.'):String(photo.error||'');return;
   }
   const entries=photo.validation??[];
@@ -3958,20 +3967,6 @@ function fillDetails(photo) {
   const signer=firstValue(sig.name,sig.issuer,sig.organization,a.signer);
   const generator=firstValue(a.claim_generator,a.claimGenerator,a.claim_generator_info?.[0]?.name,a.claimGeneratorInfo?.[0]?.name);
   const manifest=firstValue(photo.store?.active_manifest,photo.store?.activeManifest);
-  const assertions=Array.isArray(a.assertions)?a.assertions:[];
-  const metadata=assertions.filter(x=>/metadata|creativework|stds\.schema-org/i.test(String(x?.label??x?.type??'')))
-    .map(x=>x?.data??x).filter(x=>x&&typeof x==='object');
-  const authorValue=firstValue(a.author,a.creator,...metadata.map(m=>m.author??m.creator));
-  function authorName(v){
-    if(Array.isArray(v))return v.map(authorName).filter(Boolean).join(', ')||null;
-    if(typeof v==='string')return v;
-    if(v&&typeof v==='object')return firstValue(v.name,v['@id']);
-    return null;
-  }
-  const c2paAuthor=authorName(authorValue);
-  const author=firstValue(c2paAuthor,photo.exif?.artist,photo.exif?.copyright);
-  const authorSource=c2paAuthor?'C2PA':photo.exif?.artist?'EXIF Artist':photo.exif?.copyright?tr('EXIF Copyright (crédit déclaré)'):null;
-
   // The lead status is the GLOBAL photo result, not only certificate trust.
   // A trusted signer can coexist with an untrusted TSA (orange overall).
   const hasTsaWarning=codes.includes('timestamp.untrusted') ||
@@ -4040,12 +4035,7 @@ function fillDetails(photo) {
   afpAppendTrustSourceNote(trust,photo);
   // Pas de recherche par simple nom de fabricant : un nom dans la liste ne valide pas la chaîne.
 
-  const photoInfo=[];
-  if(author)photoInfo.push(field('Auteur déclaré',`${author}${authorSource?' : '+authorSource:''}`,'neutral'));
-  if(photo.exifDate)photoInfo.push(field('Date enregistrée par l’appareil',photo.exifDate,'neutral'));
-  const detail=c2paSourceDetails(photo);
-  if(detail.cameraModel)photoInfo.push(field('Appareil identifié',detail.cameraModel,'neutral'));
-  const photoFold=photoInfo.length?readerFold('Informations sur la photo',section('Informations de production',photoInfo)):null;
+  const photoFold=afpPhotoInformationPanel(photo);
 
   const validationList=document.createElement('div');validationList.className='validation-list';
   if(entries.length){

@@ -3747,8 +3747,22 @@ function afpEditorialCertificateStory(photo,activeSigner){
   const store=photo?.store,active=String(store?.active_manifest??store?.activeManifest??'');
   const current=store?.manifests?.[active];
   if(!current||!Array.isArray(current.ingredients)||!current.ingredients.length)return '';
+  // Vérifier qu'il s'agit réellement d'un ancêtre du manifeste AFP,
+  // et non d'un autre manifeste stocké dans le même fichier.
+  const ancestors=new Set(),visited=new Set();
+  const walk=(id)=>{
+    if(visited.has(id))return;visited.add(id);
+    const manifest=store?.manifests?.[id];
+    for(const ingredient of Array.isArray(manifest?.ingredients)?manifest.ingredients:[]){
+      const parent=ingredient?.active_manifest??ingredient?.activeManifest;
+      if(typeof parent==='string'&&store.manifests?.[parent]){
+        ancestors.add(parent);walk(parent);
+      }
+    }
+  };
+  walk(active);
   const first=afpChronologicalManifestPairs(store).find(([id,m])=>{
-    if(String(id)===active)return false;
+    if(!ancestors.has(String(id)))return false;
     const sig=signatureOf(m??{});
     return Boolean(firstValue(sig?.name,sig?.issuer,sig?.signer,sig?.organization,m?.signer));
   });

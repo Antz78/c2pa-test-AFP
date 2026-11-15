@@ -1,12 +1,12 @@
 /* AFP C2PA - Service Worker v2 : disponibilité réseau et octets d'origine.
    S'applique uniquement au site qui l'enregistre ; n'envoie aucune donnée. */
 const CACHE_PREFIX='afp-c2pa-';
-const SHELL='afp-c2pa-shell-v15-chronological-signer-panels-20261114';
+const SHELL='afp-c2pa-shell-v16-audit-metadata-20261115';
 const ORIGINALS='afp-c2pa-originals-v1';
 const SDK='afp-c2pa-sdk-v2';
 const MAX_ORIGINALS=32;
 const LIMIT_BYTES=28*1024*1024;
-const SHELL_URLS=['./','./index.html','./app.js','./curl.js','./photos.json','./logo-afp.png','./afp-gelule.png'];
+const SHELL_URLS=['./','./index.html','./app.js','./photo-information.js','./curl.js','./photos.json','./logo-afp.png','./afp-gelule.png'];
 
 self.addEventListener('install', event=>{
   // Une ressource absente ne doit pas empêcher l'installation du worker.
@@ -88,7 +88,7 @@ self.addEventListener('fetch',event=>{
   if(u.pathname.toLowerCase().includes('/photos/')&&/\.(?:jpe?g|png|webp|tiff?)$/i.test(u.pathname)) {
     event.respondWith(photoFirst(req));return;
   }
-  if(req.mode==='navigate'||/\/(?:index\.html|app\.js|curl\.js|photos\.json|logo-afp\.png|afp-gelule\.png)$/.test(u.pathname)) {
+  if(req.mode==='navigate'||/\/(?:index\.html|app\.js|photo-information\.js|curl\.js|photos\.json|logo-afp\.png|afp-gelule\.png)$/.test(u.pathname)) {
     event.respondWith(networkFirst(req,SHELL,8500));
   }
 });

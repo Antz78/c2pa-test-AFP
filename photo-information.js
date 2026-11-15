@@ -63,6 +63,7 @@ export function signedPhotoFields(active,store={}){
 export function metadataFields(photo,{active=null,cameraFromProvenance=null}={}){
   const signed=signedPhotoFields(active,photo?.store??{});
   const ex=photo?.exif??{},iptc=ex.iptc??{},xmp=ex.xmp??{};
+  const c2paOrigin=photo?.state==='bad'?'C2PA (vérification en échec)':'C2PA';
   const first=options=>{
     for(const [value,origin] of options){
       if(value!==undefined&&value!==null&&String(value).trim())
@@ -74,14 +75,14 @@ export function metadataFields(photo,{active=null,cameraFromProvenance=null}={})
   const locationSigned=[signed.place,[signed.city,signed.country].filter(Boolean).join(', ')]
     .find(v=>v&&v.trim());
   return {
-    author:first([[signed.author,'C2PA'],[ex.artist,'EXIF'],[iptc.author,'IPTC'],[xmp.author,'XMP']]),
-    location:first([[locationSigned,'C2PA'],[place(iptc),'IPTC'],[place(xmp),'XMP']]),
-    date:first([[signed.date,'C2PA'],[ex.date,'EXIF DateTimeOriginal'],
+    author:first([[signed.author ,c2paOrigin],[ex.artist,'EXIF'],[iptc.author,'IPTC'],[xmp.author,'XMP']]),
+    location:first([[locationSigned ,c2paOrigin],[place(iptc),'IPTC'],[place(xmp),'XMP']]),
+    date:first([[signed.date ,c2paOrigin],[ex.date,'EXIF DateTimeOriginal'],
       [iptc.captureDate,'IPTC Date Created'],[xmp.dateOriginal,'XMP DateTimeOriginal'],
       [xmp.dateCreated,'XMP DateCreated']]),
-    source:first([[signed.source,'C2PA'],[iptc.source,'IPTC'],[xmp.source,'XMP']]),
-    credit:first([[signed.credit,'C2PA'],[iptc.credit,'IPTC'],[xmp.credit,'XMP']]),
-    camera:first([[signed.camera,'C2PA'],
+    source:first([[signed.source ,c2paOrigin],[iptc.source,'IPTC'],[xmp.source,'XMP']]),
+    credit:first([[signed.credit ,c2paOrigin],[iptc.credit,'IPTC'],[xmp.credit,'XMP']]),
+    camera:first([[signed.camera ,c2paOrigin],
       [[ex.cameraMake,ex.cameraModel].filter(Boolean).join(' '),'EXIF'],
       [cameraFromProvenance,'C2PA (provenance d’appareil)']]),
     gps:first([[ex.gps?.latitude!=null&&ex.gps?.longitude!=null
@@ -107,8 +108,12 @@ export function buildPhotoInformation(photo,{field,section,readerFold,active,
   const notice=document.createElement('p');
   notice.className='afp-reader-technical-intro';
   notice.textContent=fr
-    ?'Ces champs sont déclarés dans le manifeste C2PA ou les métadonnées du fichier. Ils ne prouvent ni la réalité de la scène ni l’identité du photographe.'
-    :'These are declared C2PA or file metadata, not proof of the scene or photographer’s identity.';
+    ?(photo?.state==='bad'
+      ?'Attention : la validation C2PA a échoué. Les noms, dates et lieux ci-dessous sont des déclarations et ne doivent pas être attribués comme vérifiés.'
+      :'Ces champs sont déclarés dans le manifeste C2PA ou les métadonnées du fichier. Ils ne prouvent ni la réalité de la scène ni l’identité du photographe.')
+    :(photo?.state==='bad'
+      ?'Warning: C2PA validation failed. Names, dates and locations below are declarations, not verified attributions.'
+      :'These are declared C2PA or file metadata, not proof of the scene or photographer’s identity.');
   const fold=readerFold(fr?'Informations sur la photo':'Photo information',
     notice,section(fr?'Informations de production':'Production information',rows));
   fold.classList.add('afp-reader-photo-information');

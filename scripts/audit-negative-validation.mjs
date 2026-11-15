@@ -50,7 +50,7 @@ try {
  await page.locator('#grid .card').filter({hasText:'audit_altered_scan.jpg'}).first().click();
  await page.waitForFunction(()=>Boolean(document.querySelector('#side-panel .afp-reader-active-verification')),null,{timeout:12000});
  const signerLabel=await page.locator('#side-panel .afp-reader-active-verification .afp-reader-signer').innerText();
- if(!signerLabel.includes('Signataire déclaré'))
+ if(!signerLabel.includes('Nom indiqué sur le certificat'))
    throw Error('Invalid asset signer must be labeled as declared, not verified: '+signerLabel);
  const note=await page.locator('#side-panel .afp-reader-photo-information .afp-reader-technical-intro').textContent();
  if(!note.includes('validation C2PA a échoué'))throw Error('Failed manifest metadata must carry a clear warning');

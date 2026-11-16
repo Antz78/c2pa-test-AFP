@@ -958,6 +958,42 @@ function afpParseIptcPhotoshop(data,from,length,meta){
     pos=payload+size+(size%2);
   }
 }
+
+/* Le fournisseur d'un manifeste C2PA distant n'est pas nécessairement Adobe.
+   XMP et HTTP Link sont des pointeurs déclaratifs, JAMAIS une validation. */
+function afpSafeC2paManifestUrl(value,base=null){
+  if(typeof value!=='string'||!value.trim()||value.length>2048)return null;
+  const raw=value.trim();
+  if(/^self(?:#|$)/i.test(raw))return null; // JUMBF embarqué.
+  try{
+    const url=base?new URL(raw,base):new URL(raw);
+    return url.protocol==='https:'&&url.hostname&&!url.username&&!url.password?url.href:null;
+  }catch(_){return null;}
+}
+function afpC2paLinkHeader(header,base){
+  if(typeof header!=='string'||header.length>10000)return null;
+  for(const part of header.matchAll(/<([^<>]+)>((?:\s*;\s*[^,<]*)*)/g)){
+    const rel=part[2].match(/(?:^|;)\s*rel\s*=\s*(?:"([^"]+)"|'([^']+)'|([^;\s,]+))/i);
+    const rels=(rel?.[1]??rel?.[2]??rel?.[3]??'').toLowerCase().split(/\s+/);
+    if(rels.includes('c2pa-manifest')){
+      const url=afpSafeC2paManifestUrl(part[1],base);
+      if(url)return url;
+    }
+  }
+  return null;
+}
+function afpC2paRemoteReference(photo){
+  let base=null;
+  try{if(!photo?.blob&&photo?.url)base=new URL(photo.url,location.href).href;}catch(_){}
+  const xmp=afpSafeC2paManifestUrl(photo?.exif?.xmp?.c2paManifestUrl,base);
+  const link=afpSafeC2paManifestUrl(photo?.c2paManifestHttpLink,base);
+  const url=link||xmp;
+  if(!url)return null;
+  return {url,method:link?'HTTP Link rel=c2pa-manifest':'XMP dcterms:provenance',
+    host:new URL(url).hostname,conflict:Boolean(xmp&&link&&xmp!==link),
+    alternativeUrl:xmp&&link&&xmp!==link?xmp:null};
+}
+
 function afpParseXmp(xml,meta){
   if(typeof xml!=='string'||xml.length>500000)return;
   try{
@@ -969,6 +1005,13 @@ function afpParseXmp(xml,meta){
       City:'city',Country:'country',CountryName:'country',
       Location:'sublocation',Sublocation:'sublocation',Credit:'credit',Source:'source'};
     for(const el of nodes){
+      const isProvenance=el.localName==='provenance'&&
+        (el.namespaceURI==='http://purl.org/dc/terms/'||el.prefix==='dcterms');
+      if(isProvenance&&!xmp.c2paManifestUrl){
+        const rdfResource=el.getAttributeNS('http://www.w3.org/1999/02/22-rdf-syntax-ns#','resource');
+        const value=(rdfResource||el.textContent||'').trim();
+        if(value&&value.length<=2048)xmp.c2paManifestUrl=value;
+      }
       const field=names[el.localName];
       if(field&&!xmp[field]){
         const value=el.textContent?.trim();
@@ -976,6 +1019,11 @@ function afpParseXmp(xml,meta){
       }
       for(const attr of el.attributes){
         const field=names[attr.localName],value=attr.value?.trim();
+        if(attr.localName==='provenance'&&
+          (attr.namespaceURI==='http://purl.org/dc/terms/'||attr.prefix==='dcterms')&&
+          value&&value.length<=2048&&!xmp.c2paManifestUrl){
+          xmp.c2paManifestUrl=value;
+        }
         if(field&&value&&value.length<=300&&!xmp[field])xmp[field]=value;
       }
     }
@@ -1073,6 +1121,7 @@ function applyPngText(key, value, result) {
   }
   // XMP simple (non compressé) : valeur textuelle fréquente dans les PNG exportés.
   if (name.includes('xmp') && text.length < 500000) {
+    afpParseXmp(text,result);
     const xmlUnescape = str => str.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
     const author = text.match(/<dc:creator\b[^>]*>[\s\S]*?<rdf:li\b[^>]*>([^<]+)<\/rdf:li>/i) || text.match(/\b(?:photoshop:AuthorsPosition|dc:creator)="([^"]+)"/i);
     if (author) result.artist ||= xmlUnescape(author[1]);
@@ -1215,7 +1264,8 @@ async function afpWriteRecord(photo, digest) {
       trustProof:photo.trustProof ?? null,
       validationDeltas:photo.validationDeltas ?? [],
       validation:photo.validation ?? [], validationState:photo.validationState ?? null, trustSource:photo.trustSource ?? null, trustChecks:photo.trustChecks ?? null,
-      exif:photo.exif ?? null });
+      exif:photo.exif ?? null, remoteManifest:photo.remoteManifest??null,
+      c2paManifestHttpLink:photo.c2paManifestHttpLink??null });
     if (record.length > AFP_MAX_METADATA_BYTES) return;
     record = JSON.parse(record);
   } catch (_) { return; }
@@ -1291,6 +1341,8 @@ function afpRestoreRecord(photo, rec, digest) {
   photo.state=rec.state; photo.store=rec.store; photo.active=rec.active;
   photo.validation=rec.validation || []; photo.validationState=rec.validationState || null; photo.trustSource=rec.trustSource || null; photo.trustChecks=rec.trustChecks || null;
   photo.exif=rec.exif || null; photo.exifDate=photo.exif?.date;
+  photo.remoteManifest=rec.remoteManifest??null;
+  photo.c2paManifestHttpLink=rec.c2paManifestHttpLink??null;
   photo.trustProof=rec.trustProof??null;
   photo.validationDeltas=rec.validationDeltas??[];
   photo.cacheStatus='stored'; photo.cacheSavedAt=rec.savedAt; photo.error=null;
@@ -1372,6 +1424,8 @@ async function getBlob(photo) {
   try {
     const response = await fetchWithTimeout(photo.url, { cache: 'default' }, 20000);
     if (!response.ok) throw new Error('Photo inaccessible (HTTP ' + response.status + ')');
+    // La réponse doit exposer Link en CORS pour un domaine externe.
+    photo.c2paManifestHttpLink=afpC2paLinkHeader(response.headers.get('Link'),response.url||photo.url);
     const blob = await response.blob();
     if (/text\/html/i.test(blob.type)) throw new Error('Le serveur a renvoyé une page HTML au lieu de la photo');
     await afpSaveOriginal(photo,blob);
@@ -1657,6 +1711,7 @@ async function analyze(photo) {
         photo.exif=await readExifMetadata(blob);
         photo.exifDate=photo.exif.date;
       }
+      photo.remoteManifest=afpC2paRemoteReference(photo);
       const ext=photo.name.split('.').pop().toLowerCase();
       if (ext==='png') {
         const header = new Uint8Array(await blob.slice(0,8).arrayBuffer());
@@ -1680,7 +1735,8 @@ async function analyze(photo) {
       });
       const certificateTrusted=afpHasTrustedCertificate(check);
       const unknownChecks=allValidation.some(v=>v?.afpResultKind!=='informational' && validationLevel(v)==='neutral' && !afpBenignNotice(v));
-      photo.state=!check.store?'none':levels.includes('bad')?'bad':
+      // Pas de faux « sans C2PA » pour une référence distante inaccessible.
+      photo.state=!check.store?(photo.remoteManifest?'warn':'none'):levels.includes('bad')?'bad':
         (!certificateTrusted || photo.trustSource!=='official' ||
          levels.includes('warn') || unknownChecks)?'warn':'ok';
       photo.error=null;
@@ -1697,7 +1753,8 @@ async function analyze(photo) {
         photo.recheckingCache=false;
       } else {
         photo.cacheStatus=null;photo.recheckingCache=false;
-        photo.state=/no.?manifest|manifest.?not.?found|no.?c2pa.?manifest/i.test(photo.error)?'none':'error';
+        photo.state=photo.remoteManifest&&/manifest|cors|network|failed to fetch|fetchfailed/i.test(photo.error)
+          ?'warn':/no.?manifest|manifest.?not.?found|no.?c2pa.?manifest/i.test(photo.error)?'none':'error';
         if (photo.state==='none' && digest) await afpWriteRecord(photo,digest);
       }
     } finally {
@@ -4266,9 +4323,56 @@ function afpPhotoInformationPanel(photo){
   });
 }
 
+
+function afpRemoteManifestPanel(photo){
+  const remote=photo?.remoteManifest;
+  if(!remote)return null;
+  const fr=uiLanguage!=='en';
+  const body=document.createElement('div');
+  body.className='afp-reader-remote-manifest';
+  const info=document.createElement('p');
+  info.textContent=photo.store
+    ?(fr?'Une référence à un manifeste C2PA externe a été détectée. Les vérifications cryptographiques présentées proviennent du lecteur C2PA, et non du simple lien.':
+      'An external C2PA manifest reference was found. Cryptographic checks shown come from the C2PA reader, not from the link itself.')
+    :(fr?'Ce fichier référence un manifeste C2PA distant, mais le lecteur n’a pas pu le récupérer et vérifier son lien cryptographique à l’image. Il peut s’agir d’un problème CORS, réseau ou d’un manifeste indisponible. Cela ne prouve pas une falsification.':
+      'This image references a remote C2PA manifest, but the reader could not retrieve it and validate its cryptographic binding to the image. CORS, network issues or an unavailable manifest may be responsible. This is not evidence of tampering.');
+  body.append(info);
+  const details=document.createElement('p');
+  details.textContent=(fr?'Référence déclarée : ':'Declared reference: ')+remote.method+' — '+remote.host;
+  body.append(details);
+  const link=document.createElement('a');link.href=remote.url;
+  link.target='_blank';link.rel='noopener noreferrer';
+  link.textContent=fr?'Consulter l’adresse du manifeste':'Open manifest URL';
+  body.append(link);
+  if(remote.conflict){
+    const warning=document.createElement('p');
+    warning.textContent=fr
+      ?'Les références HTTP Link et XMP divergent. Aucune confiance ne peut être déduite de ces références.'
+      :'HTTP Link and XMP references differ. Neither reference establishes trust.';
+    body.append(warning);
+  }
+  if(photo.error){
+    const error=document.createElement('p');
+    error.textContent=(fr?'Diagnostic du lecteur : ':'Reader diagnostic: ')+String(photo.error).slice(0,400);
+    body.append(error);
+  }
+  return readerOpenFold(fr?'Manifeste C2PA hébergé à distance':'Remotely hosted C2PA manifest',body);
+}
+
 /* ---------- Panneau Content Credentials (bouton logo AFP) ---------- */
 function fillDetails(photo) {
   const origin=originPanelSection(photo);
+  const remotePanel=afpRemoteManifestPanel(photo);
+  if(remotePanel&&!photo.store&&photo.state!=='loading'){
+    setStatusLine('warn',uiLanguage==='en'
+      ?'Remote C2PA manifest referenced; verification unavailable.'
+      :'Manifeste C2PA distant référencé ; vérification indisponible.');
+    lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),
+      remotePanel,afpColorLegend());
+    lbJson.textContent=JSON.stringify({remoteManifest:photo.remoteManifest,
+      error:photo.error??null,status:'Remote reference only, not validated'},null,2);
+    return;
+  }
   if(photo.state==='loading'){
     setStatusLine('loading',tr('Vérification C2PA en cours…'));
     lbSummary.replaceChildren(origin,readerOpenFold(uiLanguage==='en'?'C2PA verification':'Vérification C2PA',document.createTextNode(tr('Vérification du certificat en cours…'))),afpColorLegend());lbJson.textContent=tr('Chargement…');return;
@@ -4504,7 +4608,7 @@ const trustLabel=(uiLanguage==='en'?'C2PA verification — ':'Vérification C2PA
 const trustFold=readerOpenFold(trustLabel,trust);
 trustFold.classList.add('afp-reader-active-verification');
 lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),
-  ...otherSignatures,trustFold,...(photoFold?[photoFold]:[]),technical,afpColorLegend());
+  ...(remotePanel?[remotePanel]:[]),...otherSignatures,trustFold,...(photoFold?[photoFold]:[]),technical,afpColorLegend());
   lbJson.textContent=JSON.stringify(photo.store,null,2);
 }
 

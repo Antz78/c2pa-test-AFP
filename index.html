@@ -23,7 +23,7 @@
     header{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:14px;align-items:center;
       padding:14px 24px;background:#0d1117ee;backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
     header h1{font-size:1.05rem;margin:0;letter-spacing:.2px;display:flex;align-items:center;gap:10px}
-    .logo{height:28px;border-radius:6px}
+    .logo{height:28px;width:28px;object-fit:contain;flex:none}
     #search{flex:1;min-width:180px;max-width:420px;padding:9px 14px;border-radius:999px;border:1px solid var(--border);
       background:var(--panel);color:var(--text);font-size:.9rem;outline:none}
     #search:focus{border-color:var(--accent)}
@@ -214,7 +214,7 @@
     #side-panel{position:fixed;z-index:45;top:56px;right:0;bottom:0;width:min(510px,100vw);overflow-y:auto;background:#111820;color:#e6edf3;border-left:1px solid #344153;border-radius:20px 0 0 0;box-shadow:-18px 0 45px #0009;padding:22px 22px 32px}
     #side-panel[hidden]{display:none}
     #side-panel .side-header{display:flex;align-items:flex-start;gap:14px;margin-bottom:20px}
-    #side-panel .side-header img{width:90px;height:auto;align-self:center}
+    #side-panel .side-header img{width:60px;height:60px;object-fit:contain;flex:0 0 60px;align-self:center}
     #side-panel h2{font-size:1.22rem;margin:4px 0 0;color:#fff}
     #side-panel .eyebrow{font-size:.78rem;color:#aab8ca}
     #side-panel .side-close{margin-left:auto;border:0;border-radius:9px;background:#263241;color:white;padding:7px 11px;cursor:pointer}
@@ -598,7 +598,7 @@
     backdrop-filter:none;-webkit-backdrop-filter:none;
   }
   header h1{grid-column:1;grid-row:1;font-size:14px;gap:7px;min-width:0;white-space:nowrap}
-  header .logo{height:24px;width:auto}
+  header .logo{height:24px;width:24px}
   .header-title-desktop{display:none}
   .header-title-mobile{display:inline}
   header > .afp-language-switch{
@@ -701,7 +701,7 @@
 </head>
 <body>
 <header>
-  <h1><img class="logo" src="./logo-afp.png" alt="" onerror="this.remove()"><span class="header-title-desktop">Galerie &amp; Content Credentials</span><span class="header-title-mobile">Galerie C2PA</span></h1>
+  <h1><img class="logo" src="./c2pa-logo-negative.svg" alt="Content Credentials" onerror="this.remove()"><span class="header-title-desktop">Galerie &amp; Content Credentials</span><span class="header-title-mobile">Galerie C2PA</span></h1>
   <input id="search" type="search" placeholder="Rechercher un fichier…" aria-label="Rechercher">
   <div class="filters" role="group" aria-label="Filtres">
     <button class="chip" data-filter="all" aria-pressed="true">Toutes</button>
@@ -714,7 +714,7 @@
   <select id="presentation-mode" aria-label="Choisir la présentation C2PA">
     <option value="random">🎲 Aléatoire</option>
     <option value="info">ⓘ Icône info</option>
-    <option value="afp">AFP · Onglet</option>
+    <option value="afp">CR · Onglet</option>
     <option value="direct">Panneau visible</option>
     <option value="banner">Bandeau</option>
     <option value="status">Pastille de confiance</option>
@@ -761,7 +761,7 @@
     <figure class="lb-frame">
       <img id="lb-photo" alt="">
       <button id="cr-badge" class="cr loading" type="button" aria-label="Afficher les Content Credentials">
-        <img src="./logo-afp.png" alt="AFP · Content Credentials" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'CR'}))">
+        <img src="./c2pa-logo-negative.svg" alt="Content Credentials" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'CR'}))">
         <span class="dot"></span>
       </button>
       <div id="tap-reveal" class="tap-reveal" hidden>
@@ -789,7 +789,7 @@
 </section>
 <!-- Démonstration : panneau de provenance latéral, sans bloquer la galerie -->
 <aside id="side-panel" aria-label="Content Credentials de la photographie" hidden>
-  <div class="side-header"><img src="./logo-afp.png" alt="AFP"><div><div class="eyebrow">Provenance numérique</div><h2>Content Credentials</h2></div><button class="side-close" id="side-close" type="button" aria-label="Fermer le panneau">✕</button></div>
+  <div class="side-header"><img src="./c2pa-logo-negative.svg" alt="Content Credentials"><div><div class="eyebrow">Provenance numérique</div><h2>Content Credentials</h2></div><button class="side-close" id="side-close" type="button" aria-label="Fermer le panneau">✕</button></div>
   <p id="side-status" class="status loading" role="status"></p>
   <div id="side-summary"></div>
   <details><summary>Informations techniques du manifeste</summary><pre id="side-json"></pre></details>
@@ -823,7 +823,7 @@
     </section>
   </div>
 </dialog>
-<script type="module" src="./app.js?v=20261115-mobile-landscape-markers-v2"></script>
+<script type="module" src="./app.js?v=20261116-c2pa-logo-negative"></script>
 <script>
   // Diagnostic indépendant de app.js si une erreur empêche son exécution.
   setTimeout(function () {

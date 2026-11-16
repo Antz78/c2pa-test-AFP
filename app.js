@@ -3578,8 +3578,16 @@ function afpHistoricalSignaturePanels(photo){
     const notice=document.createElement('p');
     notice.className='afp-reader-technical-intro afp-reader-historical-notice';
     notice.textContent=historicalNotice;
+    // La signature AFP peut être intermédiaire (Nikon → AFP → Adobe) :
+    // réutiliser le récit éditorial déjà prévu plutôt que le texte générique.
+    const isAfp=afpSignerProfile(signer).key==='afp';
+    const editorialStory=isAfp?afpEditorialCertificateStory(photo,signer,id):'';
+    const afpFallback=fr
+      ?'L’AFP a ajouté sa signature numérique à cette version de l’image afin de protéger son **intervention éditoriale** et les métadonnées associées. Ce certificat est soumis aux mêmes contrôles C2PA que les autres signatures.'
+      :'AFP added its digital signature to this version of the image to protect its **editorial involvement** and associated metadata. This certificate is subject to the same C2PA checks as the other signatures.';
     const expl=isOriginalCamera
       ?afpOriginalCertificateText(signer)+'\n\n'+afpCertificateResultSummary(checks,linked?.entries??[])
+      :isAfp?(editorialStory||afpFallback)
       :afpSignerTrustExplanation(signer,level,false,null);
     const about=readerFold(fr?'Comprendre le certificat':'About the certificate',
       afpTrustExplanationNode(expl));
@@ -3957,11 +3965,11 @@ function afpSignerTrustExplanation(signer,trustLevel,isUntrusted,trustSource=nul
 }
 // L'histoire des signatures est racontée uniquement dans l'aide AFP.
 // Le premier signataire est lu dans le manifeste C2PA antérieur lié.
-function afpEditorialCertificateStory(photo,activeSigner){
+function afpEditorialCertificateStory(photo,activeSigner,targetManifestId=null){
   const fr=uiLanguage!=='en';
   const profile=afpSignerProfile(activeSigner);
   const store=photo?.store;
-  const active=String(store?.active_manifest??store?.activeManifest??'');
+  const active=String(targetManifestId??store?.active_manifest??store?.activeManifest??'');
   const current=store?.manifests?.[active];
   // Ne raconter une chaîne de signatures que si le manifeste actif
   // référence effectivement un manifeste antérieur.

@@ -3343,7 +3343,7 @@ function readerOpenFold(title,...children) {
 /* Quatre axes pédagogiques de vérification du manifeste actif.
    La norme C2PA prévoit davantage de phases : ces contrôles n'en remplacent
    ni les résultats complets, ni les validations des manifestes ingrédients. */
-function afpFourChecksFromValidation(validation,{trustSource=null,validationState=null}={}){
+function afpFourChecksFromValidation(validation,{trustSource=null,validationState=null,historical=false}={}){
   if(!Array.isArray(validation)||!validation.length)
     return ['integrity','signature','certificate','timestamp'].map(key=>({key,state:'neutral'}));
   const entries=validation.map(e=>({
@@ -3358,11 +3358,15 @@ function afpFourChecksFromValidation(validation,{trustSource=null,validationStat
   const credentialFailed=failed(/^(?:signingcredential\.(?:invalid|mismatch|ocsp\.revoked)|claimsignature\.outsidevalidity)$/);
   const integrityOk=passed(/^assertion\.(?:datahash|hasheduri|bmffhash|boxhash|boxeshash)\.match$/) || validationState==='trusted';
   const signatureOk=codeIs('claimsignature.validated',['ok']) || validationState==='trusted';
-  const certificateWarn=codeIs('signingcredential.expired') || codeIs('signingcredential.untrusted') || codeIs('signingcredential.unknown') ||
+  // A 'trusted' result recorded by a later claim generator is historical evidence,
+  // NOT a new trust-chain check against today's official C2PA trust list.
+  // Fail closed for historical certificates until an independent official check exists.
+  const recordedTrust=historical && codeIs('signingcredential.trusted');
+  const certificateWarn=recordedTrust || codeIs('signingcredential.expired') || codeIs('signingcredential.untrusted') || codeIs('signingcredential.unknown') ||
     trustSource==='legacy'||trustSource==='untrusted'||
     trustSource==='unavailable'||trustSource==='incomplete';
-  const certificateOk=codeIs('signingcredential.trusted',['ok']) && !certificateWarn &&
-    (trustSource===null||trustSource==='official');
+  const certificateOk=!historical && codeIs('signingcredential.trusted',['ok']) && !certificateWarn &&
+    trustSource==='official';
   const timestampIssue=entries.some(e=>/^timestamp\.(?:untrusted|malformed|mismatch|outsidevalidity|credentialinvalid|invalid)$/.test(e.code));
   const timestampOk=codeIs('timestamp.validated',['ok'])&&codeIs('timestamp.trusted',['ok'])&&!timestampIssue;
   const timestampPartial=codeIs('timestamp.validated')||codeIs('timestamp.trusted');
@@ -3451,8 +3455,11 @@ function afpFourCheckCard({key,state},historical=false){
   toggle.setAttribute('aria-label',(fr?'Comprendre : ':'Explain: ')+names[key]);
   const copy=document.createElement('p');
   copy.textContent=tips[key]+(historical
-    ? (fr?' Résultat historique consigné lors de l’intégration de l’ingrédient ; ce volet ne constitue pas une nouvelle validation isolée de cette signature.'
-      :'Historical result recorded on ingredient incorporation; this panel is not a fresh standalone validation of the earlier signature.')
+    ? (key==='certificate'
+      ? (fr?' Le statut enregistré lors de l’intégration ne confirme pas la reconnaissance actuelle du certificat par la liste officielle C2PA. Un ancien résultat « trusted » ne suffit jamais à afficher du vert.'
+        :'Trust recorded on incorporation does not establish recognition by the current official C2PA trust list. A previously recorded “trusted” result must not turn this check green.')
+      : (fr?' Résultat historique consigné lors de l’intégration de l’ingrédient ; ce volet ne constitue pas une nouvelle validation isolée de cette signature.'
+        :'Historical result recorded on ingredient incorporation; this panel is not a fresh standalone validation of the earlier signature.'))
     : '');
   help.append(toggle,copy);top.append(glyph,words);card.append(top,help);
   return card;
@@ -3537,7 +3544,7 @@ function afpHistoricalSignaturePanels(photo){
     const signer=firstValue(sig?.name,sig?.issuer,sig?.signer,sig?.organization,manifest?.signer);
     if(typeof signer!=='string'||!signer.trim())continue;
     const linked=afpHistoricalVerification(photo.store,id);
-    const checks=afpFourChecksFromValidation(linked?.entries??[]);
+    const checks=afpFourChecksFromValidation(linked?.entries??[],{historical:true});
     const byKey=Object.fromEntries(checks.map(c=>[c.key,c.state]));
     const level=checks.some(c=>c.state==='bad')?'bad':
       checks.some(c=>c.state==='warn')?'warn':
@@ -3565,15 +3572,20 @@ function afpHistoricalSignaturePanels(photo){
     // Le premier manifeste photographique est l'acte de naissance de l'image.
     // Les résultats historiques restent ceux consignés lors de son incorporation.
     const isOriginalCamera=panels.length===0&&afpSignerProfile(signer).camera;
+    const historicalNotice=fr
+      ?'Résultats consignés lors de l’intégration. La reconnaissance de ce certificat par la liste officielle C2PA actuelle n’a pas été vérifiée séparément.'
+      :'Results recorded on incorporation. This certificate has not been independently checked against the current official C2PA trust list.';
+    const notice=document.createElement('p');
+    notice.className='afp-reader-technical-intro afp-reader-historical-notice';
+    notice.textContent=historicalNotice;
     const expl=isOriginalCamera
       ?afpOriginalCertificateText(signer)+'\n\n'+afpCertificateResultSummary(checks,linked?.entries??[])
-      :afpSignerTrustExplanation(signer,level,byKey.certificate==='warn',
-        byKey.certificate==='warn'?'untrusted':null);
+      :afpSignerTrustExplanation(signer,level,false,null);
     const about=readerFold(fr?'Comprendre le certificat':'About the certificate',
       afpTrustExplanationNode(expl));
     about.classList.add('afp-reader-trust-more');
     // Le récit du premier signataire figure dans « Comprendre le certificat ».
-    trust.append(head,signed,four,about);
+    trust.append(head,signed,notice,four,about);
     if(byKey.certificate==='warn'){
       const link=document.createElement('a');link.href=AFP_CONFORMANCE_EXPLORER;
       link.target='_blank';link.rel='noopener noreferrer';
@@ -3608,7 +3620,7 @@ function afpHistoricalTechnicalPanels(photo,verificationPanels){
       fr?'Signataire non identifié':'Unidentified signer');
     const linked=afpHistoricalVerification(photo?.store,id);
     const entries=linked?.entries??[];
-    const checks=afpFourChecksFromValidation(entries);
+    const checks=afpFourChecksFromValidation(entries,{historical:true});
     const labels=fr
       ?{integrity:'Intégrité',signature:'Signature',certificate:'Certificat',timestamp:'Horodatage'}
       :{integrity:'Integrity',signature:'Signature',certificate:'Certificate',timestamp:'Timestamp'};
@@ -3632,7 +3644,8 @@ function afpHistoricalTechnicalPanels(photo,verificationPanels){
       field(fr?'Générateur':'Generator',generator,'neutral'),
       field(fr?'Identifiant du manifeste':'Manifest identifier',id,'neutral'),
       ...(linked?.relationship?[field(fr?'Lien avec la version suivante':'Relationship to next version',linked.relationship,'neutral')]:[]),
-      ...(linked?.specVersion?[field(fr?'Version C2PA consignée':'Recorded C2PA version',linked.specVersion,'neutral')]:[])
+      ...(linked?.specVersion?[field(fr?'Version C2PA consignée':'Recorded C2PA version',linked.specVersion,'neutral')]:[]),
+      ...(linked?.trustListUris?[field(fr?'Listes de confiance consignées (historiques)':'Recorded historical trust lists',JSON.stringify(linked.trustListUris),'neutral')]:[])
     ]);
     const checksSection=section(fr?'Contrôles historiques consignés':'Recorded historical checks',
       checks.map(check=>field(labels[check.key]||check.key,results[check.state]||results.neutral,check.state)));

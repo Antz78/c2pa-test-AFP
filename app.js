@@ -357,7 +357,7 @@ const STATIC_TRANSLATIONS = [
   ['.mode-label', 'Présentation :', 'Presentation:'],
   ['#presentation-mode option[value="random"]', '🎲 Aléatoire', '🎲 Random'],
   ['#presentation-mode option[value="info"]', 'ⓘ Icône info', 'ⓘ Info icon'],
-  ['#presentation-mode option[value="afp"]', 'AFP · Onglet', 'AFP · Tab'],
+  ['#presentation-mode option[value="afp"]', 'CR · Onglet', 'CR · Tab'],
   ['#presentation-mode option[value="direct"]', 'Panneau visible', 'Visible panel'],
   ['#presentation-mode option[value="banner"]', 'Bandeau', 'Banner'],
   ['#presentation-mode option[value="status"]', 'Pastille de confiance', 'Trust indicator'],
@@ -420,7 +420,7 @@ function updateStaticTranslations() {
     if (!el) continue;
     const value = uiLanguage === 'en' ? en : fr;
     if (special === 'heading') {
-      // Conserver le logo AFP, traduire uniquement le nœud texte.
+      // Conserver le logo Content Credentials, traduire uniquement le nœud texte.
       const node = [...el.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
       if (node) node.textContent = ' ' + value;
     } else if (special === 'hint') {
@@ -2431,8 +2431,8 @@ function addBadgeContent(target, mode, state, photo = null) {
     const el=document.createElement('span'); el.className='info-symbol';
     el.textContent='i'; target.append(el);
   } else if (mode === 'afp') {
-    const logo=document.createElement('img'); logo.src='./afp-gelule.png';
-    logo.alt='AFP'; logo.className='afp-tab-art'; target.append(logo);
+    const logo=document.createElement('img'); logo.src='./c2pa-logo-negative.svg';
+    logo.alt='Content Credentials'; logo.className='afp-tab-art'; target.append(logo);
     target.classList.add('afp-tab');
   } else if (mode === 'banner') {
     const el=document.createElement('span'); el.className='banner-label';

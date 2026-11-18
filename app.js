@@ -3647,7 +3647,8 @@ function afpHistoricalSignaturePanels(photo){
     const trust=document.createElement('section');
     trust.className='afp-reader-trust afp-reader-historical-trust afp-reader-compact-trust';
     const summary=afpCertificateOverall(checks,{historical:true});
-    trust.dataset.level=summary.dataset.level;
+    const level=summary.dataset.level;
+    trust.dataset.level=level;
     const explanation=readerFold('D’où vient cette conclusion',
       afpFourCheckPanel(checks,{historical:true}));
     explanation.classList.add('afp-reader-why-certificate');

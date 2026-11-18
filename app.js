@@ -1623,6 +1623,30 @@ function afpBenignNotice(entry) {
   const code=String(typeof entry==='string'?entry:entry?.code??entry?.status??'').toLowerCase();
   return /^(?:signingcredential\.ocsp\.skipped|assertion\.datahash\.additionalexclusionspresent|assertion\.redacted)$/.test(code);
 }
+/* La miniature affichée provient uniquement du premier manifeste C2PA.
+   On ne substitue pas arbitrairement l'image actuelle à l'original. */
+async function afpFirstC2paThumbnail(reader,store){
+  if(!reader||typeof reader.resourceToBytes!=='function')return null;
+  const pairs=afpChronologicalManifestPairs(store);
+  if(!pairs.length)return null;
+  const first=pairs[0][1];
+  if(!first)return null;
+  const candidate=[first.thumbnail,first.thumbnail?.image,first.thumbnail?.data];
+  for(const item of candidate){
+    const id=typeof item==='string'?item:item?.identifier??item?.uri??null;
+    if(typeof id!=='string'||!id.startsWith('self#jumbf='))continue;
+    const format=typeof item?.format==='string'?item.format:'image/jpeg';
+    if(!/^image\/(?:jpeg|png|webp)$/i.test(format))continue;
+    try{
+      const bytes=await reader.resourceToBytes(id);
+      if(bytes?.byteLength>0 && bytes.byteLength<=1_500_000){
+        return {bytes,format};
+      }
+    }catch(_){ /* miniature absente ou non récupérable : ne pas inventer d'image */ }
+  }
+  return null;
+}
+
 async function afpReadC2pa(engine,mime,blob,source) {
   const ctx=source ? await afpTrustContext(source) : undefined;
   let reader=null;
@@ -1632,7 +1656,8 @@ async function afpReadC2pa(engine,mime,blob,source) {
     const store=await reader.manifestStore();
     const {entries,state,ingredientDeltas}=afpExtractValidationResults(store);
     const active=await reader.activeManifest().catch(()=>null);
-    return {store,active,validation:entries,ingredientDeltas,validationState:state};
+    const originalThumbnail=await afpFirstC2paThumbnail(reader,store);
+    return {store,active,validation:entries,ingredientDeltas,validationState:state,originalThumbnail};
   } finally {
     if(reader) try {await reader.free();} catch (_) {}
   }
@@ -1724,6 +1749,11 @@ async function analyze(photo) {
       photo.store=check.store; photo.active=check.active; photo.validation=check.validation;
       photo.validationDeltas=check.ingredientDeltas??[]; photo.validationState=check.validationState;
       photo.trustSource=check.trustSource; photo.trustChecks=check.trustChecks;
+      // Object URL points at existing C2PA thumbnail bytes; NEVER re-encode image.
+      if(photo.originalC2paThumbnailUrl)URL.revokeObjectURL(photo.originalC2paThumbnailUrl);
+      photo.originalC2paThumbnailUrl=check.originalThumbnail
+        ?URL.createObjectURL(new Blob([check.originalThumbnail.bytes],{type:check.originalThumbnail.format}))
+        :null;
       photo.trustProof=JSON.parse(JSON.stringify(afpTrustResourceProof));
       const allValidation=[...photo.validation,...(photo.validationDeltas??[])];
       const levels=allValidation.map(validationLevel);
@@ -3613,44 +3643,15 @@ function afpHistoricalSignaturePanels(photo){
     if(typeof signer!=='string'||!signer.trim())continue;
     const linked=afpHistoricalVerification(photo.store,id);
     const checks=afpFourChecksFromValidation(linked?.entries??[],{historical:true});
-    const byKey=Object.fromEntries(checks.map(c=>[c.key,c.state]));
-    const level=checks.some(c=>c.state==='bad')?'bad':
-      checks.some(c=>c.state==='warn')?'warn':
-      checks.every(c=>c.state==='ok')?'ok':'neutral';
     const fr=uiLanguage!=='en';
     const trust=document.createElement('section');
-    trust.className='afp-reader-trust afp-reader-historical-trust';
-    trust.dataset.level=level;
-    const head=document.createElement('h3');head.className='afp-reader-trust-title';
-    head.textContent=level==='bad'
-      ?(fr?'Un contrôle C2PA a échoué':'A C2PA verification failed')
-      :level==='warn'
-        ?(fr?'Certificat numérique à vérifier':'Digital certificate needs verification')
-        :level==='ok'
-          ?(fr?'Vérifications C2PA reconnues':'C2PA checks trusted')
-          :(fr?'Résultats historiques — confiance non revérifiée':'Historical results — trust not rechecked');
-    const signed=document.createElement('div');signed.className='afp-reader-signer';
-    const by=document.createElement('span');by.textContent=
-      byKey.certificate==='ok'&&byKey.signature==='ok'
-        ?(fr?'Signé par : ':'Signed by: ')
-        :(fr?'Nom indiqué sur le certificat : ':'Name on certificate: ');
-    const name=document.createElement('strong');name.textContent=signer;
-    signed.append(by,name);
-    const four=afpFourCheckPanel(checks,{historical:true});
-    // Le premier manifeste photographique est l'acte de naissance de l'image.
-    // Les résultats historiques restent ceux consignés lors de son incorporation.
+    trust.className='afp-reader-trust afp-reader-historical-trust afp-reader-compact-trust';
+    const summary=afpCertificateOverall(checks,{historical:true});
+    trust.dataset.level=summary.dataset.level;
+    const explanation=readerFold('D’où vient cette conclusion',
+      afpFourCheckPanel(checks,{historical:true}));
+    explanation.classList.add('afp-reader-why-certificate');
     const isOriginalCamera=panels.length===0&&afpSignerProfile(signer).camera;
-    const recordedTrusted=checks.some(c=>c.key==='certificate'&&c.recordedTrust);
-    const historicalNotice=recordedTrusted
-      ?(fr
-        ?'Certificat déclaré reconnu lors de l’intégration. Sa reconnaissance actuelle par la liste officielle C2PA n’a pas été revérifiée. Ce constat n’est pas un échec.'
-        :'Certificate recorded as trusted on incorporation. Current official C2PA recognition has not been rechecked. This is not a failure.')
-      :(fr
-        ?'Résultats consignés lors de l’intégration. La reconnaissance de ce certificat par la liste officielle C2PA actuelle n’a pas été vérifiée séparément.'
-        :'Results recorded on incorporation. This certificate has not been independently checked against the current official C2PA trust list.');
-    const notice=document.createElement('p');
-    notice.className='afp-reader-technical-intro afp-reader-historical-notice';
-    notice.textContent=historicalNotice;
     // La signature AFP peut être intermédiaire (Nikon → AFP → Adobe) :
     // réutiliser le récit éditorial déjà prévu plutôt que le texte générique.
     const isAfp=afpSignerProfile(signer).key==='afp';
@@ -3666,13 +3667,7 @@ function afpHistoricalSignaturePanels(photo){
       afpTrustExplanationNode(expl));
     about.classList.add('afp-reader-trust-more');
     // Le récit du premier signataire figure dans « Comprendre le certificat ».
-    trust.append(head,signed,notice,four,about);
-    if(byKey.certificate==='warn'){
-      const link=document.createElement('a');link.href=AFP_CONFORMANCE_EXPLORER;
-      link.target='_blank';link.rel='noopener noreferrer';
-      link.textContent=fr?'Voir les listes de confiance C2PA':'See C2PA trust lists';
-      about.append(link);
-    }
+    trust.append(summary,explanation,about);
     // Le JSON est réservé aux détails techniques, jamais au panneau de lecture.
     const panel=readerOpenFold((fr?'Vérification C2PA — ':'C2PA verification — ')+signer,
       trust);
@@ -3791,6 +3786,48 @@ function readerOriginExplanation(detail,pending,missing,error) {
   if(detail.hasField)return tr('Le type de source est déclaré dans les informations C2PA.');
   return tr('Aucune origine ne peut être déterminée à partir des informations disponibles.');
 }
+
+function afpHoverInfo(content,label){
+  const trigger=document.createElement('button');
+  trigger.type='button';trigger.className='afp-hover-info';
+  trigger.setAttribute('aria-label',label);trigger.textContent='i';
+  const bubble=document.createElement('span');bubble.className='afp-hover-info-bubble';
+  bubble.setAttribute('role','tooltip');
+  if(typeof content==='string')bubble.textContent=content;
+  else if(content)bubble.append(content);
+  trigger.append(bubble);
+  trigger.addEventListener('click',event=>{event.preventDefault();trigger.focus();});
+  return trigger;
+}
+function afpCertificateOverall(checks,{historical=false,trustSource=null}={}){
+  const bad=checks.some(c=>c.state==='bad')||(!historical&&trustSource==='untrusted');
+  const green=!bad&&!historical&&trustSource==='official'&&checks.length===4&&
+    checks.every(c=>c.state==='ok');
+  // Orange also covers missing independent evidence, not just legacy trust.
+  // Never infer that a certificate is recognised from its issuer's company name.
+  const level=bad?'bad':green?'ok':'warn';
+  const fr=uiLanguage!=='en';
+  const label=level==='ok'?(fr?'Trusted — De confiance':'Trusted'):
+    level==='bad'?(fr?'Untrusted — Non fiable / non approuvé':'Untrusted'):
+      (fr?'Recognized — Reconnu':'Recognized');
+  const row=document.createElement('div');
+  row.className='afp-certificate-overall '+level;row.dataset.level=level;
+  const dot=document.createElement('span');dot.className='afp-certificate-overall-dot';
+  dot.setAttribute('aria-hidden','true');
+  const text=document.createElement('strong');text.textContent=label;
+  row.append(dot,text);
+  const help=level==='warn'
+    ?(fr?'Statut de synthèse orange : au moins un contrôle reste à confirmer ou repose sur un résultat historique. « Recognized » ne garantit pas une confiance actuelle du certificat.':
+       'Amber summary: at least one check is incomplete or historical. “Recognized” does not establish current certificate trust.')
+    :level==='ok'
+      ?(fr?'Les quatre contrôles sont conformes et le certificat actif a été validé avec la liste officielle C2PA.':
+         'All four checks pass and the active certificate was validated against the official C2PA trust list.')
+      :(fr?'Une non-reconnaissance explicite ou un échec de contrôle a été signalé. Voir les quatre vérifications détaillées.':
+         'An explicit trust-list rejection or a verification failure was reported. See the four detailed checks.');
+  row.append(afpHoverInfo(help,fr?'Comprendre le statut du certificat':'About certificate status'));
+  return row;
+}
+
 function originPanelSection(photo) {
   const detail=c2paSourceDetails(photo);
   const pending=photo.state==='loading',missing=photo.state==='none',error=photo.state==='error';
@@ -3798,45 +3835,37 @@ function originPanelSection(photo) {
   const labels={capture:'Capture photographique',ai:'Illustration générée par IA',composite:'Illustration générée par IA',unknown:'Origine inconnue'};
   const box=readerOpenFold('Origine de l’image');
   box.classList.add('afp-reader-origin');
-  const card=document.createElement('div');card.className='afp-reader-card';
+  const card=document.createElement('div');card.className='afp-reader-card afp-reader-origin-compact';
   const top=document.createElement('div');top.className='afp-reader-head';
   const main=document.createElement('div');main.className='afp-reader-main';
-  const title=document.createElement('strong');title.textContent=pending?tr('Analyse en cours'):(missing?tr('Image sans signature C2PA'):tr(labels[kind]));
-  const desc=document.createElement('p');
-  desc.textContent=readerOriginExplanation(detail,pending,missing,error);
-  main.append(title,desc);top.append(readerIcon(kind),main);
-  const source=document.createElement('div');source.className='afp-reader-source';
-  const kicker=document.createElement('span');kicker.className='afp-reader-kicker';kicker.textContent=tr('Champ officiel : digitalSourceType');
-  const value=document.createElement('strong');value.className='afp-reader-official';
-  const sourceNote=document.createElement('small');
-  if(pending){value.textContent=tr('Analyse en cours');}
-  else if(missing){value.textContent=tr('Sans manifeste C2PA intégré');}
-  else if(error){value.textContent=tr('Lecture C2PA indisponible');}
-  else if(detail.hasField){
-    const key=shortSourceCode(detail.raw);
-    value.textContent=key||tr('Valeur déclarée dans le manifeste');
-    const sourceLabels={digitalcapture:'Capture numérique',computationalcapture:'Capture computationnelle',trainedalgorithmicmedia:'Génération par IA',compositewithtrainedalgorithmicmedia:'Composition avec IA générative'};
-    const descriptor=sourceLabels[String(key||'').toLowerCase()];
-    sourceNote.textContent=descriptor?tr(descriptor):tr('Valeur déclarée dans le manifeste');
-  }else{
-    value.textContent=tr('Non déclaré');
-    sourceNote.textContent=tr('L’absence de ce champ ne signifie pas que la photo a été créée par IA.');
-  }
-  source.append(kicker,value,sourceNote);card.append(top,source);
-  const originBody=box.querySelector('.afp-reader-fold-body');
-  originBody.append(card);
+  const heading=document.createElement('div');heading.className='afp-reader-origin-heading';
+  const title=document.createElement('strong');
+  title.textContent=!pending&&!missing&&!error&&kind==='capture'&&uiLanguage!=='en'
+    ?'CAPTURE Photographique'
+    :pending?tr('Analyse en cours')
+    :missing?tr('Image sans signature C2PA'):tr(labels[kind]);
+  const explanation=readerOriginExplanation(detail,pending,missing,error);
+  const reason=!pending&&!missing&&!error&&detail.inferred
+    ?tr('Le champ C2PA dédié à l’origine de l’image n’est pas renseigné. Toutefois, d’autres métadonnées C2PA permettent d’identifier une capture provenant d’un appareil photo.')
+    :explanation;
+  heading.append(title,afpHoverInfo(reason,uiLanguage==='en'?'How image origin was determined':'Comprendre l’origine de l’image'));
+  main.append(heading);top.append(readerIcon(kind),main);
+  card.append(top);
+  const body=box.querySelector('.afp-reader-fold-body');
+  body.append(card);
   const method=originTechnicalSection(photo);
   method.classList.add('afp-reader-origin-method');
-  originBody.append(method);
+  body.append(method);
   return box;
 }
+
 function originTechnicalSection(photo) {
   const detail=c2paSourceDetails(photo),pending=photo.state==='loading';
   const basis=detail.inferred?'Déduit de la création et du boîtier identifiés par les données C2PA signées'
     :detail.hasField?(detail.inherited?'Déclaré dans une étape précédente de la provenance':'Déclaré explicitement dans le manifeste C2PA')
     :'Aucune information suffisante';
-  return readerFold('Méthode d’identification (détails)',
-    section('D’où vient cette conclusion ?', [
+  return readerFold('D’où vient cette conclusion',
+    section('Méthode d’identification', [
       field('Méthode de classification',tr(pending?'Analyse en cours':basis),'neutral'),
       field('Valeur exacte du champ',detail.raw??null,'neutral'),
       field('Emplacement dans le manifeste',detail.source??null,'neutral'),
@@ -4331,12 +4360,44 @@ function afpRawManifestFold(photo,{scope='full'}={}){
   return fold;
 }
 
+function afpWatermarkPanel(photo){
+  const fold=readerFold('Filigrane invisible',
+    section(uiLanguage==='en'?'Watermark information':'Informations de filigrane',
+      afpWatermarkFields(photo)));
+  fold.classList.add('afp-reader-watermark-panel');
+  return fold;
+}
+
+function afpOriginalPhotoRow(photo){
+  const fr=uiLanguage!=='en';
+  const row=document.createElement('div');row.className='afp-original-photo-row';
+  const name=document.createElement('strong');name.textContent=fr?'Photo originale':'Original photo';
+  const tooltip=document.createElement('div');tooltip.className='afp-original-tooltip-content';
+  if(photo?.originalC2paThumbnailUrl){
+    const img=document.createElement('img');img.src=photo.originalC2paThumbnailUrl;
+    img.alt=fr?'Imagette du premier manifeste C2PA':'Thumbnail from first C2PA manifest';
+    tooltip.append(img);
+    const note=document.createElement('span');
+    note.textContent=fr?'Imagette du premier manifeste C2PA (et non preuve de la scène d’origine).':
+      'Thumbnail from the first C2PA manifest (not proof of the original scene).';
+    tooltip.append(note);
+  }else{
+    tooltip.textContent=fr?'Aucune imagette du premier manifeste C2PA n’est disponible dans ce fichier.':
+      'No thumbnail from the first C2PA manifest is available in this file.';
+  }
+  row.append(name,afpHoverInfo(tooltip,fr?'Afficher l’imagette de la photo d’origine':'Show original photo thumbnail'));
+  return row;
+}
+
 function afpPhotoInformationPanel(photo){
   const details=c2paSourceDetails(photo);
-  return buildPhotoInformation(photo,{
+  const fold=buildPhotoInformation(photo,{
     field,readerFold,section,active:c2paActiveManifest(photo),
     cameraFromProvenance:details.cameraModel,language:uiLanguage
   });
+  // Above author, location and other production metadata.
+  fold.querySelector('.credential-fields')?.prepend(afpOriginalPhotoRow(photo));
+  return fold;
 }
 
 
@@ -4384,7 +4445,7 @@ function fillDetails(photo) {
       ?'Remote C2PA manifest referenced; verification unavailable.'
       :'Manifeste C2PA distant référencé ; vérification indisponible.');
     lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),
-      remotePanel,afpColorLegend());
+      remotePanel,afpPhotoInformationPanel(photo),afpWatermarkPanel(photo),afpColorLegend());
     lbJson.textContent=JSON.stringify({remoteManifest:photo.remoteManifest,
       error:photo.error??null,status:'Remote reference only, not validated'},null,2);
     return;
@@ -4399,7 +4460,7 @@ function fillDetails(photo) {
     lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),
       readerOpenFold(uiLanguage==='en'?'C2PA verification':'Vérification C2PA',
         document.createTextNode(tr(photo.state==='none'?'Aucun certificat C2PA détecté dans ce fichier.':'Lecture du certificat C2PA indisponible.'))),
-      afpPhotoInformationPanel(photo),afpColorLegend());
+      afpPhotoInformationPanel(photo),afpWatermarkPanel(photo),afpColorLegend());
     lbJson.textContent=photo.state==='none'?tr('Aucun manifeste trouvé.'):String(photo.error||'');return;
   }
   const entries=photo.validation??[];
@@ -4472,7 +4533,7 @@ function fillDetails(photo) {
     trustText=afpSignerTrustExplanation(signer,'warn',false,photo.trustSource);
     setStatusLine('warn','Manifeste présent, mais la validation complète ne peut pas être confirmée.');
   }
-  const trust=document.createElement('section');trust.className='afp-reader-trust';trust.dataset.level=trustLevel;
+  const trust=document.createElement('section');trust.className='afp-reader-trust afp-reader-compact-trust';trust.dataset.level=trustLevel;
   trust.setAttribute('aria-label',tr('Qui a signé ces informations ?'));
   const trustH=document.createElement('h3');trustH.className='afp-reader-trust-title';trustH.textContent=tr(trustTitle);
   const story=afpEditorialCertificateStory(photo,signer);
@@ -4500,8 +4561,14 @@ function fillDetails(photo) {
       :'Autre contrôle C2PA en échec — voir les détails techniques.';
     quick.append(p);
   }
-  signerP.append(by,signerName);trust.append(trustH,signerP,quick,trustP);
-  afpAppendTrustSourceNote(trust,photo,trustP);
+  // Keep the original four checks intact, but move them behind a single summary.
+  const trustSummary=afpCertificateOverall(fourChecks,{trustSource:photo.trustSource});
+  trust.dataset.level=trustSummary.dataset.level;
+  const why=readerFold('D’où vient cette conclusion',quick);
+  why.classList.add('afp-reader-why-certificate');
+  const whyBody=why.querySelector('.afp-reader-fold-body');
+  afpAppendTrustSourceNote(whyBody,photo);
+  trust.append(trustSummary,why,trustP);
   // Pas de recherche par simple nom de fabricant : un nom dans la liste ne valide pas la chaîne.
 
   const photoFold=afpPhotoInformationPanel(photo);
@@ -4594,7 +4661,6 @@ const activeTechnical=readerFold(
   ]),
   pTsa,
   section('Informations du manifeste',rawFields),
-  section('Filigrane invisible (déclaration C2PA)',afpWatermarkFields(photo)),
   rawIntro,
   ...(photo.validationDeltas?.length
     ?[section('Écarts actuels de validation des ingrédients',photo.validationDeltas.map(entry=>
@@ -4624,7 +4690,7 @@ const trustLabel=(uiLanguage==='en'?'C2PA verification — ':'Vérification C2PA
 const trustFold=readerOpenFold(trustLabel,trust);
 trustFold.classList.add('afp-reader-active-verification');
 lbSummary.replaceChildren(origin,...(photo.cacheStatus?[afpShowCacheBanner(photo)]:[]),
-  ...(remotePanel?[remotePanel]:[]),...otherSignatures,trustFold,...(photoFold?[photoFold]:[]),technical,afpColorLegend());
+  ...(remotePanel?[remotePanel]:[]),...otherSignatures,trustFold,...(photoFold?[photoFold]:[]),afpWatermarkPanel(photo),technical,afpColorLegend());
   lbJson.textContent=JSON.stringify(photo.store,null,2);
 }
 
@@ -4968,4 +5034,5 @@ afpReaderV4Style.textContent=`
 afpReaderV4Style.textContent += "\n/* Résumé C2PA : quatre axes autonomes, avec explications natives\n   accessibles au clavier et conservées lors du clonage des panneaux. */\n.afp-reader-fourchecks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:11px 0}\n.afp-reader-check-card{min-width:0;padding:9px;border:1px solid rgba(147,162,183,.3);\n  border-radius:9px;background:rgba(17,28,42,.12);color:var(--trust-text)}\n.afp-reader-check-top{display:flex;align-items:center;gap:7px;min-width:0}\n.afp-reader-check-glyph{display:grid;place-items:center;flex:0 0 17px;width:17px;height:17px;\n  font-size:11px;font-weight:750;line-height:1;border-radius:50%;background:#8293aa;color:white}\n.afp-reader-check-glyph.ok{background:#278c60}\n.afp-reader-check-glyph.warn{background:#ce921d;color:#231b0c}\n.afp-reader-check-glyph.bad{background:#ce4b55}\n.afp-reader-check-words{min-width:0;display:flex;flex:1;flex-direction:column;gap:2px}\n.afp-reader-check-words strong{font-size:11px;line-height:1.3;overflow-wrap:anywhere}\n.afp-reader-check-status{font-size:10.5px;opacity:.86}\n.afp-reader-check-info{position:relative;flex:0 0 auto;margin:0!important;padding:0!important;border:0!important}\n.afp-reader-check-info > summary{list-style:none;display:grid;place-items:center;width:19px;height:19px;\n  font-size:12px!important;font-weight:750!important;line-height:1!important;cursor:pointer;border-radius:50%;\n  color:var(--trust-text);background:rgba(130,150,175,.22);border:1px solid rgba(170,187,207,.42)}\n.afp-reader-check-info > summary::-webkit-details-marker{display:none}\n.afp-reader-check-info > summary:focus-visible{outline:2px solid #7bb2ff;outline-offset:2px}\n.afp-reader-check-info > p{position:absolute;top:24px;right:0;z-index:25;min-width:195px;\n  max-width:min(255px,80vw);margin:0!important;padding:9px 10px;border:1px solid #546982;\n  border-radius:9px;background:#182435;color:#f2f5fa;font-size:11px;line-height:1.48;\n  font-weight:400;box-shadow:0 10px 25px #0008}\n.afp-reader-historical-notice{font-size:12px;line-height:1.5;margin:8px 0 10px;color:#acb9c9}\n.afp-reader-historical-id{font-size:10px;overflow-wrap:anywhere;opacity:.7}\n.afp-reader-historical-signature .afp-reader-fourchecks{margin:10px 0}\n.afp-reader-other-failure{grid-column:1 / -1;padding:9px;border:1px solid #d97676;border-radius:7px;\n  color:#ffb3b3;font-size:11px}\n@media(max-width:360px){.afp-reader-fourchecks{grid-template-columns:1fr}}\n";
 afpReaderV4Style.textContent += ".afp-reader-color-explanation{margin:10px 0!important;padding:9px 11px;border-radius:9px;border:1px solid rgba(164,178,195,.28);font-size:11.5px;line-height:1.55;background:rgba(17,28,42,.11);color:var(--trust-text)}\n.afp-reader-color-explanation strong{font-weight:800}\n.afp-reader-color-explanation.ok strong{color:#81e1aa}\n.afp-reader-color-explanation.warn strong{color:#f3c766}\n.afp-reader-color-explanation.bad strong{color:#ff9f9f}";
 afpReaderV4Style.textContent += "\n.afp-reader-check-card{position:relative}\n.afp-reader-check-words{padding-right:21px}\n.afp-reader-check-card .afp-reader-check-info{position:static!important;margin:0!important;padding:0!important}\n.afp-reader-check-card .afp-reader-check-info > summary{position:absolute!important;right:9px;top:10px;z-index:2}\n.afp-reader-check-card .afp-reader-check-info > p{position:static!important;min-width:0!important;max-width:none!important;margin:10px 0 0!important;padding:8px 9px!important;\n  box-shadow:none!important;border-radius:6px!important;font-size:11px!important;line-height:1.45!important}\n";
+afpReaderV4Style.textContent += "\n/* AFP : condensé de la provenance, certificat et photo originale. */\n.afp-reader-origin-compact{padding:13px!important}\n.afp-reader-origin-compact .afp-reader-head{align-items:center!important}\n.afp-reader-origin-heading{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0}\n.afp-reader-origin-heading>strong{font-size:15px!important;line-height:1.3!important}\n.afp-hover-info{position:relative;z-index:2;display:inline-grid;place-items:center;flex:0 0 20px;\n  height:20px;width:20px;border-radius:50%;padding:0;border:1px solid rgba(170,190,211,.48);\n  background:#536a85;color:#fff;font:700 12px/1 system-ui,sans-serif;cursor:help}\n.afp-hover-info:focus-visible{outline:2px solid #8cbfff;outline-offset:2px}\n.afp-hover-info-bubble{display:none;position:absolute;right:0;top:calc(100% + 8px);z-index:110;\n  width:min(275px,calc(100vw - 80px));padding:10px 11px;border:1px solid #50647b;\n  border-radius:9px;background:#152234;color:#eaf2fd;box-shadow:0 14px 28px #0009;\n  font:400 11.5px/1.5 system-ui,sans-serif;text-align:left;white-space:normal}\n.afp-hover-info:is(:hover,:focus,:focus-within)>.afp-hover-info-bubble{display:block}\n.afp-reader-compact-trust{padding:10px!important}\n.afp-certificate-overall{display:flex;align-items:center;gap:10px;min-height:30px;\n  font:700 12.5px/1.4 system-ui,sans-serif;color:var(--trust-text)}\n.afp-certificate-overall-dot{display:inline-block;flex:0 0 11px;width:11px;height:11px;\n  border-radius:50%;background:#d99a28;box-shadow:0 0 0 2px #0001}\n.afp-certificate-overall.ok .afp-certificate-overall-dot{background:#35be79}\n.afp-certificate-overall.bad .afp-certificate-overall-dot{background:#e25862}\n.afp-certificate-overall .afp-hover-info{margin-left:auto;z-index:6}\n.afp-reader-compact-trust .afp-reader-why-certificate,\n.afp-reader-compact-trust .afp-reader-trust-more{margin-top:8px!important;margin-bottom:0!important}\n.afp-reader-compact-trust .afp-reader-why-certificate>.afp-reader-fold-body{padding:6px 9px 11px!important}\n.afp-original-photo-row{display:flex;align-items:center;gap:10px;justify-content:space-between;\n  min-height:43px;padding:10px 13px;border-bottom:1px solid rgba(145,165,186,.22)}\n.afp-original-photo-row strong{font-size:12px;font-weight:700}\n.afp-original-photo-row .afp-hover-info{z-index:8}\n.afp-original-tooltip-content{display:flex;flex-direction:column;gap:8px;align-items:flex-start}\n.afp-original-tooltip-content img{max-width:230px;max-height:205px;object-fit:contain;\n  border:1px solid #4e6681;border-radius:6px;background:#101b2a}\n.afp-original-tooltip-content span{font-size:11px;line-height:1.4}\n.afp-reader-watermark-panel{margin-top:8px!important}\n";
 document.head.append(afpReaderV4Style);

@@ -2067,9 +2067,11 @@ function c2paSourceDetails(photo) {
   function payloadOf(a) { return obj(a?.data ?? a?.value ?? a?.payload ?? a); }
   function normKind(raw) {
     const name=String(raw).split(/[\/#]/).pop().toLowerCase();
-    if (['compositewithtrainedalgorithmicmedia','compositesynthetic','compositecapture'].includes(name)) return 'composite';
-    if (['trainedalgorithmicmedia','trainedalgorithmicdata','syntheticmedia'].includes(name)) return 'ai';
-    if (['digitalcapture','computationalcapture','negativefilm','positivefilm','print'].includes(name)) return 'capture';
+    // Composite of captures, generated non-media data and digitised prints
+    // must not automatically receive an AI or photographic-capture icon.
+    if (['compositewithtrainedalgorithmicmedia','compositesynthetic'].includes(name)) return 'composite';
+    if (['trainedalgorithmicmedia','syntheticmedia'].includes(name)) return 'ai';
+    if (['digitalcapture','computationalcapture','negativefilm','positivefilm'].includes(name)) return 'capture';
     // Ne pas affirmer "capture" pour humanEdits, algorithmicallyEnhanced, empty, etc.
     return 'unknown';
   }
@@ -2202,6 +2204,8 @@ function c2paSourceDetails(photo) {
     if(!parent || visited.has(parent)) continue;
     visited.add(parent);
     ancestors.push(parent);
+    const generatedAncestor=generatedComponent(parent);
+    if(generatedAncestor){generatedAncestor.inherited=true;return generatedAncestor;}
     const inherited=chosen(ownDeclarations(parent),true);
     if(inherited?.declared){inherited.note='Origine déclarée dans le manifeste parent de la chaîne C2PA';return inherited;}
     queue.push(...parentRefs(parent).map(x=>({x,depth:depth+1})));
@@ -2210,10 +2214,10 @@ function c2paSourceDetails(photo) {
      Canon EOS R1 et Nikon Z6 III fournissent c2pa.created et une assertion
      stds.exif signée indiquant le boîtier, sans digitalSourceType.
      Il s'agit d'une INFERENCE étayée, jamais d'un digitalCapture officiel.
-     Ne pas l'utiliser si un contrôle C2PA a réellement échoué. */
+     Une défaillance sur la version actuelle ne supprime pas le récit historique,
+     mais empêche de le présenter comme une provenance pleinement authentifiée. */
   function captureFromSignedCameraEvidence(m, inherited=false) {
-    // Un certificat expiré n'efface pas les indices de capture. Les échecs cryptographiques restent bloquants.
-    if (!m || ['bad','error','none','loading'].includes(photo?.state)) return null;
+    if (!m) return null;
     const claims=assertionsOf(m);
     const actions=claims.filter(x=>/^(?:c2pa\.)?actions(?:\.v\d+)?(?:__\d+)?$/i.test(labelOf(x)));
     const events=[];
@@ -2249,7 +2253,8 @@ function c2paSourceDetails(photo) {
       cameraModel: model || (nikonGenerator?'Nikon (identifié par le générateur)':'Canon (identifié par le générateur)'),
       cameraMake:make,generator,
       note:generatorOnly?'Capture déduite du générateur du boîtier (EXIF absent ou supprimé)'
-        :'Capture déduite de la création et des métadonnées C2PA du boîtier ; digitalSourceType non déclaré.'};
+        :'Capture déduite de la création et des métadonnées C2PA du boîtier ; digitalSourceType non déclaré.',
+      provenanceVerification:photo?.state==='bad'?'failed':'not-independently-revalidated'};
   }
   for (const candidate of [...activeCandidates,...ancestors]) {
     const fallback=captureFromSignedCameraEvidence(candidate,ancestors.includes(candidate));
@@ -2352,7 +2357,9 @@ function appendOriginBadge(target, photo, state) {
   const originDetail = c2paSourceDetails(photo);
   const origin = originDetail.kind || 'unknown';
   const level = originStatusLevel(state);
-  const badgeLevel = origin === 'unknown' && level !== 'bad' ? 'neutral'
+  // Unknown origin stays grey: red failures belong in the separate C2PA
+  // verification result, not in a question-mark origin marker.
+  const badgeLevel = origin === 'unknown' ? 'neutral'
     : (originDetail.inferred && level === 'ok' ? 'warn' : level);
   const color = DISTINGUO_COLORS[badgeLevel] || '#C7D0DA';
   target.style.setProperty('--origin-foreground', color);
@@ -3966,9 +3973,12 @@ function originPanelSection(photo) {
     :pending?tr('Analyse en cours')
     :missing?tr('Image sans signature C2PA'):tr(labels[kind]);
   const explanation=readerOriginExplanation(detail,pending,missing,error);
-  const reason=!pending&&!missing&&!error&&detail.inferred
+  const originCaution=photo.state==='bad'?(uiLanguage==='en'
+    ?' A current C2PA verification failed: this earlier source is historically identified, but its continuity cannot be fully authenticated.'
+    :' Une vérification C2PA de la version actuelle a échoué : cette origine historique est identifiable, mais sa continuité n’est pas entièrement authentifiée.') : '';
+  const reason=(!pending&&!missing&&!error&&detail.inferred
     ?tr('Le champ C2PA dédié à l’origine de l’image n’est pas renseigné. Toutefois, d’autres métadonnées C2PA permettent d’identifier une capture provenant d’un appareil photo.')
-    :explanation;
+    :explanation)+originCaution;
   heading.append(title,afpHoverInfo(reason,uiLanguage==='en'?'How image origin was determined':'Comprendre l’origine de l’image'));
   main.append(heading);top.append(readerIcon(kind),main);
   card.append(top);
@@ -3987,6 +3997,10 @@ function originTechnicalSection(photo) {
     :'Aucune information suffisante';
   return readerFold('D’où vient cette conclusion',
     section('Méthode d’identification', [
+      ...(detail.kind!=='unknown'&&photo.state==='bad'?[field('Filiation C2PA',
+        uiLanguage==='en'?'Historical provenance identified; verification failed'
+          :'Origine historique identifiée ; vérification actuelle en échec',
+        'warn','Les informations retrouvées dans les manifestes antérieurs ne prouvent pas à elles seules la validité de la version actuelle.')]:[]),
       field('Méthode de classification',tr(pending?'Analyse en cours':basis),'neutral'),
       field('Valeur exacte du champ',detail.raw??null,'neutral'),
       field('Emplacement dans le manifeste',detail.source??null,'neutral'),

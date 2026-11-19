@@ -3896,34 +3896,59 @@ window.addEventListener('resize',()=>{
 });
 
 function afpCertificateOverall(checks,{historical=false,trustSource=null}={}){
+  // Conserver la classification existante : seule la présentation change.
   const bad=checks.some(c=>c.state==='bad')||(!historical&&trustSource==='untrusted');
   const green=!bad&&!historical&&trustSource==='official'&&checks.length===4&&
     checks.every(c=>c.state==='ok');
-  // Orange also covers missing independent evidence, not just legacy trust.
-  // Never infer that a certificate is recognised from its issuer's company name.
   const level=bad?'bad':green?'ok':'warn';
   const fr=uiLanguage!=='en';
-  const label=level==='ok'?(fr?'Trusted — De confiance':'Trusted'):
-    level==='bad'?(fr?'Untrusted — Non fiable / non approuvé':'Untrusted'):
-      (fr?'Recognized — Reconnu':'Recognized');
-  const row=document.createElement('div');
-  row.className='afp-certificate-overall '+level;row.dataset.level=level;
-  const dot=document.createElement('span');dot.className='afp-certificate-overall-dot';
-  dot.setAttribute('aria-hidden','true');
-  const text=document.createElement('strong');text.textContent=label;
-  row.append(dot,text);
+  const states=[
+    {level:'ok',en:'Trusted',fr:'De confiance'},
+    {level:'warn',en:'Recognized',fr:'Reconnu'},
+    {level:'bad',en:'Untrusted',fr:'Non fiable / non approuvé'}
+  ];
+  const group=document.createElement('div');
+  group.className='afp-certificate-overall afp-certificate-status-list '+level;
+  group.dataset.level=level;
+  group.setAttribute('role','list');
+  group.setAttribute('aria-label',fr?'Trois statuts possibles du certificat':'Three possible certificate statuses');
+  for(const option of states){
+    const selected=option.level===level;
+    const item=document.createElement('div');
+    item.className='afp-certificate-status-option '+option.level+(selected?' selected':'');
+    item.dataset.level=option.level;
+    item.setAttribute('role','listitem');
+    if(selected)item.setAttribute('aria-current','true');
+    const dot=document.createElement('span');
+    dot.className='afp-certificate-status-dot';
+    dot.setAttribute('aria-hidden','true');
+    const name=document.createElement(selected?'strong':'span');
+    name.className='afp-certificate-status-label';
+    name.textContent=fr?option.en+' — '+option.fr:option.en;
+    item.append(dot,name);
+    if(selected){
+      const tick=document.createElement('span');
+      tick.className='afp-certificate-status-tick';
+      tick.textContent='✓';
+      tick.setAttribute('aria-hidden','true');
+      item.append(tick);
+      item.setAttribute('aria-label',(fr?'Statut de ce certificat : ':'Current certificate status: ')+name.textContent);
+    }
+    group.append(item);
+  }
   const help=level==='warn'
-    ?(fr?'Statut de synthèse orange : au moins un contrôle reste à confirmer ou repose sur un résultat historique. « Recognized » ne garantit pas une confiance actuelle du certificat.':
-       'Amber summary: at least one check is incomplete or historical. “Recognized” does not establish current certificate trust.')
+    ?(fr?'Statut orange : un contrôle reste à confirmer ou repose sur un résultat historique. « Recognized » ne garantit pas à lui seul la confiance actuelle dans le certificat.':
+       'Amber status: a check remains incomplete or historical. “Recognized” alone does not confirm current trust in the certificate.')
     :level==='ok'
       ?(fr?'Les quatre contrôles sont conformes et le certificat actif a été validé avec la liste officielle C2PA.':
          'All four checks pass and the active certificate was validated against the official C2PA trust list.')
-      :(fr?'Une non-reconnaissance explicite ou un échec de contrôle a été signalé. Voir les quatre vérifications détaillées.':
-         'An explicit trust-list rejection or a verification failure was reported. See the four detailed checks.');
-  row.append(afpHoverInfo(help,fr?'Comprendre le statut du certificat':'About certificate status'));
-  return row;
+      :(fr?'Une non-reconnaissance explicite ou un échec de contrôle a été signalé. Consulter les quatre vérifications détaillées.':
+         'An explicit trust-list rejection or verification failure was reported. See the four detailed checks.');
+  const hint=afpHoverInfo(help,fr?'Comprendre le statut du certificat':'About certificate status');
+  hint.classList.add('afp-certificate-status-help');
+  group.append(hint);
+  return group;
 }
-
 function originPanelSection(photo) {
   const detail=c2paSourceDetails(photo);
   const pending=photo.state==='loading',missing=photo.state==='none',error=photo.state==='error';
@@ -5133,4 +5158,5 @@ afpReaderV4Style.textContent += "\n.afp-reader-check-card{position:relative}\n.a
 afpReaderV4Style.textContent += "\n/* AFP : condensé de la provenance, certificat et photo originale. */\n.afp-reader-origin-compact{padding:13px!important}\n.afp-reader-origin-compact .afp-reader-head{align-items:center!important}\n.afp-reader-origin-heading{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0}\n.afp-reader-origin-heading>strong{font-size:15px!important;line-height:1.3!important}\n.afp-hover-info{position:relative;z-index:2;display:inline-grid;place-items:center;flex:0 0 20px;\n  height:20px;width:20px;border-radius:50%;padding:0;border:1px solid rgba(170,190,211,.48);\n  background:#536a85;color:#fff;font:700 12px/1 system-ui,sans-serif;cursor:help}\n.afp-hover-info:focus-visible{outline:2px solid #8cbfff;outline-offset:2px}\n.afp-hover-info-bubble{display:none;position:absolute;right:0;top:calc(100% + 8px);z-index:110;\n  width:min(275px,calc(100vw - 80px));padding:10px 11px;border:1px solid #50647b;\n  border-radius:9px;background:#152234;color:#eaf2fd;box-shadow:0 14px 28px #0009;\n  font:400 11.5px/1.5 system-ui,sans-serif;text-align:left;white-space:normal}\n.afp-hover-info:is(:hover,:focus,:focus-within)>.afp-hover-info-bubble{display:block}\n.afp-reader-compact-trust{padding:10px!important}\n.afp-certificate-overall{display:flex;align-items:center;gap:10px;min-height:30px;\n  font:700 12.5px/1.4 system-ui,sans-serif;color:var(--trust-text)}\n.afp-certificate-overall-dot{display:inline-block;flex:0 0 11px;width:11px;height:11px;\n  border-radius:50%;background:#d99a28;box-shadow:0 0 0 2px #0001}\n.afp-certificate-overall.ok .afp-certificate-overall-dot{background:#35be79}\n.afp-certificate-overall.bad .afp-certificate-overall-dot{background:#e25862}\n.afp-certificate-overall .afp-hover-info{margin-left:auto;z-index:6}\n.afp-reader-compact-trust .afp-reader-why-certificate,\n.afp-reader-compact-trust .afp-reader-trust-more{margin-top:8px!important;margin-bottom:0!important}\n.afp-reader-compact-trust .afp-reader-why-certificate>.afp-reader-fold-body{padding:6px 9px 11px!important}\n.afp-original-photo-row{display:flex;align-items:center;gap:10px;justify-content:space-between;\n  min-height:43px;padding:10px 13px;border-bottom:1px solid rgba(145,165,186,.22)}\n.afp-original-photo-row strong{font-size:12px;font-weight:700}\n.afp-original-photo-row .afp-hover-info{z-index:8}\n.afp-original-tooltip-content{display:flex;flex-direction:column;gap:8px;align-items:flex-start}\n.afp-original-tooltip-content img{max-width:230px;max-height:205px;object-fit:contain;\n  border:1px solid #4e6681;border-radius:6px;background:#101b2a}\n.afp-original-tooltip-content span{font-size:11px;line-height:1.4}\n.afp-reader-watermark-panel{margin-top:8px!important}\n";
 afpReaderV4Style.textContent += ".afp-reader-origin,.afp-reader-origin-compact,.afp-reader-photo-information,\n.afp-reader-photo-information .credential-fields,.afp-reader-photo-information .credential-section,\n.afp-reader-historical-signature,.afp-reader-active-verification{overflow:visible!important}\n.afp-reader-origin .afp-hover-info-bubble{left:0;right:auto}\n.afp-original-photo-row{position:relative}\n";
 afpReaderV4Style.textContent += "/* Tooltip hors des accordéons : lisible même près du bord droit. */\n.afp-hover-info>.afp-hover-info-bubble,\n.afp-hover-info:is(:hover,:focus,:focus-within)>.afp-hover-info-bubble{\n  display:none!important\n}\n.afp-hover-floating-popover{\n  position:fixed!important;\n  display:block!important;\n  box-sizing:border-box!important;\n  z-index:2147483000!important;\n  pointer-events:none!important;\n  overflow-x:hidden!important;\n  overflow-y:auto!important;\n  padding:11px 12px!important;\n  border:1px solid #7890aa!important;\n  border-radius:9px!important;\n  background:#152234!important;\n  color:#f5f8fe!important;\n  box-shadow:0 12px 30px rgba(0,0,0,.55)!important;\n  font:400 12px/1.55 system-ui,sans-serif!important;\n  text-align:left!important;\n  white-space:normal!important;\n  overflow-wrap:anywhere!important;\n}\n.afp-hover-floating-popover img{\n  display:block;\n  max-width:100%;\n  max-height:205px;\n  object-fit:contain;\n}\n";
+afpReaderV4Style.textContent += "/* Trois états de confiance visibles : un seul est sélectionné.\n   Les deux autres restent lisibles mais atténués, sur mobile comme sur desktop. */\n.afp-certificate-overall.afp-certificate-status-list{\n  display:grid!important;\n  grid-template-columns:minmax(0,1fr);\n  gap:3px!important;\n  position:relative;\n  min-height:0!important;\n  margin:0 0 4px!important;\n  padding:0 25px 0 0!important;\n  font:inherit!important;\n}\n.afp-certificate-status-option{\n  display:flex;\n  align-items:center;\n  gap:8px;\n  min-width:0;\n  min-height:24px;\n  padding:4px 8px;\n  border:1px solid transparent;\n  border-radius:7px;\n  opacity:.46;\n  filter:saturate(.63);\n  font:500 10.5px/1.35 system-ui,sans-serif;\n  color:var(--trust-text);\n}\n.afp-certificate-status-option.selected{\n  opacity:1;\n  filter:none;\n  font-weight:800;\n  font-size:11.5px;\n  border-color:var(--trust-border);\n  background:rgba(255,255,255,.065);\n  box-shadow:inset 0 0 0 1px rgba(255,255,255,.035);\n}\n.afp-certificate-status-dot{\n  width:9px;\n  height:9px;\n  flex:0 0 9px;\n  border-radius:50%;\n  background:#d99a28;\n  box-shadow:0 0 0 1px rgba(255,255,255,.15);\n}\n.afp-certificate-status-option.ok .afp-certificate-status-dot{background:#35c979}\n.afp-certificate-status-option.warn .afp-certificate-status-dot{background:#f3aa32}\n.afp-certificate-status-option.bad .afp-certificate-status-dot{background:#ee686f}\n.afp-certificate-status-label{\n  min-width:0;\n  overflow-wrap:break-word;\n}\n.afp-certificate-status-tick{\n  flex:0 0 19px;\n  margin-left:auto;\n  display:grid;\n  place-items:center;\n  width:19px;\n  height:19px;\n  border:1px solid currentColor;\n  border-radius:50%;\n  font:800 12px/1 system-ui,sans-serif;\n}\n.afp-certificate-status-list.ok .selected .afp-certificate-status-tick{color:#61dfa0}\n.afp-certificate-status-list.warn .selected .afp-certificate-status-tick{color:#f6bc5b}\n.afp-certificate-status-list.bad .selected .afp-certificate-status-tick{color:#ff858b}\n.afp-certificate-status-list>.afp-certificate-status-help{\n  position:absolute;\n  top:5px;\n  right:0;\n  margin:0!important;\n}\n@media(max-width:380px){\n .afp-certificate-status-option{font-size:10px;padding:4px 6px;gap:6px}\n .afp-certificate-status-option.selected{font-size:11px}\n}\n";
 document.head.append(afpReaderV4Style);

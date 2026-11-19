@@ -3800,6 +3800,101 @@ function afpHoverInfo(content,label){
   trigger.addEventListener('click',event=>{event.preventDefault();trigger.focus();});
   return trigger;
 }
+/* Infobulles AFP : flottantes hors des panneaux scrollables et des
+   accordéons, pour ne jamais couper les textes au bord droit.
+   Délégation : fonctionne aussi sur les panneaux clonés (side/bottom). */
+let afpFloatingInfo=null;
+let afpFloatingInfoTrigger=null;
+function afpCloseFloatingInfo(){
+  if(afpFloatingInfo){afpFloatingInfo.remove();afpFloatingInfo=null;}
+  if(afpFloatingInfoTrigger){
+    afpFloatingInfoTrigger.removeAttribute('aria-describedby');
+    afpFloatingInfoTrigger=null;
+  }
+}
+function afpPositionFloatingInfo(){
+  const bubble=afpFloatingInfo,trigger=afpFloatingInfoTrigger;
+  if(!bubble||!trigger||!trigger.isConnected){afpCloseFloatingInfo();return;}
+  const rect=trigger.getBoundingClientRect();
+  const panel=trigger.closest('#side-panel, #credentials, .bottom-sheet');
+  const bounds=panel?.getBoundingClientRect();
+  const vw=document.documentElement.clientWidth;
+  const vh=document.documentElement.clientHeight;
+  const leftBound=Math.max(10,(bounds?.left??0)+10);
+  const rightBound=Math.min(vw-10,(bounds?.right??vw)-10);
+  const width=Math.max(130,Math.min(315,rightBound-leftBound));
+  bubble.style.width=width+'px';
+  bubble.style.maxWidth=width+'px';
+  bubble.style.maxHeight=Math.max(80,vh-24)+'px';
+  // Measure after setting width (long lines wrap; thumbnails retain aspect).
+  const height=bubble.getBoundingClientRect().height;
+  const left=Math.max(leftBound,Math.min(
+    rect.left+rect.width/2-width/2,rightBound-width));
+  const availableBelow=vh-rect.bottom-12;
+  const availableAbove=rect.top-12;
+  const below=availableBelow>=height || availableBelow>=availableAbove;
+  const desiredTop=below?rect.bottom+8:rect.top-height-8;
+  bubble.style.left=Math.round(left)+'px';
+  bubble.style.top=Math.round(Math.min(vh-height-10,
+    Math.max(10,desiredTop)))+'px';
+}
+function afpOpenFloatingInfo(trigger){
+  if(!(trigger instanceof HTMLElement))return;
+  const source=trigger.querySelector('.afp-hover-info-bubble');
+  if(!source)return;
+  if(afpFloatingInfoTrigger===trigger && afpFloatingInfo){
+    afpPositionFloatingInfo();return;
+  }
+  afpCloseFloatingInfo();
+  const popup=source.cloneNode(true);
+  popup.className='afp-hover-floating-popover';
+  popup.id='afp-floating-info-tooltip';
+  popup.setAttribute('role','tooltip');
+  popup.setAttribute('aria-live','polite');
+  popup.style.visibility='hidden';
+  (trigger.closest('dialog[open]')||document.body).appendChild(popup);
+  afpFloatingInfo=popup;
+  afpFloatingInfoTrigger=trigger;
+  trigger.setAttribute('aria-describedby',popup.id);
+  afpPositionFloatingInfo();
+  popup.style.visibility='visible';
+  for(const img of popup.querySelectorAll('img')){
+    if(!img.complete)img.addEventListener('load',()=>{
+      if(afpFloatingInfo===popup)afpPositionFloatingInfo();
+    },{once:true});
+  }
+}
+document.addEventListener('pointerover',event=>{
+  const button=event.target.closest?.('.afp-hover-info');
+  if(button)afpOpenFloatingInfo(button);
+});
+document.addEventListener('pointerout',event=>{
+  const button=event.target.closest?.('.afp-hover-info');
+  if(button&&button===afpFloatingInfoTrigger&&
+     !button.contains(event.relatedTarget) && document.activeElement!==button){
+    afpCloseFloatingInfo();
+  }
+});
+document.addEventListener('focusin',event=>{
+  const button=event.target.closest?.('.afp-hover-info');
+  if(button)afpOpenFloatingInfo(button);
+});
+document.addEventListener('focusout',event=>{
+  if(event.target===afpFloatingInfoTrigger)afpCloseFloatingInfo();
+});
+document.addEventListener('click',event=>{
+  const button=event.target.closest?.('.afp-hover-info');
+  if(button){afpOpenFloatingInfo(button);return;}
+  afpCloseFloatingInfo();
+});
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape')afpCloseFloatingInfo();
+});
+document.addEventListener('scroll',afpCloseFloatingInfo,true);
+window.addEventListener('resize',()=>{
+  if(afpFloatingInfo)afpPositionFloatingInfo();
+});
+
 function afpCertificateOverall(checks,{historical=false,trustSource=null}={}){
   const bad=checks.some(c=>c.state==='bad')||(!historical&&trustSource==='untrusted');
   const green=!bad&&!historical&&trustSource==='official'&&checks.length===4&&
@@ -5037,4 +5132,5 @@ afpReaderV4Style.textContent += ".afp-reader-color-explanation{margin:10px 0!imp
 afpReaderV4Style.textContent += "\n.afp-reader-check-card{position:relative}\n.afp-reader-check-words{padding-right:21px}\n.afp-reader-check-card .afp-reader-check-info{position:static!important;margin:0!important;padding:0!important}\n.afp-reader-check-card .afp-reader-check-info > summary{position:absolute!important;right:9px;top:10px;z-index:2}\n.afp-reader-check-card .afp-reader-check-info > p{position:static!important;min-width:0!important;max-width:none!important;margin:10px 0 0!important;padding:8px 9px!important;\n  box-shadow:none!important;border-radius:6px!important;font-size:11px!important;line-height:1.45!important}\n";
 afpReaderV4Style.textContent += "\n/* AFP : condensé de la provenance, certificat et photo originale. */\n.afp-reader-origin-compact{padding:13px!important}\n.afp-reader-origin-compact .afp-reader-head{align-items:center!important}\n.afp-reader-origin-heading{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0}\n.afp-reader-origin-heading>strong{font-size:15px!important;line-height:1.3!important}\n.afp-hover-info{position:relative;z-index:2;display:inline-grid;place-items:center;flex:0 0 20px;\n  height:20px;width:20px;border-radius:50%;padding:0;border:1px solid rgba(170,190,211,.48);\n  background:#536a85;color:#fff;font:700 12px/1 system-ui,sans-serif;cursor:help}\n.afp-hover-info:focus-visible{outline:2px solid #8cbfff;outline-offset:2px}\n.afp-hover-info-bubble{display:none;position:absolute;right:0;top:calc(100% + 8px);z-index:110;\n  width:min(275px,calc(100vw - 80px));padding:10px 11px;border:1px solid #50647b;\n  border-radius:9px;background:#152234;color:#eaf2fd;box-shadow:0 14px 28px #0009;\n  font:400 11.5px/1.5 system-ui,sans-serif;text-align:left;white-space:normal}\n.afp-hover-info:is(:hover,:focus,:focus-within)>.afp-hover-info-bubble{display:block}\n.afp-reader-compact-trust{padding:10px!important}\n.afp-certificate-overall{display:flex;align-items:center;gap:10px;min-height:30px;\n  font:700 12.5px/1.4 system-ui,sans-serif;color:var(--trust-text)}\n.afp-certificate-overall-dot{display:inline-block;flex:0 0 11px;width:11px;height:11px;\n  border-radius:50%;background:#d99a28;box-shadow:0 0 0 2px #0001}\n.afp-certificate-overall.ok .afp-certificate-overall-dot{background:#35be79}\n.afp-certificate-overall.bad .afp-certificate-overall-dot{background:#e25862}\n.afp-certificate-overall .afp-hover-info{margin-left:auto;z-index:6}\n.afp-reader-compact-trust .afp-reader-why-certificate,\n.afp-reader-compact-trust .afp-reader-trust-more{margin-top:8px!important;margin-bottom:0!important}\n.afp-reader-compact-trust .afp-reader-why-certificate>.afp-reader-fold-body{padding:6px 9px 11px!important}\n.afp-original-photo-row{display:flex;align-items:center;gap:10px;justify-content:space-between;\n  min-height:43px;padding:10px 13px;border-bottom:1px solid rgba(145,165,186,.22)}\n.afp-original-photo-row strong{font-size:12px;font-weight:700}\n.afp-original-photo-row .afp-hover-info{z-index:8}\n.afp-original-tooltip-content{display:flex;flex-direction:column;gap:8px;align-items:flex-start}\n.afp-original-tooltip-content img{max-width:230px;max-height:205px;object-fit:contain;\n  border:1px solid #4e6681;border-radius:6px;background:#101b2a}\n.afp-original-tooltip-content span{font-size:11px;line-height:1.4}\n.afp-reader-watermark-panel{margin-top:8px!important}\n";
 afpReaderV4Style.textContent += ".afp-reader-origin,.afp-reader-origin-compact,.afp-reader-photo-information,\n.afp-reader-photo-information .credential-fields,.afp-reader-photo-information .credential-section,\n.afp-reader-historical-signature,.afp-reader-active-verification{overflow:visible!important}\n.afp-reader-origin .afp-hover-info-bubble{left:0;right:auto}\n.afp-original-photo-row{position:relative}\n";
+afpReaderV4Style.textContent += "/* Tooltip hors des accordéons : lisible même près du bord droit. */\n.afp-hover-info>.afp-hover-info-bubble,\n.afp-hover-info:is(:hover,:focus,:focus-within)>.afp-hover-info-bubble{\n  display:none!important\n}\n.afp-hover-floating-popover{\n  position:fixed!important;\n  display:block!important;\n  box-sizing:border-box!important;\n  z-index:2147483000!important;\n  pointer-events:none!important;\n  overflow-x:hidden!important;\n  overflow-y:auto!important;\n  padding:11px 12px!important;\n  border:1px solid #7890aa!important;\n  border-radius:9px!important;\n  background:#152234!important;\n  color:#f5f8fe!important;\n  box-shadow:0 12px 30px rgba(0,0,0,.55)!important;\n  font:400 12px/1.55 system-ui,sans-serif!important;\n  text-align:left!important;\n  white-space:normal!important;\n  overflow-wrap:anywhere!important;\n}\n.afp-hover-floating-popover img{\n  display:block;\n  max-width:100%;\n  max-height:205px;\n  object-fit:contain;\n}\n";
 document.head.append(afpReaderV4Style);

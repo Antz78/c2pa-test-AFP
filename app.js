@@ -3902,13 +3902,19 @@ window.addEventListener('resize',()=>{
   if(afpFloatingInfo)afpPositionFloatingInfo();
 });
 
-function afpCertificateOverall(checks,{historical=false,trustSource=null}={}){
-  // Conserver la classification existante : seule la présentation change.
-  const bad=checks.some(c=>c.state==='bad')||(!historical&&trustSource==='untrusted');
-  const green=!bad&&!historical&&trustSource==='official'&&checks.length===4&&
-    checks.every(c=>c.state==='ok');
-  const level=bad?'bad':green?'ok':'warn';
+function afpCertificateOverall(checks,{historical=false,trustSource=null,cryptoFailure=false}={}){
   const fr=uiLanguage!=='en';
+  const certificate=checks.find(c=>c.key==='certificate');
+  const recordedTrust=historical&&certificate?.recordedTrust===true;
+  // Independent axes: a signer certificate can be officially trusted while
+  // the image hash fails, and an old recorded check is not a current recheck.
+  // An unavailable trust-list check is not equivalent to "Recognized".
+  const level=historical
+    ?(recordedTrust?'warn':'neutral')
+    :trustSource==='official'?'ok'
+    :trustSource==='legacy'?'warn'
+    :trustSource==='untrusted'?'bad'
+    :'neutral';
   const states=[
     {level:'ok',en:'Trusted',fr:'De confiance'},
     {level:'warn',en:'Recognized',fr:'Reconnu'},
@@ -3918,7 +3924,7 @@ function afpCertificateOverall(checks,{historical=false,trustSource=null}={}){
   group.className='afp-certificate-overall afp-certificate-status-list '+level;
   group.dataset.level=level;
   group.setAttribute('role','list');
-  group.setAttribute('aria-label',fr?'Trois statuts possibles du certificat':'Three possible certificate statuses');
+  group.setAttribute('aria-label',fr?'Statuts possibles du certificat':'Possible certificate trust states');
   for(const option of states){
     const selected=option.level===level;
     const item=document.createElement('div');
@@ -3926,8 +3932,7 @@ function afpCertificateOverall(checks,{historical=false,trustSource=null}={}){
     item.dataset.level=option.level;
     item.setAttribute('role','listitem');
     if(selected)item.setAttribute('aria-current','true');
-    const dot=document.createElement('span');
-    dot.className='afp-certificate-status-dot';
+    const dot=document.createElement('span');dot.className='afp-certificate-status-dot';
     dot.setAttribute('aria-hidden','true');
     const name=document.createElement(selected?'strong':'span');
     name.className='afp-certificate-status-label';
@@ -3936,21 +3941,46 @@ function afpCertificateOverall(checks,{historical=false,trustSource=null}={}){
     if(selected){
       const tick=document.createElement('span');
       tick.className='afp-certificate-status-tick';
-      tick.textContent='✓';
-      tick.setAttribute('aria-hidden','true');
+      tick.textContent='✓';tick.setAttribute('aria-hidden','true');
       item.append(tick);
-      item.setAttribute('aria-label',(fr?'Statut de ce certificat : ':'Current certificate status: ')+name.textContent);
+      item.setAttribute('aria-label',(fr?'Statut établi : ':'Established status: ')+name.textContent);
     }
     group.append(item);
   }
-  const help=level==='warn'
-    ?(fr?'Statut orange : un contrôle reste à confirmer ou repose sur un résultat historique. « Recognized » ne garantit pas à lui seul la confiance actuelle dans le certificat.':
-       'Amber status: a check remains incomplete or historical. “Recognized” alone does not confirm current trust in the certificate.')
-    :level==='ok'
-      ?(fr?'Les quatre contrôles sont conformes et le certificat actif a été validé avec la liste officielle C2PA.':
-         'All four checks pass and the active certificate was validated against the official C2PA trust list.')
-      :(fr?'Une non-reconnaissance explicite ou un échec de contrôle a été signalé. Consulter les quatre vérifications détaillées.':
-         'An explicit trust-list rejection or verification failure was reported. See the four detailed checks.');
+  if(level==='neutral'){
+    const status=document.createElement('div');
+    status.className='afp-certificate-status-unconfirmed';
+    status.textContent=historical
+      ?(fr?'Statut actuel non revérifié — aucun état confirmé':'Current status not rechecked — none confirmed')
+      :(fr?'Vérification incomplète — aucun état confirmé':'Verification incomplete — none confirmed');
+    group.append(status);
+  }
+  const failed=cryptoFailure||checks.some(c=>c.state==='bad');
+  const needsReview=checks.some(c=>c.key!=='certificate'&&c.state==='warn');
+  if(failed||needsReview){
+    const notice=document.createElement('p');
+    notice.className='afp-certificate-status-caution';
+    notice.textContent=failed
+      ?(fr?'Une vérification C2PA a échoué. Ce résultat est distinct de la reconnaissance du certificat.':
+         'A C2PA verification failed; this is separate from certificate-list recognition.')
+      :(fr?'Un autre contrôle C2PA reste à confirmer. Voir le détail.':
+         'Another C2PA check remains inconclusive; see details.');
+    group.append(notice);
+  }
+  const help=level==='ok'
+    ?(fr?'La chaîne du certificat actif est reconnue par la liste officielle C2PA. L’intégrité des données et le TSA sont des contrôles distincts.':
+       'The active signer certificate is recognised by the official C2PA trust list. Integrity and TSA are separate checks.')
+    :level==='warn'
+      ?(historical
+        ?(fr?'Reconnaissance consignée au moment de l’intégration du manifeste parent. Non revérifiée aujourd’hui.':
+           'Recognition recorded when the parent manifest was incorporated; not independently rechecked today.')
+        :(fr?'Certificat reconnu uniquement par l’ancienne liste de confiance C2PA.':
+           'Signer certificate recognised only by the former C2PA trust list.'))
+    :level==='bad'
+      ?(fr?'Le certificat n’est pas reconnu par les deux listes consultées. Ce n’est pas une preuve que la photo a été falsifiée.':
+         'The certificate is not recognised by the two checked lists; this does not prove image tampering.')
+      :(fr?'Aucune reconnaissance concluante établie. Une vérification absente ou incomplète n’est pas un échec ni un résultat reconnu.':
+         'Trust cannot be established from the available checks. An incomplete check is neither recognition nor failure.');
   const hint=afpHoverInfo(help,fr?'Comprendre le statut du certificat':'About certificate status');
   hint.classList.add('afp-certificate-status-help');
   group.append(hint);
@@ -4697,7 +4727,8 @@ function fillDetails(photo) {
     quick.append(p);
   }
   // Keep the original four checks intact, but move them behind a single summary.
-  const trustSummary=afpCertificateOverall(fourChecks,{trustSource:photo.trustSource});
+  const trustSummary=afpCertificateOverall(fourChecks,{
+    trustSource:photo.trustSource,cryptoFailure:photo.state==='bad'});
   trust.dataset.level=trustSummary.dataset.level;
   const why=readerFold('D’où vient cette conclusion',quick);
   why.classList.add('afp-reader-why-certificate');
@@ -5173,4 +5204,5 @@ afpReaderV4Style.textContent += "\n/* AFP : condensé de la provenance, certific
 afpReaderV4Style.textContent += ".afp-reader-origin,.afp-reader-origin-compact,.afp-reader-photo-information,\n.afp-reader-photo-information .credential-fields,.afp-reader-photo-information .credential-section,\n.afp-reader-historical-signature,.afp-reader-active-verification{overflow:visible!important}\n.afp-reader-origin .afp-hover-info-bubble{left:0;right:auto}\n.afp-original-photo-row{position:relative}\n";
 afpReaderV4Style.textContent += "/* Tooltip hors des accordéons : lisible même près du bord droit. */\n.afp-hover-info>.afp-hover-info-bubble,\n.afp-hover-info:is(:hover,:focus,:focus-within)>.afp-hover-info-bubble{\n  display:none!important\n}\n.afp-hover-floating-popover{\n  position:fixed!important;\n  display:block!important;\n  box-sizing:border-box!important;\n  z-index:2147483000!important;\n  pointer-events:none!important;\n  overflow-x:hidden!important;\n  overflow-y:auto!important;\n  padding:11px 12px!important;\n  border:1px solid #7890aa!important;\n  border-radius:9px!important;\n  background:#152234!important;\n  color:#f5f8fe!important;\n  box-shadow:0 12px 30px rgba(0,0,0,.55)!important;\n  font:400 12px/1.55 system-ui,sans-serif!important;\n  text-align:left!important;\n  white-space:normal!important;\n  overflow-wrap:anywhere!important;\n}\n.afp-hover-floating-popover img{\n  display:block;\n  max-width:100%;\n  max-height:205px;\n  object-fit:contain;\n}\n";
 afpReaderV4Style.textContent += "/* Trois états de confiance visibles : un seul est sélectionné.\n   Les deux autres restent lisibles mais atténués, sur mobile comme sur desktop. */\n.afp-certificate-overall.afp-certificate-status-list{\n  display:grid!important;\n  grid-template-columns:minmax(0,1fr);\n  gap:3px!important;\n  position:relative;\n  min-height:0!important;\n  margin:0 0 4px!important;\n  padding:0 25px 0 0!important;\n  font:inherit!important;\n}\n.afp-certificate-status-option{\n  display:flex;\n  align-items:center;\n  gap:8px;\n  min-width:0;\n  min-height:24px;\n  padding:4px 8px;\n  border:1px solid transparent;\n  border-radius:7px;\n  opacity:.46;\n  filter:saturate(.63);\n  font:500 10.5px/1.35 system-ui,sans-serif;\n  color:var(--trust-text);\n}\n.afp-certificate-status-option.selected{\n  opacity:1;\n  filter:none;\n  font-weight:800;\n  font-size:11.5px;\n  border-color:var(--trust-border);\n  background:rgba(255,255,255,.065);\n  box-shadow:inset 0 0 0 1px rgba(255,255,255,.035);\n}\n.afp-certificate-status-dot{\n  width:9px;\n  height:9px;\n  flex:0 0 9px;\n  border-radius:50%;\n  background:#d99a28;\n  box-shadow:0 0 0 1px rgba(255,255,255,.15);\n}\n.afp-certificate-status-option.ok .afp-certificate-status-dot{background:#35c979}\n.afp-certificate-status-option.warn .afp-certificate-status-dot{background:#f3aa32}\n.afp-certificate-status-option.bad .afp-certificate-status-dot{background:#ee686f}\n.afp-certificate-status-label{\n  min-width:0;\n  overflow-wrap:break-word;\n}\n.afp-certificate-status-tick{\n  flex:0 0 19px;\n  margin-left:auto;\n  display:grid;\n  place-items:center;\n  width:19px;\n  height:19px;\n  border:1px solid currentColor;\n  border-radius:50%;\n  font:800 12px/1 system-ui,sans-serif;\n}\n.afp-certificate-status-list.ok .selected .afp-certificate-status-tick{color:#61dfa0}\n.afp-certificate-status-list.warn .selected .afp-certificate-status-tick{color:#f6bc5b}\n.afp-certificate-status-list.bad .selected .afp-certificate-status-tick{color:#ff858b}\n.afp-certificate-status-list>.afp-certificate-status-help{\n  position:absolute;\n  top:5px;\n  right:0;\n  margin:0!important;\n}\n@media(max-width:380px){\n .afp-certificate-status-option{font-size:10px;padding:4px 6px;gap:6px}\n .afp-certificate-status-option.selected{font-size:11px}\n}\n";
+afpReaderV4Style.textContent += "/* Statut du certificat : absence de preuve != reconnaissance. */\n.afp-certificate-status-unconfirmed{\n  padding:7px 8px;\n  border:1px solid rgba(152,174,197,.52);\n  border-radius:7px;\n  background:rgba(128,146,170,.12);\n  color:#dce6f4;\n  font:700 10.5px/1.45 system-ui,sans-serif;\n}\n.afp-certificate-status-caution{\n  margin:4px 2px!important;\n  color:#f1c17e!important;\n  font:500 10.5px/1.45 system-ui,sans-serif!important;\n}\n.afp-certificate-status-list.neutral .afp-certificate-status-option{\n  opacity:.5;filter:saturate(.45);\n}\n";
 document.head.append(afpReaderV4Style);

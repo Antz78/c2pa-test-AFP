@@ -3902,19 +3902,22 @@ window.addEventListener('resize',()=>{
   if(afpFloatingInfo)afpPositionFloatingInfo();
 });
 
-function afpCertificateOverall(checks,{historical=false,trustSource=null,cryptoFailure=false}={}){
+function afpCertificateOverall(checks,{historical=false,trustSource=null,cryptoFailure=false,overallState=null}={}){
   const fr=uiLanguage!=='en';
   const certificate=checks.find(c=>c.key==='certificate');
   const recordedTrust=historical&&certificate?.recordedTrust===true;
-  // Independent axes: a signer certificate can be officially trusted while
-  // the image hash fails, and an old recorded check is not a current recheck.
-  // An unavailable trust-list check is not equivalent to "Recognized".
-  const level=historical
-    ?(recordedTrust?'warn':'neutral')
-    :trustSource==='official'?'ok'
-    :trustSource==='legacy'?'warn'
-    :trustSource==='untrusted'?'bad'
-    :'neutral';
+  // Résumé global des quatre contrôles, distinct de la seule reconnaissance
+  // de l'autorité de certification. Un contrôle orange = synthèse orange.
+  // Les résultats antérieurs non revérifiés doivent rester orange, pas gris.
+  const failed=cryptoFailure||checks.some(c=>c.state==='bad')||
+    (!historical&&overallState==='bad');
+  const explicitUntrusted=!historical&&trustSource==='untrusted';
+  const allFourOk=['integrity','signature','certificate','timestamp'].every(key=>
+    checks.find(c=>c.key===key)?.state==='ok');
+  const green=!historical&&!failed&&trustSource==='official'&&
+    overallState!=='warn'&&allFourOk;
+  const level=failed||explicitUntrusted?'bad':green?'ok':'warn';
+  const recognitionEstablished=trustSource==='legacy'||recordedTrust;
   const states=[
     {level:'ok',en:'Trusted',fr:'De confiance'},
     {level:'warn',en:'Recognized',fr:'Reconnu'},
@@ -3924,7 +3927,7 @@ function afpCertificateOverall(checks,{historical=false,trustSource=null,cryptoF
   group.className='afp-certificate-overall afp-certificate-status-list '+level;
   group.dataset.level=level;
   group.setAttribute('role','list');
-  group.setAttribute('aria-label',fr?'Statuts possibles du certificat':'Possible certificate trust states');
+  group.setAttribute('aria-label',fr?'Trois niveaux de vérification C2PA':'Three C2PA verification levels');
   for(const option of states){
     const selected=option.level===level;
     const item=document.createElement('div');
@@ -3932,56 +3935,58 @@ function afpCertificateOverall(checks,{historical=false,trustSource=null,cryptoF
     item.dataset.level=option.level;
     item.setAttribute('role','listitem');
     if(selected)item.setAttribute('aria-current','true');
-    const dot=document.createElement('span');dot.className='afp-certificate-status-dot';
+    const dot=document.createElement('span');
+    dot.className='afp-certificate-status-dot';
     dot.setAttribute('aria-hidden','true');
     const name=document.createElement(selected?'strong':'span');
     name.className='afp-certificate-status-label';
-    name.textContent=fr?option.en+' — '+option.fr:option.en;
+    // A failed/incomplete check is amber, but MUST NOT be called "Recognized"
+    // unless recognition was actually established.
+    name.textContent=selected&&level==='warn'&&!recognitionEstablished
+      ?(fr?'À vérifier — Non confirmé':'Needs review — Not confirmed')
+      :(fr?option.en+' — '+option.fr:option.en);
     item.append(dot,name);
     if(selected){
       const tick=document.createElement('span');
       tick.className='afp-certificate-status-tick';
       tick.textContent='✓';tick.setAttribute('aria-hidden','true');
       item.append(tick);
-      item.setAttribute('aria-label',(fr?'Statut établi : ':'Established status: ')+name.textContent);
+      item.setAttribute('aria-label',(fr?'Résultat de cette photo : ':'This image result: ')+name.textContent);
     }
     group.append(item);
   }
-  if(level==='neutral'){
-    const status=document.createElement('div');
-    status.className='afp-certificate-status-unconfirmed';
-    status.textContent=historical
-      ?(fr?'Statut actuel non revérifié — aucun état confirmé':'Current status not rechecked — none confirmed')
-      :(fr?'Vérification incomplète — aucun état confirmé':'Verification incomplete — none confirmed');
-    group.append(status);
-  }
-  const failed=cryptoFailure||checks.some(c=>c.state==='bad');
-  const needsReview=checks.some(c=>c.key!=='certificate'&&c.state==='warn');
-  if(failed||needsReview){
-    const notice=document.createElement('p');
-    notice.className='afp-certificate-status-caution';
-    notice.textContent=failed
-      ?(fr?'Une vérification C2PA a échoué. Ce résultat est distinct de la reconnaissance du certificat.':
-         'A C2PA verification failed; this is separate from certificate-list recognition.')
-      :(fr?'Un autre contrôle C2PA reste à confirmer. Voir le détail.':
-         'Another C2PA check remains inconclusive; see details.');
-    group.append(notice);
+  // For amber review states, show the reason without an additional grey panel.
+  const amberDetails=level==='warn'
+    ?(historical
+      ?(recordedTrust
+        ?(fr?'Reconnaissance historique consignée, non revérifiée actuellement.':
+           'Historical trust recorded, not independently rechecked.')
+        :(fr?'Signature historique : confiance actuelle non revérifiée.':
+           'Historical signature: current trust has not been rechecked.'))
+      :trustSource==='legacy'
+        ?(fr?'Certificat reconnu par l’ancienne liste C2PA.':
+           'Certificate recognised by the former C2PA trust list.')
+        :trustSource==='unavailable'||trustSource==='incomplete'
+          ?(fr?'Consultation des listes de confiance incomplète ou indisponible.':
+             'Trust-list lookup is incomplete or unavailable.')
+          :(fr?'Un ou plusieurs contrôles C2PA restent à confirmer.':
+             'One or more C2PA checks remain unconfirmed.'))
+    :null;
+  if(amberDetails){
+    const detail=document.createElement('p');
+    detail.className='afp-certificate-status-caution';
+    detail.textContent=amberDetails;
+    group.append(detail);
   }
   const help=level==='ok'
-    ?(fr?'La chaîne du certificat actif est reconnue par la liste officielle C2PA. L’intégrité des données et le TSA sont des contrôles distincts.':
-       'The active signer certificate is recognised by the official C2PA trust list. Integrity and TSA are separate checks.')
+    ?(fr?'Les quatre contrôles C2PA sont positifs, avec reconnaissance par la liste officielle. Cela ne prouve pas la réalité de la scène.':
+       'All four C2PA checks passed, including official trust-list recognition. This does not prove the scene is real.')
     :level==='warn'
-      ?(historical
-        ?(fr?'Reconnaissance consignée au moment de l’intégration du manifeste parent. Non revérifiée aujourd’hui.':
-           'Recognition recorded when the parent manifest was incorporated; not independently rechecked today.')
-        :(fr?'Certificat reconnu uniquement par l’ancienne liste de confiance C2PA.':
-           'Signer certificate recognised only by the former C2PA trust list.'))
-    :level==='bad'
-      ?(fr?'Le certificat n’est pas reconnu par les deux listes consultées. Ce n’est pas une preuve que la photo a été falsifiée.':
-         'The certificate is not recognised by the two checked lists; this does not prove image tampering.')
-      :(fr?'Aucune reconnaissance concluante établie. Une vérification absente ou incomplète n’est pas un échec ni un résultat reconnu.':
-         'Trust cannot be established from the available checks. An incomplete check is neither recognition nor failure.');
-  const hint=afpHoverInfo(help,fr?'Comprendre le statut du certificat':'About certificate status');
+      ?(fr?'Orange signifie ici vérification partielle, historique ou restant à confirmer. Seul un résultat réellement reconnu est intitulé « Recognized ». Le détail des quatre contrôles est disponible ci-dessous.':
+         'Amber means partial, historical or incomplete verification. Only genuinely recognised credentials are labelled “Recognized”. The four checks are available below.')
+      :(fr?'Une vérification importante a échoué ou les listes consultées ne reconnaissent pas le certificat. Consultez les détails, sans en déduire que la scène photographiée est fausse.':
+         'A critical verification failed or the checked trust lists do not recognise the certificate. Check details; this does not prove the scene itself is fake.');
+  const hint=afpHoverInfo(help,fr?'Comprendre le résultat C2PA':'About C2PA verification');
   hint.classList.add('afp-certificate-status-help');
   group.append(hint);
   return group;
@@ -4728,7 +4733,7 @@ function fillDetails(photo) {
   }
   // Keep the original four checks intact, but move them behind a single summary.
   const trustSummary=afpCertificateOverall(fourChecks,{
-    trustSource:photo.trustSource,cryptoFailure:photo.state==='bad'});
+    trustSource:photo.trustSource,cryptoFailure:photo.state==='bad',overallState:photo.state});
   trust.dataset.level=trustSummary.dataset.level;
   const why=readerFold('D’où vient cette conclusion',quick);
   why.classList.add('afp-reader-why-certificate');

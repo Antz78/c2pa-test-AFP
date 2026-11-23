@@ -1253,7 +1253,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-editorial-remote-v20261123-2';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-signer-trust-separate-v20261123-3';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -1789,17 +1789,21 @@ async function afpValidateAgainstTrustLists(engine,mime,blob,{suppressPreview=fa
     checks.legacy={status:afpHasTrustedCertificate(legacy)?'trusted':afpHasCriticalFailure(legacy)?'failed':'untrusted',
       codes:afpValidationCodes(legacy)};
   }catch(error){checks.legacy={status:'unavailable',reason:String(error?.message||error)};}
-  // Une validation positive historique ne remplace JAMAIS un véritable échec
-  // d'intégrité/signature détecté dans les deux validations.
-  const cryptoFailure=[official,legacy].some(result=>result?.store && afpHasCriticalFailure(result));
-  if(legacy?.store && checks.legacy.status==='trusted' && !cryptoFailure) {
+  // A trusted HISTORICAL signer certificate remains historically recognised,
+  // even if an independent ingredient or content integrity check fails.
+  // The red file-level validation is retained in the returned SDK results.
+  // A successful legacy anchor check is never replaced by a name-only guess.
+  if(legacy?.store && checks.legacy.status==='trusted') {
     return {...legacy,trustSource:'legacy',trustChecks:checks};
   }
   if(official?.store || legacy?.store) {
     const chosen=official?.store?official:legacy;
     const statuses=[checks.official.status,checks.legacy.status];
+    // A failure in validation of an ingredient is NOT a negative trust-list
+    // response for the signing certificate. In that case, mark trust
+    // inconclusive, not definitively untrusted.
     const source=statuses.every(s=>s==='unavailable')?'unavailable':
-      statuses.includes('unavailable')?'incomplete':'untrusted';
+      statuses.includes('unavailable')||statuses.includes('failed')?'incomplete':'untrusted';
     return {...chosen,trustSource:source,trustChecks:checks};
   }
   // Les listes ne déterminent jamais à elles seules si le fichier est sans C2PA.
@@ -4023,14 +4027,18 @@ function afpCertificateOverall(checks,{historical=false,trustSource=null,cryptoF
   // Résumé global des quatre contrôles, distinct de la seule reconnaissance
   // de l'autorité de certification. Un contrôle orange = synthèse orange.
   // Les résultats antérieurs non revérifiés doivent rester orange, pas gris.
-  const failed=cryptoFailure||checks.some(c=>c.state==='bad')||
-    (!historical&&overallState==='bad');
+  // The RED image-level validation may come from a Nikon/AFP ingredient,
+  // not Adobe's own signer certificate. Do not call Adobe's certificate
+  // "Untrusted" solely because the file has another C2PA failure.
+  const signerFailure=checks.some(c=>c.state==='bad'&&
+    ['integrity','signature','certificate'].includes(c.key));
   const explicitUntrusted=!historical&&trustSource==='untrusted';
+  const unrelatedFailure=!historical&&(cryptoFailure||overallState==='bad')&&!signerFailure;
   const allFourOk=['integrity','signature','certificate','timestamp'].every(key=>
     checks.find(c=>c.key===key)?.state==='ok');
-  const green=!historical&&!failed&&trustSource==='official'&&
-    overallState!=='warn'&&allFourOk;
-  const level=failed||explicitUntrusted?'bad':green?'ok':'warn';
+  const green=!historical&&!signerFailure&&!unrelatedFailure&&
+    trustSource==='official'&&overallState!=='warn'&&allFourOk;
+  const level=signerFailure||explicitUntrusted?'bad':green?'ok':'warn';
   const recognitionEstablished=trustSource==='legacy'||recordedTrust;
   const states=[
     {level:'ok',en:'Trusted',fr:'De confiance'},
@@ -4091,6 +4099,15 @@ function afpCertificateOverall(checks,{historical=false,trustSource=null,cryptoF
     detail.className='afp-certificate-status-caution';
     detail.textContent=amberDetails;
     group.append(detail);
+  }
+  // Show the file-level failure without mislabelling its certificate.
+  if(unrelatedFailure){
+    const warning=document.createElement('p');
+    warning.className='afp-certificate-status-caution';
+    warning.textContent=fr
+      ?'Un autre contrôle de la chaîne C2PA est en échec. Consultez les détails techniques ; ce résultat ne prouve pas un défaut du certificat de ce signataire.'
+      :'A separate C2PA chain check failed. Review the technical details; this alone does not establish a defect in this signer certificate.';
+    group.append(warning);
   }
   const help=level==='ok'
     ?(fr?'Les quatre contrôles C2PA sont positifs, avec reconnaissance par la liste officielle. Cela ne prouve pas la réalité de la scène.':
@@ -4910,6 +4927,18 @@ function fillDetails(photo) {
   why.classList.add('afp-reader-why-certificate');
   const whyBody=why.querySelector('.afp-reader-fold-body');
   afpAppendTrustSourceNote(whyBody,photo);
+  // Expose both trust-list answers without forcing readers to open the
+  // technical JSON: legacy recognised / official missing / failure / CORS.
+  const trustChecks=photo.trustChecks||{};
+  if(whyBody && (trustChecks.official||trustChecks.legacy)){
+    const lookup=document.createElement('p');
+    lookup.className='afp-certificate-status-caution';
+    const labels={trusted:'Reconnu',untrusted:'Non reconnu',failed:'Échec de validation',
+      unavailable:'Liste inaccessible',not_checked:'Non consultée'};
+    const status=key=>labels[trustChecks[key]?.status]||'Non confirmé';
+    lookup.textContent='Liste officielle : '+status('official')+' · Ancienne liste : '+status('legacy');
+    whyBody.prepend(lookup);
+  }
   trust.append(trustSummary,afpCertificateOriginalPreview(photo),why,trustP);
   // Pas de recherche par simple nom de fabricant : un nom dans la liste ne valide pas la chaîne.
 

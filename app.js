@@ -3691,7 +3691,7 @@ function afpHistoricalSignaturePanels(photo){
       afpTrustExplanationNode(expl));
     about.classList.add('afp-reader-trust-more');
     // Le récit du premier signataire figure dans « Comprendre le certificat ».
-    trust.append(summary,explanation,about);
+    trust.append(summary,afpCertificateOriginalPreview(photo),explanation,about);
     // Le JSON est réservé aux détails techniques, jamais au panneau de lecture.
     const panel=readerOpenFold((fr?'Vérification C2PA — ':'C2PA verification — ')+signer,
       trust);
@@ -3766,7 +3766,7 @@ function afpHistoricalTechnicalPanels(photo,verificationPanels){
     raw.classList.add('afp-reader-raw');
     raw.dataset.manifestId=String(id);
     const technical=readerFold(
-      (fr?'Certificat ':'Certificate ')+(index+1)+' — '+signer,
+      afpCertificateDatedTitle(index+1,signer,manifest,checks,{historical:true}),
       note,metadata,checksSection,...(reported?[reported]:[]),
       ...(ingredientChecks?[ingredientChecks]:[]),raw
     );
@@ -4554,6 +4554,43 @@ function afpWatermarkPanel(photo){
   return fold;
 }
 
+function afpManifestTsaDate(manifest){
+  const raw=signatureOf(manifest||{})?.time;
+  if(typeof raw!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw)||!/(Z|[+-]\d{2}:\d{2})$/i.test(raw))return null;
+  const date=new Date(raw);if(!Number.isFinite(date.getTime()))return null;
+  const options={timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'};
+  const p=new Intl.DateTimeFormat(uiLanguage==='en'?'en-GB':'fr-FR',options).formatToParts(date);
+  const val=k=>p.find(x=>x.type===k)?.value||'';
+  const gmt=new Intl.DateTimeFormat('en-US',{timeZone:'Europe/Paris',timeZoneName:'shortOffset'}).formatToParts(date).find(x=>x.type==='timeZoneName')?.value||'GMT';
+  const m=gmt.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+  const offset=m?'UTC'+m[1]+m[2].padStart(2,'0')+':'+(m[3]||'00'):'UTC+00:00';
+  return [val('day'),val('month'),val('year')].join('/')+' '+[val('hour'),val('minute'),val('second')].join(':')+' ('+offset+')';
+}
+function afpCertificateDatedTitle(i,signer,manifest,checks,{historical=false}={}){
+  const base=(uiLanguage==='en'?'Certificate ':'Certificat ')+i+' — '+signer;
+  const tsa=afpManifestTsaDate(manifest);if(!tsa)return base;
+  const confirmed=checks?.find(c=>c.key==='timestamp')?.state==='ok';
+  const prefix=confirmed?(uiLanguage==='en'?'Certified on ':'Certifié le '):(uiLanguage==='en'?'Timestamp to verify: ':'Horodatage à vérifier : ');
+  const suffix=confirmed&&historical?(uiLanguage==='en'?' — historical result':' — résultat historique'):'';
+  return base+' — ('+prefix+tsa+suffix+')';
+}
+function afpCertificateOriginalPreview(photo){
+  const box=document.createElement('div');box.className='afp-c2pa-first-preview';
+  if(afpSuppressC2paPreview(photo)){
+    const message=document.createElement('p');message.className='afp-c2pa-preview-withheld';message.textContent=afpC2paWithheldMessage();box.append(message);return box;
+  }
+  const original=photo?.originalC2paThumbnailUrl, published=photo?.displayUrl||photo?.url;
+  if(!original&&!published)return box;
+  const heading=document.createElement('div');heading.className='afp-c2pa-first-preview-title';
+  heading.textContent=original?(uiLanguage==='en'?'First available source image (C2PA)':'Première visu d’origine accessible (C2PA)'):(uiLanguage==='en'?'Published image — no original preview':'Visu publiée — originale C2PA indisponible');
+  const img=document.createElement('img');img.src=original||published;img.loading='lazy';img.decoding='async';
+  img.alt=original?(uiLanguage==='en'?'C2PA source image':'Visu originale C2PA'):(uiLanguage==='en'?'Published image':'Visu publiée');
+  box.append(heading,img);
+  if(original&&photo.originalC2paThumbnailSigner){
+    const label=document.createElement('small');label.textContent=photo.originalC2paThumbnailSigner;box.append(label);
+  }
+  return box;
+}
 function afpOriginalPhotoRow(photo){
   const fr=uiLanguage!=='en';
   const row=document.createElement('div');row.className='afp-original-photo-row';
@@ -4757,7 +4794,7 @@ function fillDetails(photo) {
   why.classList.add('afp-reader-why-certificate');
   const whyBody=why.querySelector('.afp-reader-fold-body');
   afpAppendTrustSourceNote(whyBody,photo);
-  trust.append(trustSummary,why,trustP);
+  trust.append(trustSummary,afpCertificateOriginalPreview(photo),why,trustP);
   // Pas de recherche par simple nom de fabricant : un nom dans la liste ne valide pas la chaîne.
 
   const photoFold=afpPhotoInformationPanel(photo);
@@ -4819,8 +4856,9 @@ const rawFields=[
 ];
 const otherSignatures=afpHistoricalSignaturePanels(photo);
 const activeTechnical=readerFold(
-  (uiLanguage==='en'?'Certificate ':'Certificat ')+(otherSignatures.length+1)+' — '+
-    (signer?String(signer):(uiLanguage==='en'?'Unidentified signer':'Signataire non identifié')),
+  afpCertificateDatedTitle(otherSignatures.length+1,
+    signer?String(signer):(uiLanguage==='en'?'Unidentified signer':'Signataire non identifié'),
+    a,afpFourChecks(photo)),
   pIntro,
   ...(hasExpiredCredential?[expiryNote]:[]),
   section('Contrôles de sécurité',[
@@ -5229,4 +5267,5 @@ afpReaderV4Style.textContent += "/* Tooltip hors des accordéons : lisible même
 afpReaderV4Style.textContent += "/* Trois états de confiance visibles : un seul est sélectionné.\n   Les deux autres restent lisibles mais atténués, sur mobile comme sur desktop. */\n.afp-certificate-overall.afp-certificate-status-list{\n  display:grid!important;\n  grid-template-columns:minmax(0,1fr);\n  gap:3px!important;\n  position:relative;\n  min-height:0!important;\n  margin:0 0 4px!important;\n  padding:0 25px 0 0!important;\n  font:inherit!important;\n}\n.afp-certificate-status-option{\n  display:flex;\n  align-items:center;\n  gap:8px;\n  min-width:0;\n  min-height:24px;\n  padding:4px 8px;\n  border:1px solid transparent;\n  border-radius:7px;\n  opacity:.46;\n  filter:saturate(.63);\n  font:500 10.5px/1.35 system-ui,sans-serif;\n  color:var(--trust-text);\n}\n.afp-certificate-status-option.selected{\n  opacity:1;\n  filter:none;\n  font-weight:800;\n  font-size:11.5px;\n  border-color:var(--trust-border);\n  background:rgba(255,255,255,.065);\n  box-shadow:inset 0 0 0 1px rgba(255,255,255,.035);\n}\n.afp-certificate-status-dot{\n  width:9px;\n  height:9px;\n  flex:0 0 9px;\n  border-radius:50%;\n  background:#d99a28;\n  box-shadow:0 0 0 1px rgba(255,255,255,.15);\n}\n.afp-certificate-status-option.ok .afp-certificate-status-dot{background:#35c979}\n.afp-certificate-status-option.warn .afp-certificate-status-dot{background:#f3aa32}\n.afp-certificate-status-option.bad .afp-certificate-status-dot{background:#ee686f}\n.afp-certificate-status-label{\n  min-width:0;\n  overflow-wrap:break-word;\n}\n.afp-certificate-status-tick{\n  flex:0 0 19px;\n  margin-left:auto;\n  display:grid;\n  place-items:center;\n  width:19px;\n  height:19px;\n  border:1px solid currentColor;\n  border-radius:50%;\n  font:800 12px/1 system-ui,sans-serif;\n}\n.afp-certificate-status-list.ok .selected .afp-certificate-status-tick{color:#61dfa0}\n.afp-certificate-status-list.warn .selected .afp-certificate-status-tick{color:#f6bc5b}\n.afp-certificate-status-list.bad .selected .afp-certificate-status-tick{color:#ff858b}\n.afp-certificate-status-list>.afp-certificate-status-help{\n  position:absolute;\n  top:5px;\n  right:0;\n  margin:0!important;\n}\n@media(max-width:380px){\n .afp-certificate-status-option{font-size:10px;padding:4px 6px;gap:6px}\n .afp-certificate-status-option.selected{font-size:11px}\n}\n";
 afpReaderV4Style.textContent += "/* Statut du certificat : absence de preuve != reconnaissance. */\n.afp-certificate-status-unconfirmed{\n  padding:7px 8px;\n  border:1px solid rgba(152,174,197,.52);\n  border-radius:7px;\n  background:rgba(128,146,170,.12);\n  color:#dce6f4;\n  font:700 10.5px/1.45 system-ui,sans-serif;\n}\n.afp-certificate-status-caution{\n  margin:4px 2px!important;\n  color:#f1c17e!important;\n  font:500 10.5px/1.45 system-ui,sans-serif!important;\n}\n.afp-certificate-status-list.neutral .afp-certificate-status-option{\n  opacity:.5;filter:saturate(.45);\n}\n";
 afpReaderV4Style.textContent += "\n/* Le certificat s'affiche sur le fond neutre du panneau.\n   La seule surface colorée est la petite ligne sélectionnée (Trusted,\n   Recognized ou Untrusted), jamais l'encadrement des trois statuts. */\n.afp-reader-trust.afp-reader-compact-trust,\n#side-panel .afp-reader-trust.afp-reader-compact-trust,\n#credentials .afp-reader-trust.afp-reader-compact-trust,\n.bottom-sheet .afp-reader-trust.afp-reader-compact-trust{\n  background:transparent!important;\n  border:none!important;\n  border-left:none!important;\n  border-radius:0!important;\n  box-shadow:none!important;\n  padding:0!important;\n  margin:0!important;\n}\n/* Les deux accordéons sont neutres ; leur bordure ne reprend plus\n   la couleur de la confiance de la signature. */\n.afp-reader-compact-trust .afp-reader-why-certificate,\n.afp-reader-compact-trust .afp-reader-trust-more,\n#side-panel .afp-reader-compact-trust .afp-reader-why-certificate,\n#side-panel .afp-reader-compact-trust .afp-reader-trust-more,\n#credentials .afp-reader-compact-trust .afp-reader-why-certificate,\n#credentials .afp-reader-compact-trust .afp-reader-trust-more,\n.bottom-sheet .afp-reader-compact-trust .afp-reader-why-certificate,\n.bottom-sheet .afp-reader-compact-trust .afp-reader-trust-more{\n  border-color:rgba(138,163,193,.32)!important;\n  background:transparent!important;\n}\n/* La couleur du petit encadré retenu doit rester visible. */\n.afp-reader-compact-trust .afp-certificate-status-option.selected{\n  border:1px solid var(--trust-border)!important;\n}\n";
+afpReaderV4Style.textContent += "\n.afp-c2pa-first-preview{display:flex;flex-direction:column;align-items:flex-start;gap:7px;margin:9px 0;padding:3px 0;color:inherit}\n.afp-c2pa-first-preview-title{font-size:11px;line-height:1.45;opacity:.87}\n.afp-c2pa-first-preview>img{display:block;max-width:min(100%,300px);max-height:300px;width:auto;height:auto;object-fit:contain;border-radius:5px}\n.afp-c2pa-first-preview>small{font-size:10px;opacity:.7}\n.afp-c2pa-preview-withheld{font-size:11.5px!important;line-height:1.55!important;opacity:.9}\n";
 document.head.append(afpReaderV4Style);

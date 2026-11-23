@@ -1253,7 +1253,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-signer-trust-separate-v20261123-3';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-manifest-specific-thumbnails-v20261123-4';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -1715,46 +1715,51 @@ function afpC2paWithheldMessage(){
 }
 /* La miniature affichée provient uniquement du premier manifeste C2PA.
    On ne substitue pas arbitrairement l'image actuelle à l'original. */
-async function afpFirstC2paThumbnail(reader,store,{suppressPreview=false}={}){
+/* Each claim's OWN C2PA thumbnail, never a different signer's preview.
+   Absence of a thumbnail is meaningful: an AFP manifest can sign an
+   intermediate image without embedding a JPG preview of its own. */
+async function afpManifestC2paThumbnails(reader,store,{suppressPreview=false}={}){
   if(suppressPreview||afpSuppressC2paPreview({store})||
-     !reader||typeof reader.resourceToBytes!=='function')return null;
-  // Only the parentOf ancestry of the ACTIVE manifest, never unrelated
-  // ingredient components or unlinked C2PA manifests in the same store.
+     !reader||typeof reader.resourceToBytes!=='function')return [];
   const ordered=afpChronologicalManifestPairs(store);
-  const byId=new Map(ordered);
-  const lineage=new Set();
-  const trace=id=>{
-    if(!byId.has(id)||lineage.has(id))return;
+  const lookup=new Map(ordered),lineage=new Set();
+  const walk=id=>{
+    if(lineage.has(id)||!lookup.has(id))return;
     lineage.add(id);
-    for(const ingredient of byId.get(id)?.ingredients??[]){
-      const relation=String(ingredient?.relationship??'').toLowerCase();
+    for(const ing of lookup.get(id)?.ingredients??[]){
+      const relation=String(ing?.relationship??'').toLowerCase();
       if(relation&&!/parent[-_]?of/.test(relation))continue;
-      const parent=ingredient?.active_manifest??ingredient?.activeManifest;
-      if(typeof parent==='string')trace(parent);
+      const parent=ing?.active_manifest??ing?.activeManifest;
+      if(typeof parent==='string')walk(parent);
     }
   };
-  trace(String(store?.active_manifest??store?.activeManifest??''));
-  const sources=ordered.filter(([id])=>lineage.has(String(id)));
-  for(const [manifestId,manifest] of sources){
-    if(!manifest)continue;
-    const candidates=[manifest.thumbnail,manifest.thumbnail?.image,manifest.thumbnail?.data];
-    for(const item of candidates){
-      const id=typeof item==='string'?item:item?.identifier??item?.uri??null;
-      if(typeof id!=='string'||!id.startsWith('self#jumbf='))continue;
+  walk(String(store?.active_manifest??store?.activeManifest??''));
+  const entries=[];
+  for(const [manifestId,manifest] of ordered){
+    if(!lineage.has(String(manifestId))||!manifest)continue;
+    // A claim thumbnail belongs to the signer of THIS manifest.
+    // Do not use ingredient thumbnails or an ancestor's thumbnail as a proxy.
+    const items=[manifest.thumbnail,manifest.thumbnail?.image,manifest.thumbnail?.data];
+    for(const item of items){
+      const uri=typeof item==='string'?item:item?.identifier??item?.uri??null;
+      if(typeof uri!=='string'||!uri.startsWith('self#jumbf='))continue;
       const format=typeof item?.format==='string'?item.format:'image/jpeg';
       if(!/^image\/(?:jpeg|png|webp)$/i.test(format))continue;
       try{
-        const bytes=await reader.resourceToBytes(id);
-        if(bytes?.byteLength>0&&bytes.byteLength<=2_000_000){
-          const sig=signatureOf(manifest);
-          return {bytes,format,manifestId,signer:
-            firstValue(sig?.name,sig?.issuer,sig?.signer,sig?.organization,manifest?.signer)||null};
+        const bytes=await reader.resourceToBytes(uri);
+        if(bytes?.byteLength>0 && bytes.byteLength<=2_000_000){
+          const sign=signatureOf(manifest);
+          entries.push({manifestId:String(manifestId),bytes,format,
+            signer:firstValue(sign?.name,sign?.issuer,sign?.signer,
+              sign?.organization,manifest?.signer)||null});
+          break;
         }
-      }catch(_){ /* Missing/redacted resource: continue in chronological order */ }
+      }catch(_){ /* A signer may have redacted its own thumbnail. */ }
     }
   }
-  return null;
+  return entries;
 }
+
 async function afpReadC2pa(engine,mime,blob,source,{suppressPreview=false}={}) {
   const ctx=source ? await afpTrustContext(source) : undefined;
   let reader=null;
@@ -1764,8 +1769,9 @@ async function afpReadC2pa(engine,mime,blob,source,{suppressPreview=false}={}) {
     const store=await reader.manifestStore();
     const {entries,state,ingredientDeltas}=afpExtractValidationResults(store);
     const active=await reader.activeManifest().catch(()=>null);
-    const originalThumbnail=await afpFirstC2paThumbnail(reader,store,{suppressPreview});
-    return {store,active,validation:entries,ingredientDeltas,validationState:state,originalThumbnail};
+    const manifestThumbnails=await afpManifestC2paThumbnails(reader,store,{suppressPreview});
+    return {store,active,validation:entries,ingredientDeltas,validationState:state,
+      originalThumbnail:manifestThumbnails[0]??null,manifestThumbnails};
   } finally {
     if(reader) try {await reader.free();} catch (_) {}
   }
@@ -1864,12 +1870,21 @@ async function analyze(photo) {
       photo.store=check.store; photo.active=check.active; photo.validation=check.validation;
       photo.validationDeltas=check.ingredientDeltas??[]; photo.validationState=check.validationState;
       photo.trustSource=check.trustSource; photo.trustChecks=check.trustChecks;
-      // Object URL points at existing C2PA thumbnail bytes; NEVER re-encode image.
-      if(photo.originalC2paThumbnailUrl)URL.revokeObjectURL(photo.originalC2paThumbnailUrl);
-      photo.originalC2paThumbnailUrl=!afpSuppressC2paPreview(photo)&&check.originalThumbnail
-        ?URL.createObjectURL(new Blob([check.originalThumbnail.bytes],{type:check.originalThumbnail.format}))
-        :null;
-      photo.originalC2paThumbnailSigner=photo.originalC2paThumbnailUrl?check.originalThumbnail.signer:null;
+      // One immutable, original-byte preview per signed manifest.
+      // Revoke URLs from any earlier analysis to avoid stale/mismatched images.
+      for(const item of photo.c2paManifestThumbnailUrls??[]){
+        if(item.url)URL.revokeObjectURL(item.url);
+      }
+      if(photo.originalC2paThumbnailUrl && !photo.c2paManifestThumbnailUrls?.length)
+        URL.revokeObjectURL(photo.originalC2paThumbnailUrl);
+      const imageEmbargo=afpSuppressC2paPreview(photo);
+      photo.c2paManifestThumbnailUrls=!imageEmbargo?(check.manifestThumbnails??[]).map(item=>({
+        manifestId:item.manifestId,signer:item.signer,
+        url:URL.createObjectURL(new Blob([item.bytes],{type:item.format}))
+      })):[];
+      const firstThumb=photo.c2paManifestThumbnailUrls[0]??null;
+      photo.originalC2paThumbnailUrl=firstThumb?.url??null;
+      photo.originalC2paThumbnailSigner=firstThumb?.signer??null;
       photo.trustProof=JSON.parse(JSON.stringify(afpTrustResourceProof));
       photo.remoteFetch=remoteDownload?await remoteDownload:null;
       const allValidation=[...photo.validation,...(photo.validationDeltas??[])];
@@ -3793,7 +3808,7 @@ function afpHistoricalSignaturePanels(photo){
       afpTrustExplanationNode(expl));
     about.classList.add('afp-reader-trust-more');
     // Le récit du premier signataire figure dans « Comprendre le certificat ».
-    trust.append(summary,afpCertificateOriginalPreview(photo),explanation,about);
+    trust.append(summary,afpCertificateOriginalPreview(photo,id),explanation,about);
     // Le JSON est réservé aux détails techniques, jamais au panneau de lecture.
     const panel=readerOpenFold((fr?'Vérification C2PA — ':'C2PA verification — ')+signer,
       trust);
@@ -4689,20 +4704,71 @@ function afpCertificateDatedTitle(i,signer,manifest,checks,{historical=false}={}
   const suffix=confirmed&&historical?(uiLanguage==='en'?' — historical result':' — résultat historique'):'';
   return base+' — ('+prefix+tsa+suffix+')';
 }
-function afpCertificateOriginalPreview(photo){
-  const box=document.createElement('div');box.className='afp-c2pa-first-preview';
+/* Show exactly the image version associated with THIS signer/manifest.
+   If its claim thumbnail is missing, use a separate gallery photo only when
+   that photo has the same ACTIVE C2PA manifest and good hash/signature checks.
+   The final published JPEG is a fallback ONLY for the active signer, and
+   must be identified as such. No accidental Nikon thumbnail in AFP/Adobe. */
+function afpCertificateOriginalPreview(photo,manifestId=null){
+  const box=document.createElement('div');
+  box.className='afp-c2pa-first-preview';
   if(afpSuppressC2paPreview(photo)){
-    const message=document.createElement('p');message.className='afp-c2pa-preview-withheld';message.textContent=afpC2paWithheldMessage();box.append(message);return box;
+    const message=document.createElement('p');
+    message.className='afp-c2pa-preview-withheld';
+    message.textContent=afpC2paWithheldMessage();
+    box.append(message);return box;
   }
-  const original=photo?.originalC2paThumbnailUrl, published=photo?.displayUrl||photo?.url;
-  if(!original&&!published)return box;
-  const heading=document.createElement('div');heading.className='afp-c2pa-first-preview-title';
-  heading.textContent=original?(uiLanguage==='en'?'First available source image (C2PA)':'Première visu d’origine accessible (C2PA)'):(uiLanguage==='en'?'Published image — no original preview':'Visu publiée — originale C2PA indisponible');
-  const img=document.createElement('img');img.src=original||published;img.loading='lazy';img.decoding='async';
-  img.alt=original?(uiLanguage==='en'?'C2PA source image':'Visu originale C2PA'):(uiLanguage==='en'?'Published image':'Visu publiée');
-  box.append(heading,img);
-  if(original&&photo.originalC2paThumbnailSigner){
-    const label=document.createElement('small');label.textContent=photo.originalC2paThumbnailSigner;box.append(label);
+  const id=String(manifestId??photo?.store?.active_manifest??photo?.store?.activeManifest??'');
+  const currentId=String(photo?.store?.active_manifest??photo?.store?.activeManifest??'');
+  const isCurrent=Boolean(id&&id===currentId);
+  const own=photo?.c2paManifestThumbnailUrls?.find(entry=>entry.manifestId===id);
+  let imageUrl=own?.url??null, sourceType=own?'claim':null;
+
+  if(!imageUrl && id){
+    // The AFP-signed JPEG can exist elsewhere in the gallery. An exact
+    // manifest-ID match is required; name or visual similarity is not enough.
+    const match=photos.find(candidate=>{
+      if(candidate===photo||!candidate?.store||afpSuppressC2paPreview(candidate))return false;
+      const active=String(candidate.store.active_manifest??candidate.store.activeManifest??'');
+      if(active!==id)return false;
+      const checks=afpFourChecks(candidate);
+      return ['integrity','signature'].every(key=>
+        checks.find(check=>check.key===key)?.state==='ok');
+    });
+    if(match){
+      imageUrl=match.displayUrl||match.url;
+      sourceType='matching-file';
+    }
+  }
+  if(!imageUrl&&isCurrent&&(photo?.displayUrl||photo?.url)){
+    imageUrl=photo.displayUrl||photo.url;
+    sourceType='published';
+  }
+  const title=document.createElement('div');
+  title.className='afp-c2pa-first-preview-title';
+  if(sourceType==='claim'){
+    title.textContent=uiLanguage==='en'
+      ?'Thumbnail of the image signed in this C2PA manifest'
+      :'Imagette de la version signée par ce certificat';
+  }else if(sourceType==='matching-file'){
+    title.textContent=uiLanguage==='en'
+      ?'Corresponding signed file found in this gallery (same C2PA manifest)'
+      :'Version signée retrouvée dans la galerie (même manifeste C2PA)';
+  }else if(sourceType==='published'){
+    title.textContent=uiLanguage==='en'
+      ?'Published image signed by this active manifest (no embedded thumbnail)'
+      :'Visu publiée correspondant à ce manifeste actif (miniature absente)';
+  }else{
+    title.textContent=uiLanguage==='en'
+      ?'No preview of the image signed at this step is available in C2PA.'
+      :'Aucune imagette de la version signée à cette étape n’est disponible dans le C2PA.';
+  }
+  box.append(title);
+  if(imageUrl){
+    const img=document.createElement('img');
+    img.src=imageUrl;img.loading='lazy';img.decoding='async';
+    img.alt=uiLanguage==='en'?'Image for this C2PA signature':'Image correspondant à cette signature C2PA';
+    box.append(img);
   }
   return box;
 }
@@ -4939,7 +5005,8 @@ function fillDetails(photo) {
     lookup.textContent='Liste officielle : '+status('official')+' · Ancienne liste : '+status('legacy');
     whyBody.prepend(lookup);
   }
-  trust.append(trustSummary,afpCertificateOriginalPreview(photo),why,trustP);
+  trust.append(trustSummary,afpCertificateOriginalPreview(photo,
+    photo.store?.active_manifest??photo.store?.activeManifest),why,trustP);
   // Pas de recherche par simple nom de fabricant : un nom dans la liste ne valide pas la chaîne.
 
   const photoFold=afpPhotoInformationPanel(photo);

@@ -994,6 +994,44 @@ function afpC2paRemoteReference(photo){
     alternativeUrl:xmp&&link&&xmp!==link?xmp:null};
 }
 
+/* Remote C2PA auto-download: untrusted bytes, separate from signed validation.
+   Browser CORS cannot be bypassed from this static GitHub Pages site. */
+async function afpDownloadRemoteC2pa(remote){
+  if(!remote?.url)return null;
+  const controller=new AbortController(),max=10*1024*1024;
+  const timer=setTimeout(()=>controller.abort(),8500);
+  try{
+    const response=await fetch(remote.url,{mode:'cors',credentials:'omit',redirect:'follow',
+      cache:'no-cache',signal:controller.signal});
+    if(!response.ok)return {status:'http-error',code:response.status};
+    const advertised=Number(response.headers.get('Content-Length')||0);
+    if(advertised>max)return {status:'too-large',bytes:advertised};
+    let bytes=0,header=new Uint8Array(8),headerBytes=0;
+    if(response.body&&typeof response.body.getReader==='function'){
+      const reader=response.body.getReader();
+      try{
+        for(;;){
+          const result=await reader.read();
+          if(result.done)break;
+          const chunk=result.value;
+          bytes+=chunk.byteLength;
+          if(bytes>max){await reader.cancel().catch(()=>{});return {status:'too-large',bytes};}
+          const count=Math.min(8-headerBytes,chunk.byteLength);
+          if(count>0){header.set(chunk.subarray(0,count),headerBytes);headerBytes+=count;}
+        }
+      }finally{reader.releaseLock();}
+    }else{
+      const data=await response.arrayBuffer();bytes=data.byteLength;
+      if(bytes>max)return {status:'too-large',bytes};
+      header.set(new Uint8Array(data,0,Math.min(8,bytes)));
+    }
+    const jumbf=bytes>=8&&[106,117,109,98].every((v,i)=>header[i+4]===v);
+    return jumbf?{status:'downloaded',bytes,format:'JUMBF/C2PA'}
+      :{status:'invalid-format',bytes};
+  }catch(error){
+    return {status:'unavailable',reason:String(error?.message||error).slice(0,200)};
+  }finally{clearTimeout(timer);}
+}
 function afpParseXmp(xml,meta){
   if(typeof xml!=='string'||xml.length>500000)return;
   try{
@@ -1215,7 +1253,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-editorial-original-v20261123-1';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-editorial-remote-v20261123-2';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -1266,6 +1304,7 @@ async function afpWriteRecord(photo, digest) {
       validationDeltas:photo.validationDeltas ?? [],
       validation:photo.validation ?? [], validationState:photo.validationState ?? null, trustSource:photo.trustSource ?? null, trustChecks:photo.trustChecks ?? null,
       exif:photo.exif ?? null, remoteManifest:photo.remoteManifest??null,
+      remoteFetch:photo.remoteFetch??null,
       c2paManifestHttpLink:photo.c2paManifestHttpLink??null });
     if (record.length > AFP_MAX_METADATA_BYTES) return;
     record = JSON.parse(record);
@@ -1343,6 +1382,7 @@ function afpRestoreRecord(photo, rec, digest) {
   photo.validation=rec.validation || []; photo.validationState=rec.validationState || null; photo.trustSource=rec.trustSource || null; photo.trustChecks=rec.trustChecks || null;
   photo.exif=rec.exif || null; photo.exifDate=photo.exif?.date;
   photo.remoteManifest=rec.remoteManifest??null;
+  photo.remoteFetch=rec.remoteFetch??null;
   photo.c2paManifestHttpLink=rec.c2paManifestHttpLink??null;
   photo.trustProof=rec.trustProof??null;
   photo.validationDeltas=rec.validationDeltas??[];
@@ -1506,7 +1546,11 @@ async function afpTrustContext(source) {
         await afpTrustResourceStamp('legacyConfig',trust.trustConfig,AFP_LEGACY_TRUST_FILES.config);
         await afpTrustResourceStamp('legacyAllowed',trust.allowedList,AFP_LEGACY_TRUST_FILES.allowed);
       }
-      const tsaPem=await afpTsaTrustPem();
+      // A failed TSA trust-list fetch must not prevent signer certificate trust checking.
+      const tsaPem=await afpTsaTrustPem().catch(error=>{
+        console.warn('[AFP C2PA] TSA list inaccessible; signer trust remains checkable',error?.message||error);
+        return null;
+      });
       // c2pa-web 0.17 exposes signer/CAWG anchors through Context, but not TSA
       // anchors. Preserve its official settings serialization and append a
       // separate, purpose-scoped TSA anchor at the WASM configuration boundary.
@@ -1515,14 +1559,14 @@ async function afpTrustContext(source) {
           const settings=JSON.parse(await super.toJson(options));
           if(!Array.isArray(settings.trust?.anchors)||!settings.trust.anchors.length)
             throw new Error('Ancres de signature C2PA absentes');
-          settings.trust.anchors.push({
+          if(tsaPem)settings.trust.anchors.push({
             trust_anchors:tsaPem,trust_kind:'tsa',trust_uri:'c2pa_tsa_official'
           });
           return JSON.stringify(settings);
         }
       }
       return new AfpTsaContext({
-        verify:{verifyTrust:true,verifyAfterReading:true,verifyTimestampTrust:true,ocspFetch:false},
+        verify:{verifyTrust:true,verifyAfterReading:true,verifyTimestampTrust:Boolean(tsaPem),ocspFetch:false},
         trust
       });
     })();
@@ -1720,7 +1764,7 @@ async function analyze(photo) {
   if (photo.analysisPromise) return photo.analysisPromise;
   photo.needsRetry=false;
   photo.analysisPromise = (async () => {
-    let blob=null, digest=null, restore=false;
+    let blob=null, digest=null, restore=false, remoteDownload=null;
     const cachedMetadata=await afpReadRecord(afpRemoteUrl(photo));
     try {
       // Dès l'ouverture, restaurer le résultat seulement si l'original conservé
@@ -1752,6 +1796,9 @@ async function analyze(photo) {
         photo.exifDate=photo.exif.date;
       }
       photo.remoteManifest=afpC2paRemoteReference(photo);
+      // Parallel with the SDK's own cryptographic retrieval. Do not infer trust
+      // from a successful HTTP response alone.
+      remoteDownload=photo.remoteManifest?afpDownloadRemoteC2pa(photo.remoteManifest):null;
       const ext=photo.name.split('.').pop().toLowerCase();
       if (ext==='png') {
         const header = new Uint8Array(await blob.slice(0,8).arrayBuffer());
@@ -1771,6 +1818,7 @@ async function analyze(photo) {
         :null;
       photo.originalC2paThumbnailSigner=photo.originalC2paThumbnailUrl?check.originalThumbnail.signer:null;
       photo.trustProof=JSON.parse(JSON.stringify(afpTrustResourceProof));
+      photo.remoteFetch=remoteDownload?await remoteDownload:null;
       const allValidation=[...photo.validation,...(photo.validationDeltas??[])];
       const levels=allValidation.map(validationLevel);
       // Never suppress the exact SDK reason behind a red result.
@@ -1789,6 +1837,7 @@ async function analyze(photo) {
       photo.cacheStatus=null;photo.cacheSavedAt=null;photo.recheckingCache=false;
       await afpWriteRecord(photo,digest);
     } catch (error) {
+      if(remoteDownload)photo.remoteFetch=await remoteDownload;
       console.warn('[C2PA AFP] Analyse',photo.name,error);
       photo.error=error?.message??String(error);
       if (restore && digest && cachedMetadata?.hash!==digest) restore=false;
@@ -4642,6 +4691,24 @@ function afpRemoteManifestPanel(photo){
   const details=document.createElement('p');
   details.textContent=(fr?'Référence déclarée : ':'Declared reference: ')+remote.method+' — '+remote.host;
   body.append(details);
+  const probe=photo?.remoteFetch;
+  if(probe){
+    const p=document.createElement('p');
+    p.className='afp-reader-remote-download';
+    if(probe.status==='downloaded'){
+      p.textContent=fr
+        ?'Manifeste distant téléchargé automatiquement ('+probe.bytes+' octets). Seule la validation cryptographique du lecteur établit la confiance.'
+        :'Remote manifest downloaded automatically ('+probe.bytes+' bytes). Only the SDK cryptographic verification establishes trust.';
+    }else if(probe.status==='unavailable'){
+      p.textContent=fr
+        ?'Téléchargement automatique bloqué par le réseau ou CORS. L’ouverture du lien dans un onglet ne garantit pas l’accès JavaScript.'
+        :'Automatic download blocked by network or CORS. Opening a link in a tab does not grant JavaScript access.';
+    }else{
+      p.textContent=(fr?'Téléchargement : ':'Download: ')+probe.status+
+        (probe.code?' (HTTP '+probe.code+')':'');
+    }
+    body.append(p);
+  }
   const link=document.createElement('a');link.href=remote.url;
   link.target='_blank';link.rel='noopener noreferrer';
   link.textContent=fr?'Consulter l’adresse du manifeste':'Open manifest URL';

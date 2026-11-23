@@ -1253,7 +1253,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-cawg-legacy-fallback-v20261123-5';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-cawg-trust-split-v20261123-6';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -1814,12 +1814,23 @@ async function afpReadC2pa(engine,mime,blob,source,{suppressPreview=false}={}) {
 /* Deux validations distinctes : l'une avec les racines officielles,
    l'autre, si nécessaire, avec les racines historiques. Les sources,
    échecs réseau et éventuels échecs cryptographiques restent explicites. */
+/* Signer trust is distinct from CAWG identity assertion validation. */
+function afpSignerTrustListStatus(result){
+  if(!result?.store)return 'unavailable';
+  if(afpHasTrustedCertificate(result))return 'trusted';
+  const codes=afpValidationCodes(result);
+  if(codes.some(c=>/^(?:signingcredential\.(?:invalid|mismatch|ocsp\.revoked)|claimsignature\.outsidevalidity)$/.test(c)))
+    return 'failed';
+  if(codes.some(c=>/^signingcredential\.(?:untrusted|unknown)$/.test(c)))
+    return 'untrusted';
+  return 'incomplete';
+}
 async function afpValidateAgainstTrustLists(engine,mime,blob,{suppressPreview=false}={}) {
   const checks={official:{status:'unavailable'},legacy:{status:'not_checked'}};
   let official=null,legacy=null;
   try {
     official=await afpReadC2pa(engine,mime,blob,'official',{suppressPreview});
-    checks.official={status:afpHasTrustedCertificate(official)?'trusted':afpHasCriticalFailure(official)?'failed':'untrusted',
+    checks.official={status:afpSignerTrustListStatus(official),
       codes:afpValidationCodes(official)};
   }catch(error){checks.official={status:'unavailable',reason:String(error?.message||error)};}
   if(official?.store && checks.official.status==='trusted') {
@@ -1827,7 +1838,7 @@ async function afpValidateAgainstTrustLists(engine,mime,blob,{suppressPreview=fa
   }
   try {
     legacy=await afpReadC2pa(engine,mime,blob,'legacy',{suppressPreview});
-    checks.legacy={status:afpHasTrustedCertificate(legacy)?'trusted':afpHasCriticalFailure(legacy)?'failed':'untrusted',
+    checks.legacy={status:afpSignerTrustListStatus(legacy),
       codes:afpValidationCodes(legacy)};
   }catch(error){checks.legacy={status:'unavailable',reason:String(error?.message||error)};}
   // A trusted HISTORICAL signer certificate remains historically recognised,
@@ -1844,7 +1855,8 @@ async function afpValidateAgainstTrustLists(engine,mime,blob,{suppressPreview=fa
     // response for the signing certificate. In that case, mark trust
     // inconclusive, not definitively untrusted.
     const source=statuses.every(s=>s==='unavailable')?'unavailable':
-      statuses.includes('unavailable')||statuses.includes('failed')?'incomplete':'untrusted';
+      statuses.includes('unavailable')||statuses.includes('failed')||statuses.includes('incomplete')
+        ?'incomplete':'untrusted';
     return {...chosen,trustSource:source,trustChecks:checks};
   }
   // Les listes ne déterminent jamais à elles seules si le fichier est sans C2PA.
@@ -4614,8 +4626,8 @@ function afpAttachTrustDirectoryStatus(trust,signerName){
 
 /* Le détail technique est une seule surface à plat, sans sous-panneaux de statut. */
 function afpTrustListFields(photo) {
-  const map={trusted:'Reconnu',untrusted:'Non reconnu',failed:'Validation C2PA en échec',
-    unavailable:'Liste inaccessible',not_checked:'Non consulté'};
+  const map={trusted:'Reconnu',untrusted:'Non reconnu',failed:'Certificat en échec',
+    incomplete:'Certificat à vérifier',unavailable:'Liste inaccessible',not_checked:'Non consulté'};
   const official=photo.trustChecks?.official?.status ?? 'not_checked';
   const legacy=photo.trustChecks?.legacy?.status ?? 'not_checked';
   const level=code=>code==='trusted'?'ok':code==='failed'?'bad':code==='untrusted'?'warn':'neutral';
@@ -5037,9 +5049,15 @@ function fillDetails(photo) {
     !/^(?:assertion\.(?:datahash|hasheduri|bmffhash|boxhash|boxeshash)\.|claimsignature\.|signingcredential\.)/i.test(String(entry?.code??entry?.status??'')));
   if(extraFailure.length){
     const p=document.createElement('p');p.className='afp-reader-other-failure';
-    p.textContent=uiLanguage==='en'
-      ?'Other C2PA check(s) failed — see technical verification details.'
-      :'Autre contrôle C2PA en échec — voir les détails techniques.';
+    const identityOnly=extraFailure.every(e=>/^cawg\./i.test(String(e?.code??e?.status??'')));
+    const validity=extraFailure.some(e=>String(e?.code??e?.status??'').toLowerCase()==='cawg.x509.signature.outside_validity');
+    p.textContent=identityOnly
+      ?(uiLanguage==='en'
+        ?'CAWG identity verification failed'+(validity?' (identity certificate outside its validity period)':'')+'. This is distinct from the C2PA claim signature.'
+        :'Échec de vérification de l’identité CAWG'+(validity?' (certificat d’identité hors période de validité)':'')+'. La signature C2PA de la photo est un contrôle distinct.')
+      :(uiLanguage==='en'
+        ?'Other C2PA check(s) failed — see technical verification details.'
+        :'Autre contrôle C2PA en échec — voir les détails techniques.');
     quick.append(p);
   }
   // Keep the original four checks intact, but move them behind a single summary.
@@ -5056,8 +5074,8 @@ function fillDetails(photo) {
   if(whyBody && (trustChecks.official||trustChecks.legacy)){
     const lookup=document.createElement('p');
     lookup.className='afp-certificate-status-caution';
-    const labels={trusted:'Reconnu',untrusted:'Non reconnu',failed:'Échec de validation',
-      unavailable:'Liste inaccessible',not_checked:'Non consultée'};
+    const labels={trusted:'Reconnu',untrusted:'Non reconnu',failed:'Échec du certificat',
+      incomplete:'Certificat à vérifier',unavailable:'Liste inaccessible',not_checked:'Non consultée'};
     const status=key=>labels[trustChecks[key]?.status]||'Non confirmé';
     lookup.textContent='Liste officielle : '+status('official')+' · Ancienne liste : '+status('legacy');
     whyBody.prepend(lookup);

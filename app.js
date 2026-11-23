@@ -1253,7 +1253,7 @@ const AFP_CACHE_ORIGINALS = 'afp-c2pa-originals-v1';
 const AFP_CACHE_LIMIT = 32;
 const AFP_MAX_CACHED_PHOTO_BYTES = 28 * 1024 * 1024;
 const AFP_MAX_METADATA_BYTES = 4 * 1024 * 1024;
-const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-manifest-specific-thumbnails-v20261123-4';
+const AFP_ENGINE_VERSION = 'c2pa-web-0.17.0-cawg-legacy-fallback-v20261123-5';
 let afpDbPromise = null;
 
 function afpRemoteUrl(photo) {
@@ -1493,6 +1493,13 @@ const AFP_LEGACY_TRUST_FILES = Object.freeze({
   config:'https://contentcredentials.org/trust/store.cfg',
   allowed:'https://contentcredentials.org/trust/allowed.sha256.txt'
 });
+/* Frozen interim trust list distributed by the Adobe/C2PA Verify project's
+   original repository. Only used when contentcredentials.org cannot be read. */
+const AFP_LEGACY_TRUST_FALLBACK = Object.freeze({
+  anchors:'https://raw.githubusercontent.com/contentauth/verify-site/main/static/trust/anchors.pem',
+  config:'https://raw.githubusercontent.com/contentauth/verify-site/main/static/trust/store.cfg',
+  allowed:'https://raw.githubusercontent.com/contentauth/verify-site/main/static/trust/allowed.pem'
+});
 const AFP_TSA_TRUST_PEM_URL = 'https://raw.githubusercontent.com/c2pa-org/conformance-public/main/trust-list/C2PA-TSA-TRUST-LIST.pem';
 const afpTrustResourceProof=Object.create(null);
 async function afpTrustResourceStamp(key,content,url){
@@ -1518,6 +1525,33 @@ async function afpTsaTrustPem(){
   }
   return afpTsaTrustPemPromise;
 }
+/* Load one complete, matching trust bundle from one provenance.
+   A partially accessible legacy source must never be combined with another.
+   Successful download is only an input to cryptographic verification. */
+async function afpLegacyTrustBundle(){
+  const sources=[
+    {name:'contentcredentials.org',anchors:AFP_TRUST_PEM_URLS.legacy,
+      config:AFP_LEGACY_TRUST_FILES.config,allowed:AFP_LEGACY_TRUST_FILES.allowed},
+    {name:'contentauth-verify-site',...AFP_LEGACY_TRUST_FALLBACK}
+  ];
+  const errors=[];
+  for(const source of sources){
+    try{
+      const responses=await Promise.all([source.anchors,source.config,source.allowed]
+        .map(url=>fetchWithTimeout(url,{mode:'cors',cache:'no-cache'},8000)));
+      if(responses.some(r=>!r.ok))throw new Error('HTTP '+responses.map(r=>r.status).join('/'));
+      const [pem,config,allowed]=await Promise.all(responses.map(r=>r.text()));
+      if(!/-----BEGIN CERTIFICATE-----[\s\S]*-----END CERTIFICATE-----/.test(pem)||
+         !config.trim()||
+         !(/-----BEGIN CERTIFICATE-----/.test(allowed)||/[a-f0-9]{64}/i.test(allowed)))
+        throw new Error('Unexpected trust data format');
+      return {...source,pem,config,allowed};
+    }catch(error){
+      errors.push(source.name+': '+String(error?.message||error).slice(0,140));
+    }
+  }
+  throw new Error('Historical trust list unavailable ('+errors.join(' ; ')+')');
+}
 const afpTrustContexts = new Map();
 const afpTrustRetryAfter = Object.create(null);
 async function afpTrustContext(source) {
@@ -1525,26 +1559,27 @@ async function afpTrustContext(source) {
   if (Date.now() < (afpTrustRetryAfter[source]||0)) throw new Error('Liste '+source+' momentanément inaccessible');
   if (!afpTrustContexts.has(source)) {
     const promise = (async () => {
-      // Le délai est borné et les listes sont résolues UNE fois pour la galerie.
-      const response = await fetchWithTimeout(AFP_TRUST_PEM_URLS[source], {mode:'cors',cache:'no-cache'}, 8000);
-      if (!response.ok) throw new Error('Liste de confiance '+source+' : HTTP '+response.status);
-      const pem = await response.text();
-      if (!/-----BEGIN CERTIFICATE-----[\s\S]*-----END CERTIFICATE-----/.test(pem))
-        throw new Error('Liste de confiance '+source+' : format de certificat inattendu');
-      // Keep current official and historical validation independent.
-      // The historical list requires its EKU config and end-entity allowlist.
-      const trust={trustAnchors:pem};
-      await afpTrustResourceStamp(source,pem,AFP_TRUST_PEM_URLS[source]);
+      // The official source and frozen interim source are never mixed.
+      // Trust is established by the SDK's certificate-chain validation only.
+      const trust={trustAnchors:''};
       if(source==='legacy'){
-        const [configResponse,allowedResponse]=await Promise.all([
-          fetchWithTimeout(AFP_LEGACY_TRUST_FILES.config,{mode:'cors',cache:'no-cache'},8000),
-          fetchWithTimeout(AFP_LEGACY_TRUST_FILES.allowed,{mode:'cors',cache:'no-cache'},8000)
-        ]);
-        if(!configResponse.ok || !allowedResponse.ok) throw new Error('Configuration de confiance historique indisponible');
-        trust.trustConfig=await configResponse.text();
-        trust.allowedList=await allowedResponse.text();
-        await afpTrustResourceStamp('legacyConfig',trust.trustConfig,AFP_LEGACY_TRUST_FILES.config);
-        await afpTrustResourceStamp('legacyAllowed',trust.allowedList,AFP_LEGACY_TRUST_FILES.allowed);
+        const bundle=await afpLegacyTrustBundle();
+        trust.trustAnchors=bundle.pem;
+        trust.trustConfig=bundle.config;
+        trust.allowedList=bundle.allowed;
+        await afpTrustResourceStamp('legacy',bundle.pem,bundle.anchors);
+        await afpTrustResourceStamp('legacyConfig',bundle.config,bundle.name==='contentauth-verify-site'?AFP_LEGACY_TRUST_FALLBACK.config:AFP_LEGACY_TRUST_FILES.config);
+        await afpTrustResourceStamp('legacyAllowed',bundle.allowed,
+          bundle.name==='contentauth-verify-site'?AFP_LEGACY_TRUST_FALLBACK.allowed:AFP_LEGACY_TRUST_FILES.allowed);
+      }else{
+        const response=await fetchWithTimeout(AFP_TRUST_PEM_URLS[source],
+          {mode:'cors',cache:'no-cache'},8000);
+        if(!response.ok)throw new Error('Official C2PA list HTTP '+response.status);
+        const pem=await response.text();
+        if(!/-----BEGIN CERTIFICATE-----[\s\S]*-----END CERTIFICATE-----/.test(pem))
+          throw new Error('Official C2PA trust list invalid');
+        trust.trustAnchors=pem;
+        await afpTrustResourceStamp('official',pem,AFP_TRUST_PEM_URLS.official);
       }
       // A failed TSA trust-list fetch must not prevent signer certificate trust checking.
       const tsaPem=await afpTsaTrustPem().catch(error=>{

@@ -1672,8 +1672,41 @@ function afpBenignNotice(entry) {
    IPTC-IIM 2:40 et XMP photoshop:Instructions / Iptc4xmpCore:Instructions. */
 function afpSuppressC2paPreview(photo){
   const meta=photo?.exif||{};
-  return [meta.iptc?.specialInstructions,meta.xmp?.specialInstructions]
-    .some(value=>typeof value==='string'&&value.toUpperCase().includes('VISU_C2PA_OUT'));
+  const flagged=value=>typeof value==='string'&&value.toUpperCase().includes('VISU_C2PA_OUT');
+  if([meta.iptc?.specialInstructions,meta.xmp?.specialInstructions].some(flagged))return true;
+  // Same safety rule if Special Instructions occur only inside a signed
+  // metadata assertion and were stripped from the published JPEG.
+  const scan=(node,depth=0)=>{
+    if(depth>10||node==null)return false;
+    if(typeof node==='string'){
+      if(node.length<250000&&/^\s*[\[{]/.test(node)){
+        try{return scan(JSON.parse(node),depth+1)}catch(_){}
+      }
+      return false;
+    }
+    if(typeof node!=='object')return false;
+    if(Array.isArray(node))return node.some(part=>scan(part,depth+1));
+    for(const [key,value] of Object.entries(node)){
+      const simple=key.split(':').pop().replace(/[-_\s]/g,'').toLowerCase();
+      if((simple==='specialinstructions'||simple==='instructions')&&
+         (flagged(value)||Array.isArray(value)&&value.some(flagged)))return true;
+      if(scan(value,depth+1))return true;
+    }
+    return false;
+  };
+  const manifests=photo?.store?.manifests;
+  if(!manifests||typeof manifests!=='object')return false;
+  for(const manifest of Object.values(manifests)){
+    const assertions=manifest?.assertions;
+    const items=Array.isArray(assertions)?assertions:
+      assertions&&typeof assertions==='object'
+        ?Object.entries(assertions).map(([label,data])=>({label,data})):[];
+    for(const assertion of items){
+      if(/(?:metadata|iptc|exif|xmp)/i.test(String(assertion?.label??''))&&
+         scan(assertion?.data??assertion?.value??assertion))return true;
+    }
+  }
+  return false;
 }
 function afpC2paWithheldMessage(){
   return uiLanguage==='en'
@@ -1683,10 +1716,26 @@ function afpC2paWithheldMessage(){
 /* La miniature affichée provient uniquement du premier manifeste C2PA.
    On ne substitue pas arbitrairement l'image actuelle à l'original. */
 async function afpFirstC2paThumbnail(reader,store,{suppressPreview=false}={}){
-  if(suppressPreview||!reader||typeof reader.resourceToBytes!=='function')return null;
-  // First camera original; if absent or redacted, earliest accessible
-  // published/editorial preview, never an invented or re-encoded image.
-  for(const [manifestId,manifest] of afpChronologicalManifestPairs(store)){
+  if(suppressPreview||afpSuppressC2paPreview({store})||
+     !reader||typeof reader.resourceToBytes!=='function')return null;
+  // Only the parentOf ancestry of the ACTIVE manifest, never unrelated
+  // ingredient components or unlinked C2PA manifests in the same store.
+  const ordered=afpChronologicalManifestPairs(store);
+  const byId=new Map(ordered);
+  const lineage=new Set();
+  const trace=id=>{
+    if(!byId.has(id)||lineage.has(id))return;
+    lineage.add(id);
+    for(const ingredient of byId.get(id)?.ingredients??[]){
+      const relation=String(ingredient?.relationship??'').toLowerCase();
+      if(relation&&!/parent[-_]?of/.test(relation))continue;
+      const parent=ingredient?.active_manifest??ingredient?.activeManifest;
+      if(typeof parent==='string')trace(parent);
+    }
+  };
+  trace(String(store?.active_manifest??store?.activeManifest??''));
+  const sources=ordered.filter(([id])=>lineage.has(String(id)));
+  for(const [manifestId,manifest] of sources){
     if(!manifest)continue;
     const candidates=[manifest.thumbnail,manifest.thumbnail?.image,manifest.thumbnail?.data];
     for(const item of candidates){

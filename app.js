@@ -2486,14 +2486,28 @@ function revealThumbnailOrigin(target) {
   target.classList.add('origin-visible');
   applyOriginIntro(target, target._originRevealDeadline + 1000);
 }
+/* Camera badge describes origin; CAWG identity assertion is independently
+   validated. Only downgrade a red badge to amber when the ONLY fatal codes
+   concern CAWG identity, while image signature and hash are both verified. */
+function afpOriginBadgeStatus(photo,origin,level){
+  if(origin==='unknown')return 'neutral';
+  if(level!=='bad'||origin!=='capture')return level;
+  const results=[...(photo?.validation??[]),...(photo?.validationDeltas??[])];
+  const failed=results.filter(v=>validationLevel(v)==='bad');
+  const code=v=>String(typeof v==='string'?v:v?.code??v?.status??'').toLowerCase();
+  const onlyCawg=failed.length>0&&failed.every(v=>/^cawg\./.test(code(v)));
+  const signatureOk=results.some(v=>code(v)==='claimsignature.validated'&&validationLevel(v)==='ok');
+  const hashOk=results.some(v=>/^assertion\.(?:datahash|hasheduri|bmffhash|boxhash)\.match$/.test(code(v))&&validationLevel(v)==='ok');
+  return onlyCawg&&signatureOk&&hashOk?'warn':level;
+}
 function appendOriginBadge(target, photo, state) {
   const originDetail = c2paSourceDetails(photo);
   const origin = originDetail.kind || 'unknown';
   const level = originStatusLevel(state);
   // Unknown origin stays grey: red failures belong in the separate C2PA
   // verification result, not in a question-mark origin marker.
-  const badgeLevel = origin === 'unknown' ? 'neutral'
-    : (originDetail.inferred && level === 'ok' ? 'warn' : level);
+  const originLevel=afpOriginBadgeStatus(photo,origin,level);
+  const badgeLevel=originDetail.inferred&&originLevel==='ok'?'warn':originLevel;
   const color = DISTINGUO_COLORS[badgeLevel] || '#C7D0DA';
   target.style.setProperty('--origin-foreground', color);
   target.dataset.originStatus = badgeLevel;
@@ -2511,8 +2525,16 @@ function appendOriginBadge(target, photo, state) {
   // Ne pas utiliser l'attribut HTML title : il crée une seconde infobulle blanche native.
   // Les informations détaillées restent dans aria-label et dans le panneau C2PA.
   target.removeAttribute('title');
-  target.setAttribute('aria-label', originDescription + ' : ' + (level === 'warn' ? tr('À vérifier') : level === 'bad' ? tr('Échec') : level === 'ok' ? tr('Validé') : tr('Indéterminé')) + (photo.cacheStatus ? ' : ' + afpCacheLabel(photo) : ''));
-  target.classList.add(level, 'origin-' + origin);
+  const identityCawgFailure=level==='bad'&&badgeLevel==='warn';
+  target.setAttribute('aria-label',originDescription+' : '+
+    (identityCawgFailure
+      ?(uiLanguage==='en'
+        ?'Photographic origin documented; CAWG identity verification failed. See C2PA technical details.'
+        :'Origine photographique documentée ; vérification d’identité CAWG en échec. Voir détails techniques C2PA.')
+      :badgeLevel==='warn'?tr('À vérifier'):badgeLevel==='bad'?tr('Échec')
+        :badgeLevel==='ok'?tr('Validé'):tr('Indéterminé'))+
+    (photo.cacheStatus?' : '+afpCacheLabel(photo):''));
+  target.classList.add(badgeLevel,'origin-'+origin);
 
   // Dessins optiquement équilibrés sur un cadre SVG 24 × 24 : appareil, AI, calques, ?.
   // Un seul trait coloré fin + très fin contour sombre pour les fonds blancs / noirs.
